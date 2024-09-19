@@ -25,7 +25,8 @@ body {
 
 body {
   color: black;
-  background: #b4c8c2;
+  background: #d5e1d0;
+  /* background: #b4c8c2; */
   /* background: linear-gradient(
     to bottom,
     #e6f3ff,
@@ -82,6 +83,7 @@ section {
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
   margin: 0.25rem;
+  font-size: 0.875rem;
 }
 
 .btn-small:hover {
@@ -94,10 +96,11 @@ section {
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
   margin: 0.25rem;
+  font-size: 0.875rem;
 }
 
 .btn-small-delete:hover {
-  background-color: #df3737;
+  background-color: #e65151;
 }
 
 .dropdown {

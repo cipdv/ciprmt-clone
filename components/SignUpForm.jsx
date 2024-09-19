@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { registerNewPatient } from "@/app/_actions";
 import { useFormState, useFormStatus } from "react-dom";
+import Link from "next/link";
 
 const initialState = {
   message: "",
@@ -41,11 +42,11 @@ const SignupForm = () => {
   return (
     <form
       action={formAction}
-      className="bg-authForms p-4 rounded-md mt-6 w-full lg:w-2/5 mx-auto"
+      className="bg-authForms p-4 rounded-md mt-6 w-full lg:w-2/5 mx-auto space-y-4"
     >
       <h1 className="text-2xl font-bold">Register to Book a Massage</h1>
       <div className="flex flex-col gap-3 glassmorphism mt-4">
-        <h1>Personal information</h1>
+        <h1 className="font-bold">Personal information</h1>
         <label htmlFor="firstName">First Name</label>
         <input
           type="text"
@@ -53,6 +54,7 @@ const SignupForm = () => {
           name="firstName"
           placeholder="Legal first name"
           required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
         />
         <label htmlFor="preferredName">Preferred Name</label>
         <input
@@ -60,6 +62,7 @@ const SignupForm = () => {
           id="preferredName"
           name="preferredName"
           placeholder="Name you go by"
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
         />
         <label htmlFor="lastName">Last Name</label>
         <input
@@ -68,9 +71,16 @@ const SignupForm = () => {
           name="lastName"
           placeholder="Full last name"
           required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
         />
         <label htmlFor="pronouns">Pronouns</label>
-        <select id="pronouns" name="pronouns" defaultValue={""} required>
+        <select
+          id="pronouns"
+          name="pronouns"
+          defaultValue={""}
+          required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        >
           <option value="" disabled="disabled">
             Select
           </option>
@@ -86,8 +96,9 @@ const SignupForm = () => {
           name="phone"
           placeholder="123-456-7890"
           required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
         />
-        <h1>Login information</h1>
+        <h1 className="font-bold mt-4">Login information</h1>
         <label htmlFor="email">Email</label>
         <input
           type="email"
@@ -95,6 +106,7 @@ const SignupForm = () => {
           name="email"
           placeholder="Will be used as login"
           required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
         />
         {state?.email && (
           <p className="text-red-500 text-lg text-bold">{state?.email}</p>
@@ -107,12 +119,12 @@ const SignupForm = () => {
             name="password"
             placeholder="6 characters minimum"
             required
-            className="block mr-2 flex-grow"
+            className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
           />
           <button
             type="button"
             onClick={togglePasswordVisibility}
-            className="ml-2"
+            className="ml-2 transform transition-transform duration-300 hover:scale-110"
           >
             {showPassword ? (
               <img src="/images/icons8-hide-16.png" alt="Hide password" />
@@ -132,12 +144,12 @@ const SignupForm = () => {
             name="confirmPassword"
             placeholder="Confirm password"
             required
-            className="block mr-2 flex-grow"
+            className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
           />
           <button
             type="button"
             onClick={toggleConfirmPasswordVisibility}
-            className="ml-2"
+            className="ml-2 transform transition-transform duration-300 hover:scale-110"
           >
             {showConfirmPassword ? (
               <img src="/images/icons8-hide-16.png" alt="Hide password" />
@@ -151,12 +163,11 @@ const SignupForm = () => {
             {state?.confirmPassword}
           </p>
         )}
-        {/* <div>
-          <input type="checkbox" name="newToBeach" id="newToBeach" />
-          <label className="ml-2" htmlFor="newToBeach">
-            I'm new to beach volleyball
-          </label>
-        </div> */}
+        <h2 className="mt-4 text-bold">
+          <Link href="/auth/sign-in">
+            Already have an account? Click here to sign in.
+          </Link>
+        </h2>
         <p className="text-red-500 text-lg text-bold">{state?.message}</p>
         <SubmitButton />
       </div>

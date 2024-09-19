@@ -9,11 +9,11 @@ const Navbar = async () => {
     <nav className="flex items-center justify-between py-12 lg:px-24 navbar bg-navbar text-white">
       {" "}
       {/* Increased vertical padding and added responsive horizontal padding */}
-      <h1>
-        <Link href="/" className="text-2xl font-serif">
-          CipRMT.com
-        </Link>
-      </h1>
+      <Link href="/">
+        {/* <h2 className="text-xl font-serif text-white">Cip de Vries, RMT</h2> */}
+
+        <h1 className="text-3xl font-serif  text-white">CipRMT.com</h1>
+      </Link>
       <ul className="flex items-center space-x-4">
         {!session ? (
           <>
@@ -28,7 +28,9 @@ const Navbar = async () => {
             </li>
             <li>
               <Link href="/auth/sign-in">
-                <button className="btn whitespace-nowrap">Sign in</button>
+                <button className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2">
+                  Sign in
+                </button>
               </Link>
             </li>
           </>
@@ -87,7 +89,10 @@ const Navbar = async () => {
                   redirect("/");
                 }}
               >
-                <button type="submit" className="btn whitespace-nowrap">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2"
+                >
                   Sign out
                 </button>
               </form>

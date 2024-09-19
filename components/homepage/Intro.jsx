@@ -4,42 +4,45 @@ import Link from "next/link";
 
 const Intro = () => {
   return (
-    <div className="mx-auto max-w-4xl px-4 mt-28 mb-28">
-      <div className="flex items-center space-x-8">
-        <div className="flex-shrink-0 min-w-[300px]">
-          {" "}
-          {/* Prevent image container from shrinking and ensure a minimum width */}
+    <div className="container mx-auto sm:px-4 md:px-20 lg:px-64 px-4 py-12 sm:py-16 md:py-20 lg:py-28">
+      <div className="flex flex-col md:flex-row items-center md:space-x-8 space-y-8 md:space-y-0">
+        <div className="w-full md:w-1/3 flex-shrink-0">
           <Image
             src="/images/cip-profile-pic.jpg"
             width={300}
             height={300}
             alt="Cip de Vries"
+            className="w-full h-auto rounded-lg shadow-lg"
           />
         </div>
-        <div className="space-y-2 flex-grow">
-          {" "}
-          {/* Allow text container to grow as needed */}
+        <div className="w-full md:w-2/3 space-y-4 md:space-y-6">
           <div className="mb-4">
-            <h1 className="text-3xl">Hi I'm Cip,</h1>
-            <h1 className="text-3xl">I'm a Massage Therapist.</h1>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold">
+              Hi I'm Cip,
+            </h1>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold">
+              I'm a Massage Therapist.
+            </h1>
           </div>
-          <div className="space-y-5">
-            <p>
+          <div className="space-y-4">
+            <p className="text-sm sm:text-base">
               I'm very passionate about health and well-being. I love taking
               care of my body with exercise, healthy foods, and spending time
               with friends and family. My favourite activities include
               volleyball, rock climbing, swimming, skating, and just being
               outdoors with nature.
             </p>
-            <p>
-              As your Registered Massage Therapist, I promise to give you 100%
-              of my attention while focusing on your needs to give you the best
-              treatment possible. Your health and well-being are just as
-              important to me as my own.
+            <p className="text-sm sm:text-base">
+              As your <strong>Registered Massage Therapist</strong>, I promise
+              to give you 100% of my attention while focusing on your needs to
+              give you the best treatment possible. Your health and well-being
+              are just as important to me as my own.
             </p>
             <div>
               <Link href="/auth/sign-in">
-                <button className="btn">Book a Massage</button>
+                <button className="px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2">
+                  Book a Massage
+                </button>
               </Link>
             </div>
           </div>

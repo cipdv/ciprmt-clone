@@ -3,6 +3,7 @@
 //database
 import dbConnection from "./lib/database/dbconnection";
 import { ObjectId } from "mongodb";
+import { getDatabase } from "./lib/database/dbconnection";
 //dependencies
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
@@ -42,8 +43,7 @@ export const getCurrentMember = async () => {
   const session = await getSession();
   if (session) {
     const _id = new ObjectId(session.resultObj._id);
-    const dbClient = await dbConnection;
-    const db = await dbClient.db(process.env.DB_NAME);
+    const db = await getDatabase();
     const currentUser = await db.collection("members").findOne({ _id });
     delete currentUser?.password;
     return currentUser;
@@ -135,8 +135,7 @@ export async function registerNewPatient(prevState, formData) {
   }
 
   try {
-    const dbClient = await dbConnection;
-    const db = await dbClient.db(process.env.DB_NAME);
+    const db = await getDatabase();
 
     //check if user already exists
     const patientExists = await db
@@ -210,7 +209,8 @@ export async function login(prevState, formData) {
 
   // const dbClient = await dbConnection;
   // const db = await dbClient.db(process.env.DB_NAME);
-  const db = await client.db(process.env.DB_NAME);
+  const dbClient = await dbConnection;
+  const db = await dbClient.db(process.env.DB_NAME);
   const result = await db.collection("users").findOne({ email: user.email });
 
   if (!result) {
@@ -407,7 +407,6 @@ export async function RMTSetup({
     massageServices,
   };
 
-  console.log(formattedFormData);
   const { _id } = session.resultObj;
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
@@ -523,33 +522,86 @@ export async function getUsersAppointments(id) {
 }
 
 //get all available appointments for a specific RMT
-export const getAvailableAppointments = async (rmtLocationId) => {
+
+export async function getAvailableAppointments(rmtLocationId, duration) {
+  console.log(
+    `getAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}`
+  );
+
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
   try {
     const objectId = new ObjectId(rmtLocationId);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    const tomorrowString = tomorrow.toISOString().split("T")[0];
+
+    console.log(
+      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date >= ${tomorrowString}`
+    );
+
     const appointments = await db
       .collection("appointments")
-      .find({ RMTLocationId: objectId, status: "available" })
+      .find({
+        RMTLocationId: objectId,
+        status: "available",
+        appointmentDate: { $gte: tomorrowString },
+      })
+      .sort({ appointmentDate: 1, appointmentStartTime: 1 })
       .toArray();
 
-    // Convert MongoDB documents to plain JavaScript objects
-    const plainAppointments = appointments.map((appointment) => ({
-      _id: appointment._id.toString(),
-      RMTLocationId: appointment.RMTLocationId.toString(),
-      appointmentDate: appointment.appointmentDate,
-      appointmentStartTime: appointment.appointmentStartTime,
-      appointmentEndTime: appointment.appointmentEndTime,
-      status: appointment.status,
+    console.log(`Found ${appointments.length} available appointments`);
+
+    const groupedAppointments = appointments.reduce((acc, appointment) => {
+      const date = appointment.appointmentDate;
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+
+      const availableTimes = generateAvailableStartTimes(
+        appointment,
+        parseInt(duration)
+      );
+      acc[date].push(...availableTimes);
+      return acc;
+    }, {});
+
+    const result = Object.entries(groupedAppointments).map(([date, times]) => ({
+      date,
+      times: times.sort(),
     }));
 
-    return plainAppointments;
+    return result;
   } catch (error) {
     console.error("Error fetching appointments:", error);
-    return [];
+    throw error;
   }
-};
+}
+
+function generateAvailableStartTimes(appointment, duration) {
+  const availableTimes = [];
+  const now = new Date();
+  const startTime = new Date(
+    `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+  );
+  const endTime = new Date(
+    `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+  );
+  const durationMs = duration * 60 * 1000;
+
+  let currentTime = startTime;
+
+  while (currentTime.getTime() + durationMs <= endTime.getTime()) {
+    if (currentTime > now) {
+      availableTimes.push(currentTime.toTimeString().substr(0, 5));
+    }
+    currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
+  }
+
+  return availableTimes;
+}
 
 //book an appointment - user
 export async function bookAppointment({
@@ -605,10 +657,7 @@ export async function bookAppointment({
   // Example usage:
   const apttime = "15:30";
   const dur = "60"; // Duration as a string
-  console.log("apttime", apttime);
-  console.log("dur", dur);
   const formattedEndTime = addDurationToTime(appointmentTime, duration);
-  console.log("formattedEndTime", formattedEndTime); // Outputs: "16:30"
 
   try {
     // Find the document with the same location, appointmentDate, and where appointmentTime fits within appointmentStartTime and appointmentEndTime
@@ -622,6 +671,7 @@ export async function bookAppointment({
     const update = {
       $set: {
         status: "booked",
+        location: location,
         appointmentBeginsAt: appointmentTime,
         appointmentEndsAt: formattedEndTime,
         userId: _id,
@@ -653,7 +703,6 @@ export async function bookAppointment({
 
 //cancel an appointment - user
 export const cancelAppointment = async (prevState, formData) => {
-  console.log("id", formData.get("id"));
   // Check if the user is logged in
   const session = await getSession();
   if (!session) {
@@ -681,6 +730,8 @@ export const cancelAppointment = async (prevState, formData) => {
         userId: null,
         duration: null,
         workplace: null,
+        consentForm: null,
+        consentFormSubmittedAt: null,
       },
     };
 
@@ -688,27 +739,319 @@ export const cancelAppointment = async (prevState, formData) => {
 
     if (result.matchedCount > 0) {
       console.log("Appointment updated successfully.");
+      revalidatePath("/dashboard/patient");
+      return {
+        status: "success",
+      };
     } else {
       console.log("No matching appointment found.");
       return {
         message: "No matching appointment found.",
+        status: "error",
       };
     }
   } catch (error) {
     console.error("An error occurred while updating the appointment:", error);
     return {
       message: "An error occurred while cancelling the appointment.",
+      status: "error",
     };
   }
-
-  revalidatePath("/dashboard/patient");
-  redirect("/dashboard/patient");
+  // redirect("/dashboard/patient");
 };
 
 //cancel an appointment - RMT
 //change an appointment - user
+
 //change an appointment - RMT
+
+export async function getAppointmentById(id) {
+  // Connect to the database
+  const dbClient = await dbConnection;
+  const db = await dbClient.db(process.env.DB_NAME);
+
+  try {
+    const appointment = await db.collection("appointments").findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!appointment) {
+      return null;
+    }
+
+    // Convert ObjectId to string for serialization
+    return {
+      ...appointment,
+      _id: appointment._id.toString(),
+      userId: appointment.userId.toString(),
+      RMTLocationId: appointment.RMTLocationId.toString(),
+    };
+  } catch (error) {
+    console.error("Error fetching appointment:", error);
+    throw new Error("Failed to fetch appointment");
+  }
+}
 //confirm an appointment - RMT
+
 //confirm an appointment - user
+export async function submitConsentForm(data) {
+  try {
+    const db = await getDatabase();
+    const appointments = db.collection("appointments");
+
+    const { id, ...consentData } = data;
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          consentForm: consentData,
+          consentFormSubmittedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.modifiedCount === 1) {
+      // Revalidate the patient dashboard page
+      revalidatePath("/dashboard/patient");
+      return { success: true };
+    } else {
+      return {
+        success: false,
+        error: "Failed to update appointment with consent form data",
+      };
+    }
+  } catch (error) {
+    console.error("Error submitting consent form:", error);
+    return { success: false, error: error.message };
+  } finally {
+    await client.close();
+  }
+}
+
+//reschedule an appointment - user - set to rescheduling
+export async function setAppointmentStatus(appointmentId, status) {
+  const db = await getDatabase();
+
+  try {
+    const appointment = await db
+      .collection("appointments")
+      .findOne({ _id: new ObjectId(appointmentId) });
+
+    if (!appointment) {
+      throw new Error(`Appointment not found with id: ${appointmentId}`);
+    }
+
+    // If the appointment is already in the desired status, return success without updating
+    if (appointment.status === status) {
+      return {
+        success: true,
+        message: `Appointment is already in ${status} status`,
+      };
+    }
+
+    const result = await db
+      .collection("appointments")
+      .updateOne(
+        { _id: new ObjectId(appointmentId) },
+        { $set: { status: status } }
+      );
+
+    if (result.modifiedCount === 1) {
+      return {
+        success: true,
+        message: `Appointment status updated to ${status}`,
+      };
+    } else {
+      throw new Error("Failed to update appointment status");
+    }
+  } catch (error) {
+    console.error("Error updating appointment status:", error);
+    throw error;
+  }
+}
+
+//get all available and rescheduling status appointments for user
+export async function getAllAvailableAppointments(rmtLocationId, duration) {
+  console.log(
+    `getAllAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}`
+  );
+
+  const db = await getDatabase();
+
+  try {
+    const objectId = new ObjectId(rmtLocationId);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayString = today.toISOString().split("T")[0];
+
+    console.log(
+      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date >= ${todayString}`
+    );
+
+    const appointments = await db
+      .collection("appointments")
+      .find({
+        RMTLocationId: objectId,
+        status: { $in: ["available", "rescheduling"] },
+        appointmentDate: { $gte: todayString },
+      })
+      .sort({ appointmentDate: 1, appointmentStartTime: 1 })
+      .toArray();
+
+    console.log(`Found ${appointments.length} available appointments`);
+
+    const groupedAppointments = appointments.reduce((acc, appointment) => {
+      const date = appointment.appointmentDate;
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+
+      const availableTimes = generateAvailableStartTimes(
+        appointment,
+        parseInt(duration)
+      );
+      acc[date].push(...availableTimes);
+      return acc;
+    }, {});
+
+    const result = Object.entries(groupedAppointments).map(([date, times]) => ({
+      date,
+      times: times.sort(),
+    }));
+
+    return result;
+  } catch (error) {
+    console.error("Error fetching appointments:", error);
+    throw error;
+  }
+}
+
+export async function rescheduleAppointment(
+  currentAppointmentId,
+  {
+    location,
+    duration,
+    appointmentTime,
+    workplace,
+    appointmentDate,
+    RMTLocationId,
+  }
+) {
+  // Check if the user is logged in
+  const session = await getSession();
+  if (!session) {
+    return {
+      success: false,
+      message: "You must be logged in to reschedule an appointment.",
+    };
+  }
+
+  // Extract the user ID from the session
+  const { _id } = session.resultObj;
+
+  // Connect to the database
+  const db = await getDatabase();
+
+  function addDurationToTime(appointmentTime, duration) {
+    const [hours, minutes] = appointmentTime.split(":").map(Number);
+    const durationInMinutes = Number(duration);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    date.setMinutes(date.getMinutes() + durationInMinutes);
+    const updatedHours = String(date.getHours()).padStart(2, "0");
+    const updatedMinutes = String(date.getMinutes()).padStart(2, "0");
+    return `${updatedHours}:${updatedMinutes}`;
+  }
+
+  const formattedEndTime = addDurationToTime(appointmentTime, duration);
+
+  try {
+    // Step 1: Change the status of the current appointment to "available" and clear consent info
+    const currentAppointmentUpdate = await db
+      .collection("appointments")
+      .updateOne(
+        { _id: new ObjectId(currentAppointmentId) },
+        {
+          $set: {
+            status: "available",
+            userId: null,
+            consentForm: null,
+            consentFormSubmittedAt: null,
+          },
+        }
+      );
+
+    if (currentAppointmentUpdate.matchedCount === 0) {
+      return {
+        success: false,
+        message: "Current appointment not found.",
+      };
+    }
+
+    // Step 2: Book the new appointment
+    const query = {
+      RMTLocationId: new ObjectId(RMTLocationId),
+      appointmentDate: appointmentDate,
+      appointmentStartTime: { $lte: appointmentTime },
+      appointmentEndTime: { $gte: formattedEndTime },
+      status: { $in: ["available", "rescheduling"] },
+    };
+
+    const update = {
+      $set: {
+        status: "booked",
+        location: location,
+        appointmentBeginsAt: appointmentTime,
+        appointmentEndsAt: formattedEndTime,
+        userId: _id,
+        duration: duration,
+        workplace: workplace,
+      },
+    };
+
+    const result = await db.collection("appointments").updateOne(query, update);
+
+    if (result.matchedCount > 0) {
+      console.log("Appointment rescheduled successfully.");
+
+      // TODO: Implement these additional steps
+      // Send email to RMT to notify of appointment rescheduling
+      // Update Google Calendar event
+      // Send email to patient to confirm rescheduling
+      // Update reminder email for the new appointment time
+
+      revalidatePath("/dashboard/patient");
+      return {
+        success: true,
+        message: "Appointment rescheduled successfully.",
+      };
+    } else {
+      console.log("No matching appointment found for rescheduling.");
+
+      // If no new appointment was found, revert the status of the original appointment
+      await db
+        .collection("appointments")
+        .updateOne(
+          { _id: new ObjectId(currentAppointmentId) },
+          { $set: { status: "booked", userId: _id } }
+        );
+
+      return {
+        success: false,
+        message: "No matching appointment found for rescheduling.",
+      };
+    }
+  } catch (error) {
+    console.error(
+      "An error occurred while rescheduling the appointment:",
+      error
+    );
+    return {
+      success: false,
+      message: "An error occurred while rescheduling the appointment.",
+    };
+  }
+}
 //get all appointments for a specific RMT - view their schedule
 //block off time in the RMT's schedule
