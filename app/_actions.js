@@ -1,25 +1,32 @@
 "use server";
 
-//database
 import dbConnection from "./lib/database/dbconnection";
 import { ObjectId } from "mongodb";
 import { getDatabase } from "./lib/database/dbconnection";
-//dependencies
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
-//auth
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
-//schemas
 import { registerPatientSchema, loginSchema } from "./lib/zod/zodSchemas";
-
 import client from "./lib/database/db";
+import { z } from "zod";
+import { healthHistorySchema } from "./lib/zod/zodSchemas";
 
-////////////////////////////////////////////////////////////////
-////////////////////AUTH////////////////////////////////////////
-////////////////////////////////////////////////////////////////
+function serializeDocument(doc) {
+  return JSON.parse(
+    JSON.stringify(doc, (key, value) => {
+      if (value instanceof ObjectId) {
+        return value.toString();
+      }
+      if (value instanceof Date) {
+        return value.toISOString();
+      }
+      return value;
+    })
+  );
+}
 
 const secretKey = process.env.JWT_SECRET_KEY;
 const key = new TextEncoder().encode(secretKey);
@@ -46,19 +53,14 @@ export const getCurrentMember = async () => {
     const db = await getDatabase();
     const currentUser = await db.collection("members").findOne({ _id });
     delete currentUser?.password;
-    return currentUser;
+    return serializeDocument(currentUser);
   }
   return null;
 };
 
 export async function registerNewPatient(prevState, formData) {
-  // Convert the form data to an object
   const formDataObj = Object.fromEntries(formData.entries());
-
-  // Normalize the email address
   formDataObj.email = formDataObj.email.toLowerCase().trim();
-
-  // Capitalize the first letter of the first name and preferred name
   formDataObj.firstName =
     formDataObj.firstName.charAt(0).toUpperCase() +
     formDataObj.firstName.slice(1);
@@ -67,11 +69,9 @@ export async function registerNewPatient(prevState, formData) {
     formDataObj.preferredName.slice(1);
   formDataObj.phone = formDataObj.phone.replace(/\D/g, "");
 
-  // Validate the form data
   const result = registerPatientSchema.safeParse(formDataObj);
 
   if (result.error) {
-    // Find the error related to the password length
     const passwordError = result.error.issues.find(
       (issue) =>
         issue.path[0] === "password" &&
@@ -86,7 +86,6 @@ export async function registerNewPatient(prevState, formData) {
         issue.minimum === 6
     );
 
-    // If the error exists, return a custom message
     if (passwordError) {
       return { password: "^ Password must be at least 8 characters long" };
     }
@@ -129,15 +128,12 @@ export async function registerNewPatient(prevState, formData) {
     confirmPassword,
   } = result.data;
 
-  //check if passwords match
   if (password !== confirmPassword) {
     return { confirmPassword: "^ Passwords do not match" };
   }
 
   try {
     const db = await getDatabase();
-
-    //check if user already exists
     const patientExists = await db
       .collection("users")
       .findOne({ email: email });
@@ -146,11 +142,9 @@ export async function registerNewPatient(prevState, formData) {
       return { email: "^ This email is already registered" };
     }
 
-    //hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    //create new user
     const newPatient = {
       firstName,
       lastName,
@@ -165,15 +159,12 @@ export async function registerNewPatient(prevState, formData) {
 
     await db.collection("users").insertOne(newPatient);
 
-    //remove password from the object
     let resultObj = { ...newPatient };
     delete resultObj.password;
 
-    // Create the session
     const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
     const session = await encrypt({ resultObj, expires });
 
-    // Save the session in a cookie
     cookies().set("session", session, {
       expires,
       httpOnly: true,
@@ -191,14 +182,10 @@ export async function registerNewPatient(prevState, formData) {
 }
 
 export async function login(prevState, formData) {
-  // Convert the form data to an object
   const formDataObj = Object.fromEntries(formData.entries());
   formDataObj.rememberMe = formDataObj.rememberMe === "on";
-
-  // Normalize the email address
   formDataObj.email = formDataObj.email.toLowerCase().trim();
 
-  // Validate the form data
   const { success, data, error } = loginSchema.safeParse(formDataObj);
 
   if (!success) {
@@ -207,8 +194,6 @@ export async function login(prevState, formData) {
 
   const user = data;
 
-  // const dbClient = await dbConnection;
-  // const db = await dbClient.db(process.env.DB_NAME);
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
   const result = await db.collection("users").findOne({ email: user.email });
@@ -221,16 +206,12 @@ export async function login(prevState, formData) {
     return { message: "Invalid credentials" };
   }
 
-  //remove password from the object
   let resultObj = { ...result };
   delete resultObj.password;
 
-  // Create a session token
   const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
   const session = await encrypt({ resultObj, expires });
 
-  // Save the session in a cookie
-  //   cookies().set("session", session, { expires, httpOnly: true });
   cookies().set("session", session, { expires, httpOnly: true, secure: true });
 
   revalidatePath("/");
@@ -238,7 +219,6 @@ export async function login(prevState, formData) {
 }
 
 export async function logout() {
-  // Destroy the session
   cookies().set("session", "", { expires: new Date(0) });
   revalidatePath("/");
   redirect("/");
@@ -254,7 +234,6 @@ export async function updateSession(request) {
   const session = request.cookies.get("session")?.value;
   if (!session) return;
 
-  // Refresh the session so it doesn't expire
   const parsed = await decrypt(session);
   parsed.expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
   const res = NextResponse.next();
@@ -288,24 +267,16 @@ export const verifyAuth = async (token) => {
   }
 };
 
-////////////////////////////////////////////////////////////////
-////////////////SCHEDULE SETUP//////////////////////////////////
-////////////////////////////////////////////////////////////////
-
 export async function submitScheduleSetup(prevState, formData) {
   console.log(formData);
   return;
 }
 
-////////////////////////////////////////////////////////////////
-//////////////////////TREATMENTS////////////////////////////////
-////////////////////////////////////////////////////////////////
-
 export async function getAllTreatments() {
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
   const treatments = await db.collection("treatments").find({}).toArray();
-  return treatments;
+  return serializeDocument(treatments);
 }
 
 export async function getTreatmentById(id) {
@@ -313,42 +284,42 @@ export async function getTreatmentById(id) {
   const db = await dbClient.db(process.env.DB_NAME);
   const treatment = await db
     .collection("treatments")
-    .findOne({ _id: new ObjectId(id) }); // use 'new' keyword
-  return treatment;
+    .findOne({ _id: new ObjectId(id) });
+  return serializeDocument(treatment);
 }
 
 export async function getAllUsers() {
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
   const users = await db.collection("users").find({}).toArray();
-  return users;
+  return serializeDocument(users);
 }
 
 export async function getAllSurveys() {
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
   const surveys = await db.collection("surveys").find({}).toArray();
-  return surveys;
+  return serializeDocument(surveys);
 }
 
-////////////////////////////////////////////////////////////////
-//////////////////////RECEIPTS//////////////////////////////////
-////////////////////////////////////////////////////////////////
-
-//get all receipts/treatments for a specific user
 export async function getReceipts(id) {
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
   const receipts = await db
-    .collection("treatments")
-    .find({ clientId: id })
+    .collection("appointments")
+    .find({ userId: id })
     .toArray();
-  return receipts;
+  return serializeDocument(receipts);
 }
 
-////////////////////////////////////////////////////////////////
-//////////////////////RMT SETUP/////////////////////////////////
-////////////////////////////////////////////////////////////////
+export async function getReceiptById(id) {
+  const dbClient = await dbConnection;
+  const db = await dbClient.db(process.env.DB_NAME);
+  const receipt = await db
+    .collection("appointments")
+    .findOne({ _id: new ObjectId(id) });
+  return serializeDocument(receipt);
+}
 
 export async function RMTSetup({
   address,
@@ -381,7 +352,7 @@ export async function RMTSetup({
     if (match) {
       return `${match[1]}-${match[2]}-${match[3]}`;
     }
-    return phone; // Return the original phone if it doesn't match the expected format
+    return phone;
   };
 
   const formattedPhone = formatPhoneNumber(phone);
@@ -421,7 +392,6 @@ export async function RMTSetup({
     if (result.acknowledged) {
       console.log("Document inserted with _id:", result.insertedId);
 
-      // Generate appointment dates for the next 8 weeks
       const appointments = [];
       const today = new Date();
       const daysOfWeek = [
@@ -443,30 +413,27 @@ export async function RMTSetup({
             today.getDate() + daysUntilNextWorkday + i * 7
           );
           for (const timeSlot of workDay.appointmentTimes) {
-            // Calculate the expiry date as 1 week after the appointmentDate
             const expiryDate = new Date(appointmentDate);
             expiryDate.setDate(expiryDate.getDate() + 7);
 
             appointments.push({
               RMTLocationId: result.insertedId,
               appointmentDate: appointmentDate.toISOString().split("T")[0],
-              appointmentStartTime: timeSlot.start, // Use the start time from the appointmentTimes array
-              appointmentEndTime: timeSlot.end, // Use the end time from the appointmentTimes array
+              appointmentStartTime: timeSlot.start,
+              appointmentEndTime: timeSlot.end,
               status: "available",
-              expiryDate: expiryDate, // Add the expiry date
+              expiryDate: expiryDate,
             });
           }
         }
       }
 
-      // Insert appointments into the appointments collection
       const appointmentResult = await db
         .collection("appointments")
         .insertMany(appointments);
       if (appointmentResult.acknowledged) {
         console.log("Appointments inserted:", appointmentResult.insertedCount);
 
-        // Create a TTL index on the expiryDate field
         await db.collection("appointments").createIndex(
           { expiryDate: 1 },
           {
@@ -499,18 +466,9 @@ export const getRMTSetup = async () => {
     .find({ userId: rmtId })
     .toArray();
 
-  return setupArray;
+  return serializeDocument(setupArray);
 };
 
-////////////////////////////////////////////////////
-////////// GOOGLE CALENDAR API /////////////////////
-////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////
-////////// MASSAGE APPOINTMENTS ////////////////////
-////////////////////////////////////////////////////
-
-//get all appointments for a specific user
 export async function getUsersAppointments(id) {
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
@@ -518,10 +476,8 @@ export async function getUsersAppointments(id) {
     .collection("appointments")
     .find({ userId: id })
     .toArray();
-  return appointments;
+  return serializeDocument(appointments);
 }
-
-//get all available appointments for a specific RMT
 
 export async function getAvailableAppointments(rmtLocationId, duration) {
   console.log(
@@ -573,7 +529,7 @@ export async function getAvailableAppointments(rmtLocationId, duration) {
       times: times.sort(),
     }));
 
-    return result;
+    return serializeDocument(result);
   } catch (error) {
     console.error("Error fetching appointments:", error);
     throw error;
@@ -603,7 +559,6 @@ function generateAvailableStartTimes(appointment, duration) {
   return availableTimes;
 }
 
-//book an appointment - user
 export async function bookAppointment({
   location,
   duration,
@@ -612,12 +567,6 @@ export async function bookAppointment({
   appointmentDate,
   RMTLocationId,
 }) {
-  //send email to RMT to notify of appt booking, ask to confirm
-  //add to google calendar as "pending"? or wait until rmt confirms
-  //send email to patient to confirm - can I delay this to 48 hours before the appointment?
-  //send email to patient to remind them of the appointment 24 hours before
-
-  // Check if the user is logged in
   const session = await getSession();
   if (!session) {
     return {
@@ -625,42 +574,25 @@ export async function bookAppointment({
     };
   }
 
-  // Extract the user ID from the session
   const { _id } = session.resultObj;
 
-  // Connect to the database
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
   function addDurationToTime(appointmentTime, duration) {
-    // Split the appointmentTime into hours and minutes
     const [hours, minutes] = appointmentTime.split(":").map(Number);
-
-    // Convert duration to a number
     const durationInMinutes = Number(duration);
-
-    // Create a new Date object with today's date and the specified time
     const date = new Date();
-    date.setHours(hours, minutes, 0, 0); // Set hours, minutes, and zero out seconds and milliseconds
-
-    // Add the duration in minutes
+    date.setHours(hours, minutes, 0, 0);
     date.setMinutes(date.getMinutes() + durationInMinutes);
-
-    // Get the updated hours and minutes
     const updatedHours = String(date.getHours()).padStart(2, "0");
     const updatedMinutes = String(date.getMinutes()).padStart(2, "0");
-
-    // Return the result in hh:mm format
     return `${updatedHours}:${updatedMinutes}`;
   }
 
-  // Example usage:
-  const apttime = "15:30";
-  const dur = "60"; // Duration as a string
   const formattedEndTime = addDurationToTime(appointmentTime, duration);
 
   try {
-    // Find the document with the same location, appointmentDate, and where appointmentTime fits within appointmentStartTime and appointmentEndTime
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
       appointmentDate: appointmentDate,
@@ -701,9 +633,7 @@ export async function bookAppointment({
   redirect("/dashboard/patient");
 }
 
-//cancel an appointment - user
 export const cancelAppointment = async (prevState, formData) => {
-  // Check if the user is logged in
   const session = await getSession();
   if (!session) {
     return {
@@ -711,10 +641,8 @@ export const cancelAppointment = async (prevState, formData) => {
     };
   }
 
-  // Extract the user ID from the session
   const { _id } = session.resultObj;
 
-  // Connect to the database
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
@@ -757,16 +685,9 @@ export const cancelAppointment = async (prevState, formData) => {
       status: "error",
     };
   }
-  // redirect("/dashboard/patient");
 };
 
-//cancel an appointment - RMT
-//change an appointment - user
-
-//change an appointment - RMT
-
 export async function getAppointmentById(id) {
-  // Connect to the database
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
@@ -779,21 +700,13 @@ export async function getAppointmentById(id) {
       return null;
     }
 
-    // Convert ObjectId to string for serialization
-    return {
-      ...appointment,
-      _id: appointment._id.toString(),
-      userId: appointment.userId.toString(),
-      RMTLocationId: appointment.RMTLocationId.toString(),
-    };
+    return serializeDocument(appointment);
   } catch (error) {
     console.error("Error fetching appointment:", error);
     throw new Error("Failed to fetch appointment");
   }
 }
-//confirm an appointment - RMT
 
-//confirm an appointment - user
 export async function submitConsentForm(data) {
   try {
     const db = await getDatabase();
@@ -812,7 +725,6 @@ export async function submitConsentForm(data) {
     );
 
     if (result.modifiedCount === 1) {
-      // Revalidate the patient dashboard page
       revalidatePath("/dashboard/patient");
       return { success: true };
     } else {
@@ -829,7 +741,6 @@ export async function submitConsentForm(data) {
   }
 }
 
-//reschedule an appointment - user - set to rescheduling
 export async function setAppointmentStatus(appointmentId, status) {
   const db = await getDatabase();
 
@@ -842,12 +753,11 @@ export async function setAppointmentStatus(appointmentId, status) {
       throw new Error(`Appointment not found with id: ${appointmentId}`);
     }
 
-    // If the appointment is already in the desired status, return success without updating
     if (appointment.status === status) {
-      return {
+      return serializeDocument({
         success: true,
         message: `Appointment is already in ${status} status`,
-      };
+      });
     }
 
     const result = await db
@@ -858,10 +768,10 @@ export async function setAppointmentStatus(appointmentId, status) {
       );
 
     if (result.modifiedCount === 1) {
-      return {
+      return serializeDocument({
         success: true,
         message: `Appointment status updated to ${status}`,
-      };
+      });
     } else {
       throw new Error("Failed to update appointment status");
     }
@@ -871,7 +781,6 @@ export async function setAppointmentStatus(appointmentId, status) {
   }
 }
 
-//get all available and rescheduling status appointments for user
 export async function getAllAvailableAppointments(rmtLocationId, duration) {
   console.log(
     `getAllAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}`
@@ -881,12 +790,13 @@ export async function getAllAvailableAppointments(rmtLocationId, duration) {
 
   try {
     const objectId = new ObjectId(rmtLocationId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayString = today.toISOString().split("T")[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    const tomorrowString = tomorrow.toISOString().split("T")[0];
 
     console.log(
-      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date >= ${todayString}`
+      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date >= ${tomorrowString}`
     );
 
     const appointments = await db
@@ -894,7 +804,7 @@ export async function getAllAvailableAppointments(rmtLocationId, duration) {
       .find({
         RMTLocationId: objectId,
         status: { $in: ["available", "rescheduling"] },
-        appointmentDate: { $gte: todayString },
+        appointmentDate: { $gte: tomorrowString },
       })
       .sort({ appointmentDate: 1, appointmentStartTime: 1 })
       .toArray();
@@ -920,7 +830,7 @@ export async function getAllAvailableAppointments(rmtLocationId, duration) {
       times: times.sort(),
     }));
 
-    return result;
+    return serializeDocument(result);
   } catch (error) {
     console.error("Error fetching appointments:", error);
     throw error;
@@ -938,19 +848,16 @@ export async function rescheduleAppointment(
     RMTLocationId,
   }
 ) {
-  // Check if the user is logged in
   const session = await getSession();
   if (!session) {
-    return {
+    return serializeDocument({
       success: false,
       message: "You must be logged in to reschedule an appointment.",
-    };
+    });
   }
 
-  // Extract the user ID from the session
   const { _id } = session.resultObj;
 
-  // Connect to the database
   const db = await getDatabase();
 
   function addDurationToTime(appointmentTime, duration) {
@@ -967,7 +874,6 @@ export async function rescheduleAppointment(
   const formattedEndTime = addDurationToTime(appointmentTime, duration);
 
   try {
-    // Step 1: Change the status of the current appointment to "available" and clear consent info
     const currentAppointmentUpdate = await db
       .collection("appointments")
       .updateOne(
@@ -983,13 +889,12 @@ export async function rescheduleAppointment(
       );
 
     if (currentAppointmentUpdate.matchedCount === 0) {
-      return {
+      return serializeDocument({
         success: false,
         message: "Current appointment not found.",
-      };
+      });
     }
 
-    // Step 2: Book the new appointment
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
       appointmentDate: appointmentDate,
@@ -1015,21 +920,14 @@ export async function rescheduleAppointment(
     if (result.matchedCount > 0) {
       console.log("Appointment rescheduled successfully.");
 
-      // TODO: Implement these additional steps
-      // Send email to RMT to notify of appointment rescheduling
-      // Update Google Calendar event
-      // Send email to patient to confirm rescheduling
-      // Update reminder email for the new appointment time
-
       revalidatePath("/dashboard/patient");
-      return {
+      return serializeDocument({
         success: true,
         message: "Appointment rescheduled successfully.",
-      };
+      });
     } else {
       console.log("No matching appointment found for rescheduling.");
 
-      // If no new appointment was found, revert the status of the original appointment
       await db
         .collection("appointments")
         .updateOne(
@@ -1037,21 +935,154 @@ export async function rescheduleAppointment(
           { $set: { status: "booked", userId: _id } }
         );
 
-      return {
+      return serializeDocument({
         success: false,
         message: "No matching appointment found for rescheduling.",
-      };
+      });
     }
   } catch (error) {
     console.error(
       "An error occurred while rescheduling the appointment:",
       error
     );
-    return {
+    return serializeDocument({
       success: false,
       message: "An error occurred while rescheduling the appointment.",
-    };
+    });
   }
 }
-//get all appointments for a specific RMT - view their schedule
-//block off time in the RMT's schedule
+
+////////////////////////////////////////////////////////////
+////////////////////HEALTH HISTORY//////////////////////////
+////////////////////////////////////////////////////////////
+
+async function checkAuth() {
+  const session = await getSession();
+  if (!session || !session.resultObj?._id) {
+    throw new Error("Unauthorized");
+  }
+  return session.resultObj._id;
+}
+
+export async function addHealthHistory(data) {
+  try {
+    const userId = await checkAuth();
+    const db = await getDatabase();
+    const healthHistoryCollection = db.collection("healthhistories");
+
+    // Validate data against Zod schema
+    const validatedData = healthHistorySchema.parse(data);
+
+    const healthHistoryData = {
+      ...validatedData,
+      createdAt: new Date(),
+      userId: new ObjectId(userId),
+    };
+
+    const result = await healthHistoryCollection.insertOne(healthHistoryData);
+
+    if (result.acknowledged) {
+      revalidatePath("/dashboard/patient");
+      return { success: true, id: result.insertedId };
+    } else {
+      throw new Error("Failed to insert health history");
+    }
+  } catch (error) {
+    console.error("Error adding health history:", error);
+    if (error instanceof z.ZodError) {
+      throw new Error(
+        `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
+      );
+    }
+    throw new Error("Failed to add health history");
+  }
+}
+
+export async function getClientHealthHistories(id) {
+  try {
+    // Validate the input id
+    const validatedId = z.string().nonempty().parse(id);
+
+    // Get the authenticated user's ID
+    const authenticatedUserId = await checkAuth();
+
+    // Compare the input id with the authenticated user's ID
+    if (validatedId !== authenticatedUserId.toString()) {
+      throw new Error("Unauthorized access: User ID mismatch");
+    }
+
+    const db = await getDatabase();
+    const healthHistoryCollection = db.collection("healthhistories");
+
+    const healthHistories = await healthHistoryCollection
+      .find({ userId: new ObjectId(authenticatedUserId) })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    // Serialize the health histories
+    const serializedHealthHistories = healthHistories.map(serializeDocument);
+
+    console.log(
+      `Retrieved ${serializedHealthHistories.length} health histories for user ${authenticatedUserId}`
+    );
+
+    return serializedHealthHistories;
+  } catch (error) {
+    console.error("Error fetching client health histories:", error);
+    if (error instanceof z.ZodError) {
+      throw new Error(
+        `Invalid input: ${error.errors.map((e) => e.message).join(", ")}`
+      );
+    }
+    if (error.message === "Unauthorized access: User ID mismatch") {
+      throw new Error("Unauthorized access");
+    }
+    throw new Error("Failed to fetch client health histories");
+  }
+}
+
+export async function getLatestHealthHistory() {
+  try {
+    const userId = await checkAuth();
+    const db = await getDatabase();
+    const healthHistoryCollection = db.collection("healthhistories");
+
+    const latestHistory = await healthHistoryCollection
+      .find({ userId: new ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .toArray();
+
+    if (latestHistory.length === 0) {
+      return null;
+    }
+
+    return latestHistory[0];
+  } catch (error) {
+    console.error("Error fetching latest health history:", error);
+    throw new Error("Failed to fetch latest health history");
+  }
+}
+
+export async function deleteHealthHistory(id) {
+  try {
+    const userId = await checkAuth();
+    const db = await getDatabase();
+    const healthHistoryCollection = db.collection("healthhistories");
+
+    const result = await healthHistoryCollection.deleteOne({
+      _id: new ObjectId(id),
+      userId: userId,
+    });
+
+    if (result.deletedCount === 1) {
+      revalidatePath("/dashboard/patient");
+      return { success: true, id: id };
+    } else {
+      throw new Error("Failed to delete health history or record not found");
+    }
+  } catch (error) {
+    console.error("Error deleting health history:", error);
+    throw new Error("Failed to delete health history");
+  }
+}

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
-import Receipts from "@/components/patients/Receipts";
-import { getSession, getReceipts } from "@/app/_actions";
+import HealthHistoryForm from "@/components/patients/HealthHistoryForm";
+import { getSession, getClientHealthHistories } from "@/app/_actions";
 import { redirect } from "next/navigation";
 
 async function getUserDetails() {
@@ -11,9 +11,9 @@ async function getUserDetails() {
   return currentUser.resultObj;
 }
 
-async function requestReceipts(userId) {
-  const receipts = await getReceipts(userId);
-  return receipts;
+async function getHealthHistory(userId) {
+  const histories = await getClientHealthHistories(userId);
+  return histories.length > 0 ? histories[0] : null;
 }
 
 function LoadingFallback() {
@@ -26,12 +26,12 @@ function LoadingFallback() {
 
 export default async function HealthHistoryPage() {
   const user = await getUserDetails();
-  const receipts = await requestReceipts(user._id);
+  const healthHistory = await getHealthHistory(user._id);
 
   return (
     <section className="container mx-auto px-4 py-8">
       <Suspense fallback={<LoadingFallback />}>
-        <Receipts user={user} receipts={receipts} />
+        <HealthHistoryForm user={user} initialHealthHistory={healthHistory} />
       </Suspense>
     </section>
   );

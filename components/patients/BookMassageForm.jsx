@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { getAvailableAppointments, bookAppointment } from "@/app/_actions";
 
-function BookMassageForm({ rmtSetup }) {
+function BookMassageForm({ rmtSetup, user, healthHistory }) {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [appointmentTimes, setAppointmentTimes] = useState([]);
   const [currentPage, setCurrentPage] = useState(0);
