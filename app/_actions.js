@@ -505,7 +505,7 @@ export async function getUsersAppointments(id) {
 export async function getAvailableAppointments(
   rmtLocationId,
   duration,
-  timezone = "UTC"
+  timezone = "America/New_York"
 ) {
   console.log(
     `getAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}, timezone: ${timezone}`
@@ -640,20 +640,24 @@ function generateAvailableStartTimes(
   );
   const availableTimes = [];
   const now = new Date();
-  const startTime = new Date(
-    `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
-  );
-  const endTime = new Date(
-    `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
-  );
+  const appointmentDate = appointment.appointmentDate;
   const durationMs = duration * 60 * 1000;
   const bufferMs = 30 * 60 * 1000;
 
-  console.log(
-    `Appointment start time: ${startTime.toISOString()}, end time: ${endTime.toISOString()}`
+  const startTime = new Date(
+    `${appointmentDate}T${appointment.appointmentStartTime}:00`
+  );
+  const endTime = new Date(
+    `${appointmentDate}T${appointment.appointmentEndTime}:00`
   );
 
-  let currentTime = startTime;
+  console.log(
+    `Appointment start time: ${startTime.toLocaleString("en-US", {
+      timeZone: timezone,
+    })}, end time: ${endTime.toLocaleString("en-US", { timeZone: timezone })}`
+  );
+
+  let currentTime = new Date(startTime);
 
   while (currentTime.getTime() + durationMs <= endTime.getTime()) {
     if (currentTime > now) {
@@ -667,10 +671,12 @@ function generateAvailableStartTimes(
           timezone
         )
       ) {
-        const timeInTimezone = new Date(
-          currentTime.toLocaleString("en-US", { timeZone: timezone })
-        );
-        const timeString = timeInTimezone.toTimeString().substr(0, 5);
+        const timeString = currentTime.toLocaleTimeString("en-US", {
+          timeZone: timezone,
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
         console.log(`Adding available time: ${timeString}`);
         availableTimes.push(timeString);
       }
@@ -693,7 +699,13 @@ function isConflictingWithBusyTimes(start, end, busyTimes, bufferMs, timezone) {
     const isConflict = startWithBuffer < busyEnd && endWithBuffer > busyStart;
     if (isConflict) {
       console.log(
-        `Conflict detected: Appointment ${start.toISOString()} - ${end.toISOString()} conflicts with busy time ${busyStart.toISOString()} - ${busyEnd.toISOString()}`
+        `Conflict detected: Appointment ${start.toLocaleString("en-US", {
+          timeZone: timezone,
+        })} - ${end.toLocaleString("en-US", {
+          timeZone: timezone,
+        })} conflicts with busy time ${busyStart.toLocaleString("en-US", {
+          timeZone: timezone,
+        })} - ${busyEnd.toLocaleString("en-US", { timeZone: timezone })}`
       );
     }
     return isConflict;
