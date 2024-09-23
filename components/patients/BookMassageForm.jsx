@@ -49,8 +49,10 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
           );
           const times = await getAvailableAppointments(
             formData.RMTLocationId,
-            parseInt(formData.duration)
+            parseInt(formData.duration),
+            "America/New_York"
           );
+
           console.log("Fetched appointment times:", times);
           setAppointmentTimes(times);
         } catch (error) {
