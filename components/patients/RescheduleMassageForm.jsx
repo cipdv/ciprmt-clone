@@ -52,7 +52,8 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
           );
           const times = await getAllAvailableAppointments(
             formData.RMTLocationId,
-            parseInt(formData.duration)
+            parseInt(formData.duration),
+            currentAppointment.googleCalendarEventId
           );
           console.log("Fetched appointment times:", times);
           setAppointmentTimes(times);

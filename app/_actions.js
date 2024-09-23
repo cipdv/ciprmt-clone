@@ -13,7 +13,33 @@ import { registerPatientSchema, loginSchema } from "./lib/zod/zodSchemas";
 import client from "./lib/database/db";
 import { z } from "zod";
 import { healthHistorySchema } from "./lib/zod/zodSchemas";
+import { google } from "googleapis";
+import { OAuth2Client } from "google-auth-library";
 
+// Set up JWT
+const secretKey = process.env.JWT_SECRET_KEY;
+const key = new TextEncoder().encode(secretKey);
+
+// Set up Google Calendar API
+const SCOPES = ["https://www.googleapis.com/auth/calendar"];
+const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY;
+const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
+const GOOGLE_PROJECT_NUMBER = process.env.GOOGLE_PROJECT_NUMBER;
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
+
+const jwtClient = new google.auth.JWT(
+  GOOGLE_CLIENT_EMAIL,
+  null,
+  GOOGLE_PRIVATE_KEY,
+  SCOPES
+);
+
+const calendar = google.calendar({
+  version: "v3",
+  auth: jwtClient,
+});
+
+// Helper function to serialize MongoDB documents
 function serializeDocument(doc) {
   return JSON.parse(
     JSON.stringify(doc, (key, value) => {
@@ -27,9 +53,6 @@ function serializeDocument(doc) {
     })
   );
 }
-
-const secretKey = process.env.JWT_SECRET_KEY;
-const key = new TextEncoder().encode(secretKey);
 
 export async function encrypt(payload) {
   return await new SignJWT(payload)
@@ -494,8 +517,13 @@ export async function getAvailableAppointments(rmtLocationId, duration) {
     tomorrow.setHours(0, 0, 0, 0);
     const tomorrowString = tomorrow.toISOString().split("T")[0];
 
+    // Calculate end date (3 months from tomorrow)
+    const endDate = new Date(tomorrow);
+    endDate.setMonth(endDate.getMonth() + 3);
+    const endDateString = endDate.toISOString().split("T")[0];
+
     console.log(
-      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date >= ${tomorrowString}`
+      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date range: ${tomorrowString} to ${endDateString}`
     );
 
     const appointments = await db
@@ -503,12 +531,15 @@ export async function getAvailableAppointments(rmtLocationId, duration) {
       .find({
         RMTLocationId: objectId,
         status: "available",
-        appointmentDate: { $gte: tomorrowString },
+        appointmentDate: { $gte: tomorrowString, $lte: endDateString },
       })
       .sort({ appointmentDate: 1, appointmentStartTime: 1 })
       .toArray();
 
     console.log(`Found ${appointments.length} available appointments`);
+
+    // Fetch busy times from Google Calendar
+    const busyTimes = await getBusyTimes(tomorrowString, endDateString);
 
     const groupedAppointments = appointments.reduce((acc, appointment) => {
       const date = appointment.appointmentDate;
@@ -518,7 +549,8 @@ export async function getAvailableAppointments(rmtLocationId, duration) {
 
       const availableTimes = generateAvailableStartTimes(
         appointment,
-        parseInt(duration)
+        parseInt(duration),
+        busyTimes
       );
       acc[date].push(...availableTimes);
       return acc;
@@ -535,8 +567,43 @@ export async function getAvailableAppointments(rmtLocationId, duration) {
     throw error;
   }
 }
+//helper function to get busy times from Google Calendar
+async function getBusyTimes(startDate, endDate) {
+  const MAX_DAYS = 60; // Maximum number of days to query at once
+  const allBusyTimes = [];
+  let currentStartDate = new Date(startDate);
+  const finalEndDate = new Date(endDate);
 
-function generateAvailableStartTimes(appointment, duration) {
+  while (currentStartDate < finalEndDate) {
+    let currentEndDate = new Date(currentStartDate);
+    currentEndDate.setDate(currentEndDate.getDate() + MAX_DAYS);
+
+    if (currentEndDate > finalEndDate) {
+      currentEndDate = finalEndDate;
+    }
+
+    try {
+      const response = await calendar.freebusy.query({
+        resource: {
+          timeMin: currentStartDate.toISOString(),
+          timeMax: currentEndDate.toISOString(),
+          items: [{ id: GOOGLE_CALENDAR_ID }],
+        },
+      });
+
+      allBusyTimes.push(...response.data.calendars[GOOGLE_CALENDAR_ID].busy);
+    } catch (error) {
+      console.error("Error fetching busy times from Google Calendar:", error);
+    }
+
+    currentStartDate = new Date(currentEndDate);
+    currentStartDate.setDate(currentStartDate.getDate() + 1);
+  }
+
+  return allBusyTimes;
+}
+//helper function to generate available start times
+function generateAvailableStartTimes(appointment, duration, busyTimes) {
   const availableTimes = [];
   const now = new Date();
   const startTime = new Date(
@@ -546,17 +613,46 @@ function generateAvailableStartTimes(appointment, duration) {
     `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
   );
   const durationMs = duration * 60 * 1000;
+  const bufferMs = 30 * 60 * 1000; // 30 minutes buffer
 
   let currentTime = startTime;
 
   while (currentTime.getTime() + durationMs <= endTime.getTime()) {
     if (currentTime > now) {
-      availableTimes.push(currentTime.toTimeString().substr(0, 5));
+      const potentialEndTime = new Date(currentTime.getTime() + durationMs);
+      if (
+        !isConflictingWithBusyTimesExcludingCurrent(
+          currentTime,
+          potentialEndTime,
+          busyTimes,
+          bufferMs
+        )
+      ) {
+        availableTimes.push(currentTime.toTimeString().substr(0, 5));
+      }
     }
-    currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
+    currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000); // 30-minute intervals
   }
 
   return availableTimes;
+}
+//helper function to check if appointment time is conflicting with busy times
+function isConflictingWithBusyTimesExcludingCurrent(
+  start,
+  end,
+  busyTimes,
+  bufferMs
+) {
+  const startWithBuffer = new Date(start.getTime() - bufferMs);
+  const endWithBuffer = new Date(end.getTime() + bufferMs);
+
+  return busyTimes.some((busy) => {
+    const busyStart = new Date(busy.start);
+    const busyEnd = new Date(busy.end);
+
+    // Check if the appointment time (including buffer) overlaps with a busy period
+    return startWithBuffer < busyEnd && endWithBuffer > busyStart;
+  });
 }
 
 export async function bookAppointment({
@@ -574,7 +670,7 @@ export async function bookAppointment({
     };
   }
 
-  const { _id } = session.resultObj;
+  const { _id, firstName, lastName, email } = session.resultObj;
 
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
@@ -600,6 +696,36 @@ export async function bookAppointment({
       appointmentEndTime: { $gte: formattedEndTime },
     };
 
+    // Create Google Calendar event first
+    const event = {
+      summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
+      location: location,
+      description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
+      start: {
+        dateTime: `${appointmentDate}T${appointmentTime}:00`,
+        timeZone: "America/Toronto",
+      },
+      end: {
+        dateTime: `${appointmentDate}T${formattedEndTime}:00`,
+        timeZone: "America/Toronto",
+      },
+      colorId: "2", // Sage color
+    };
+
+    let createdEvent;
+    try {
+      createdEvent = await calendar.events.insert({
+        calendarId: GOOGLE_CALENDAR_ID,
+        resource: event,
+      });
+      console.log("Event created: %s", createdEvent.data.htmlLink);
+    } catch (error) {
+      console.error("Error creating Google Calendar event:", error);
+      return {
+        message: "An error occurred while creating the Google Calendar event.",
+      };
+    }
+
     const update = {
       $set: {
         status: "booked",
@@ -609,6 +735,8 @@ export async function bookAppointment({
         userId: _id,
         duration: duration,
         workplace: workplace,
+        googleCalendarEventId: createdEvent.data.id,
+        googleCalendarEventLink: createdEvent.data.htmlLink,
       },
     };
 
@@ -618,6 +746,18 @@ export async function bookAppointment({
       console.log("Appointment updated successfully.");
     } else {
       console.log("No matching appointment found.");
+      // If no matching appointment, delete the created Google Calendar event
+      try {
+        await calendar.events.delete({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: createdEvent.data.id,
+        });
+        console.log(
+          "Google Calendar event deleted due to no matching appointment."
+        );
+      } catch (deleteError) {
+        console.error("Error deleting Google Calendar event:", deleteError);
+      }
       return {
         message: "No matching appointment found.",
       };
@@ -638,6 +778,7 @@ export const cancelAppointment = async (prevState, formData) => {
   if (!session) {
     return {
       message: "You must be logged in to cancel an appointment.",
+      status: "error",
     };
   }
 
@@ -652,6 +793,31 @@ export const cancelAppointment = async (prevState, formData) => {
       userId: _id,
     };
 
+    // First, fetch the appointment to get the Google Calendar event ID
+    const appointment = await db.collection("appointments").findOne(query);
+
+    if (!appointment) {
+      console.log("No matching appointment found.");
+      return {
+        message: "No matching appointment found.",
+        status: "error",
+      };
+    }
+
+    // If there's a Google Calendar event ID, delete the event
+    if (appointment.googleCalendarEventId) {
+      try {
+        await calendar.events.delete({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: appointment.googleCalendarEventId,
+        });
+        console.log("Google Calendar event deleted successfully.");
+      } catch (calendarError) {
+        console.error("Error deleting Google Calendar event:", calendarError);
+        // We'll continue with the cancellation even if the Calendar deletion fails
+      }
+    }
+
     const update = {
       $set: {
         status: "available",
@@ -660,16 +826,19 @@ export const cancelAppointment = async (prevState, formData) => {
         workplace: null,
         consentForm: null,
         consentFormSubmittedAt: null,
+        googleCalendarEventId: null,
+        googleCalendarEventLink: null,
       },
     };
 
     const result = await db.collection("appointments").updateOne(query, update);
 
     if (result.matchedCount > 0) {
-      console.log("Appointment updated successfully.");
+      console.log("Appointment cancelled successfully.");
       revalidatePath("/dashboard/patient");
       return {
         status: "success",
+        message: "Appointment cancelled successfully.",
       };
     } else {
       console.log("No matching appointment found.");
@@ -679,7 +848,7 @@ export const cancelAppointment = async (prevState, formData) => {
       };
     }
   } catch (error) {
-    console.error("An error occurred while updating the appointment:", error);
+    console.error("An error occurred while cancelling the appointment:", error);
     return {
       message: "An error occurred while cancelling the appointment.",
       status: "error",
@@ -781,10 +950,20 @@ export async function setAppointmentStatus(appointmentId, status) {
   }
 }
 
-export async function getAllAvailableAppointments(rmtLocationId, duration) {
+export async function getAllAvailableAppointments(
+  rmtLocationId,
+  duration,
+  currentAppointmentGoogleId
+) {
   console.log(
-    `getAllAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}`
+    `getAllAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}, currentAppointmentGoogleId: ${currentAppointmentGoogleId}`
   );
+
+  if (!currentAppointmentGoogleId) {
+    console.warn(
+      "currentAppointmentGoogleId is null or undefined. This may affect the ability to exclude the current appointment from busy times."
+    );
+  }
 
   const db = await getDatabase();
 
@@ -795,21 +974,44 @@ export async function getAllAvailableAppointments(rmtLocationId, duration) {
     tomorrow.setHours(0, 0, 0, 0);
     const tomorrowString = tomorrow.toISOString().split("T")[0];
 
+    const endDate = new Date(tomorrow);
+    endDate.setMonth(endDate.getMonth() + 3);
+    const endDateString = endDate.toISOString().split("T")[0];
+
     console.log(
-      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date >= ${tomorrowString}`
+      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date range: ${tomorrowString} to ${endDateString}`
     );
 
+    let currentAppointment = null;
     const appointments = await db
       .collection("appointments")
       .find({
         RMTLocationId: objectId,
-        status: { $in: ["available", "rescheduling"] },
-        appointmentDate: { $gte: tomorrowString },
+        appointmentDate: { $gte: tomorrowString, $lte: endDateString },
       })
       .sort({ appointmentDate: 1, appointmentStartTime: 1 })
       .toArray();
 
-    console.log(`Found ${appointments.length} available appointments`);
+    if (currentAppointmentGoogleId) {
+      currentAppointment = appointments.find(
+        (apt) =>
+          apt.googleCalendarEventId === currentAppointmentGoogleId ||
+          apt.googleCalendarEventLink === currentAppointmentGoogleId
+      );
+      if (currentAppointment) {
+        console.log("Current appointment found:", currentAppointment);
+      } else {
+        console.log("Current appointment not found in the database");
+      }
+    }
+
+    console.log(`Found ${appointments.length} potential appointments`);
+
+    const busyTimes = await getBusyTimesExcludingCurrent(
+      tomorrowString,
+      endDateString,
+      currentAppointmentGoogleId
+    );
 
     const groupedAppointments = appointments.reduce((acc, appointment) => {
       const date = appointment.appointmentDate;
@@ -817,9 +1019,11 @@ export async function getAllAvailableAppointments(rmtLocationId, duration) {
         acc[date] = [];
       }
 
-      const availableTimes = generateAvailableStartTimes(
+      const availableTimes = generateAvailableStartTimesForRescheduling(
         appointment,
-        parseInt(duration)
+        parseInt(duration),
+        busyTimes,
+        currentAppointment
       );
       acc[date].push(...availableTimes);
       return acc;
@@ -835,6 +1039,133 @@ export async function getAllAvailableAppointments(rmtLocationId, duration) {
     console.error("Error fetching appointments:", error);
     throw error;
   }
+}
+
+//helper function to get busy times from Google Calendar excluding current appointment
+async function getBusyTimesExcludingCurrent(
+  startDate,
+  endDate,
+  currentAppointmentGoogleId
+) {
+  const MAX_DAYS = 60;
+  const allBusyTimes = [];
+  let currentStartDate = new Date(startDate);
+  const finalEndDate = new Date(endDate);
+
+  while (currentStartDate < finalEndDate) {
+    let currentEndDate = new Date(currentStartDate);
+    currentEndDate.setDate(currentEndDate.getDate() + MAX_DAYS);
+
+    if (currentEndDate > finalEndDate) {
+      currentEndDate = finalEndDate;
+    }
+
+    try {
+      const response = await calendar.freebusy.query({
+        resource: {
+          timeMin: currentStartDate.toISOString(),
+          timeMax: currentEndDate.toISOString(),
+          items: [{ id: GOOGLE_CALENDAR_ID }],
+        },
+      });
+
+      const busyTimes = response.data.calendars[GOOGLE_CALENDAR_ID].busy;
+
+      const filteredBusyTimes = busyTimes.filter((busyTime) => {
+        if (!currentAppointmentGoogleId) return true;
+        return !busyTime.id || busyTime.id !== currentAppointmentGoogleId;
+      });
+
+      allBusyTimes.push(...filteredBusyTimes);
+    } catch (error) {
+      console.error("Error fetching busy times from Google Calendar:", error);
+    }
+
+    currentStartDate = new Date(currentEndDate);
+    currentStartDate.setDate(currentStartDate.getDate() + 1);
+  }
+
+  return allBusyTimes;
+}
+
+//helper function to generate available start times for rescheduling
+function generateAvailableStartTimesForRescheduling(
+  appointment,
+  duration,
+  busyTimes,
+  currentAppointment
+) {
+  const availableTimes = [];
+  const now = new Date();
+  const isCurrentAppointment =
+    currentAppointment &&
+    appointment.appointmentDate === currentAppointment.appointmentDate &&
+    appointment.appointmentStartTime ===
+      currentAppointment.appointmentStartTime;
+
+  const startTime = new Date(
+    `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+  );
+  const endTime = new Date(
+    `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+  );
+  const durationMs = duration * 60 * 1000;
+  const bufferMs = 30 * 60 * 1000;
+
+  let currentTime = startTime;
+
+  while (currentTime.getTime() + durationMs <= endTime.getTime()) {
+    if (currentTime > now) {
+      const potentialEndTime = new Date(currentTime.getTime() + durationMs);
+      if (
+        isCurrentAppointment ||
+        !isConflictingWithBusyTimesForRescheduling(
+          currentTime,
+          potentialEndTime,
+          busyTimes,
+          bufferMs,
+          currentAppointment
+        )
+      ) {
+        availableTimes.push(currentTime.toTimeString().substr(0, 5));
+      }
+    }
+    currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
+  }
+
+  return availableTimes;
+}
+
+//helper function to check if appointment time is conflicting with busy times for rescheduling
+function isConflictingWithBusyTimesForRescheduling(
+  start,
+  end,
+  busyTimes,
+  bufferMs,
+  currentAppointment
+) {
+  const startWithBuffer = new Date(start.getTime() - bufferMs);
+  const endWithBuffer = new Date(end.getTime() + bufferMs);
+
+  if (
+    currentAppointment &&
+    start >=
+      new Date(
+        `${currentAppointment.appointmentDate}T${currentAppointment.appointmentStartTime}`
+      ) &&
+    end <=
+      new Date(
+        `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndTime}`
+      )
+  ) {
+    return false;
+  }
+
+  return busyTimes.some((busy) => {
+    const busyStart = new Date(busy.start);
+    const busyEnd = new Date(busy.end);
+    return startWithBuffer < busyEnd && endWithBuffer > busyStart;
+  });
 }
 
 export async function rescheduleAppointment(
@@ -856,7 +1187,7 @@ export async function rescheduleAppointment(
     });
   }
 
-  const { _id } = session.resultObj;
+  const { _id, firstName, lastName, email } = session.resultObj;
 
   const db = await getDatabase();
 
@@ -874,6 +1205,48 @@ export async function rescheduleAppointment(
   const formattedEndTime = addDurationToTime(appointmentTime, duration);
 
   try {
+    // Fetch the current appointment to get the Google Calendar event ID
+    const currentAppointment = await db
+      .collection("appointments")
+      .findOne({ _id: new ObjectId(currentAppointmentId) });
+
+    if (!currentAppointment) {
+      return serializeDocument({
+        success: false,
+        message: "Current appointment not found.",
+      });
+    }
+
+    // Update the Google Calendar event
+    if (currentAppointment.googleCalendarEventId) {
+      const updatedEvent = {
+        summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
+        location: location,
+        description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
+        start: {
+          dateTime: `${appointmentDate}T${appointmentTime}:00`,
+          timeZone: "America/Toronto",
+        },
+        end: {
+          dateTime: `${appointmentDate}T${formattedEndTime}:00`,
+          timeZone: "America/Toronto",
+        },
+        colorId: "2", // Sage color
+      };
+
+      try {
+        await calendar.events.update({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: currentAppointment.googleCalendarEventId,
+          resource: updatedEvent,
+        });
+        console.log("Google Calendar event updated successfully.");
+      } catch (calendarError) {
+        console.error("Error updating Google Calendar event:", calendarError);
+        // We'll continue with the rescheduling even if the Calendar update fails
+      }
+    }
+
     const currentAppointmentUpdate = await db
       .collection("appointments")
       .updateOne(
@@ -884,6 +1257,8 @@ export async function rescheduleAppointment(
             userId: null,
             consentForm: null,
             consentFormSubmittedAt: null,
+            googleCalendarEventId: null,
+            googleCalendarEventLink: null,
           },
         }
       );
@@ -912,6 +1287,8 @@ export async function rescheduleAppointment(
         userId: _id,
         duration: duration,
         workplace: workplace,
+        googleCalendarEventId: currentAppointment.googleCalendarEventId,
+        googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
       },
     };
 
@@ -928,12 +1305,43 @@ export async function rescheduleAppointment(
     } else {
       console.log("No matching appointment found for rescheduling.");
 
-      await db
-        .collection("appointments")
-        .updateOne(
-          { _id: new ObjectId(currentAppointmentId) },
-          { $set: { status: "booked", userId: _id } }
-        );
+      // If rescheduling fails, revert the Google Calendar event to its original state
+      if (currentAppointment.googleCalendarEventId) {
+        try {
+          await calendar.events.update({
+            calendarId: GOOGLE_CALENDAR_ID,
+            eventId: currentAppointment.googleCalendarEventId,
+            resource: {
+              start: {
+                dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
+                timeZone: "America/Toronto",
+              },
+              end: {
+                dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
+                timeZone: "America/Toronto",
+              },
+            },
+          });
+          console.log("Google Calendar event reverted successfully.");
+        } catch (calendarError) {
+          console.error(
+            "Error reverting Google Calendar event:",
+            calendarError
+          );
+        }
+      }
+
+      await db.collection("appointments").updateOne(
+        { _id: new ObjectId(currentAppointmentId) },
+        {
+          $set: {
+            status: "booked",
+            userId: _id,
+            googleCalendarEventId: currentAppointment.googleCalendarEventId,
+            googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+          },
+        }
+      );
 
       return serializeDocument({
         success: false,

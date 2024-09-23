@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import { getReceiptById, getSession } from "@/app/_actions";
 import { notFound, redirect } from "next/navigation";
 import ReceiptDownloadButton from "@/components/patients/ReceiptDownloadButton";
+import LoadingSpinner from "@/components/LoadingSpinner";
 
 async function getUserDetails() {
   const currentUser = await getSession();
@@ -10,13 +12,11 @@ async function getUserDetails() {
   return currentUser.resultObj;
 }
 
-// Helper function to format date consistently
 const formatDate = (dateString) => {
   const options = { year: "numeric", month: "long", day: "numeric" };
   return new Date(dateString).toLocaleDateString("en-US", options);
 };
 
-// Helper function to format price
 const formatPrice = (price) => {
   if (typeof price === "number") {
     return price.toFixed(2);
@@ -24,9 +24,8 @@ const formatPrice = (price) => {
   return price || "N/A";
 };
 
-export default async function ReceiptPage({ params }) {
+async function ReceiptDetails({ params }) {
   const user = await getUserDetails();
-
   const receipt = await getReceiptById(params.id);
 
   if (!receipt) {
@@ -60,7 +59,6 @@ export default async function ReceiptPage({ params }) {
             <p className="text-gray-600">Price:</p>
             <p className="font-semibold">${formatPrice(receipt.price)}</p>
           </div>
-
           <div>
             <p className="text-gray-600">Receipt ID:</p>
             <p className="font-semibold">{receipt._id || "N/A"}</p>
@@ -71,5 +69,13 @@ export default async function ReceiptPage({ params }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ReceiptPage({ params }) {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ReceiptDetails params={params} />
+    </Suspense>
   );
 }
