@@ -541,11 +541,7 @@ export async function getAvailableAppointments(
 
     console.log(`Found ${appointments.length} available appointments`);
 
-    const busyTimes = await getBusyTimes(
-      tomorrowString,
-      endDateString,
-      timezone
-    );
+    const busyTimes = await getBusyTimes(tomorrowString, endDateString);
 
     const groupedAppointments = appointments.reduce((acc, appointment) => {
       const date = appointment.appointmentDate;
@@ -556,8 +552,7 @@ export async function getAvailableAppointments(
       const availableTimes = generateAvailableStartTimes(
         appointment,
         parseInt(duration),
-        busyTimes,
-        timezone
+        busyTimes
       );
       acc[date].push(...availableTimes);
       return acc;
@@ -565,7 +560,9 @@ export async function getAvailableAppointments(
 
     const result = Object.entries(groupedAppointments).map(([date, times]) => ({
       date,
-      times: times.sort(),
+      times: times
+        .sort()
+        .map((time) => convertToTimezone(date, time, timezone)),
     }));
 
     return serializeDocument(result);
@@ -575,7 +572,7 @@ export async function getAvailableAppointments(
   }
 }
 
-async function getBusyTimes(startDate, endDate, timezone) {
+async function getBusyTimes(startDate, endDate) {
   const MAX_DAYS = 60;
   const allBusyTimes = [];
   let currentStartDate = new Date(startDate);
@@ -592,13 +589,8 @@ async function getBusyTimes(startDate, endDate, timezone) {
     try {
       const response = await calendar.freebusy.query({
         resource: {
-          timeMin: new Date(
-            currentStartDate.toLocaleString("en-US", { timeZone: timezone })
-          ).toISOString(),
-          timeMax: new Date(
-            currentEndDate.toLocaleString("en-US", { timeZone: timezone })
-          ).toISOString(),
-          timeZone: timezone,
+          timeMin: currentStartDate.toISOString(),
+          timeMax: currentEndDate.toISOString(),
           items: [{ id: GOOGLE_CALENDAR_ID }],
         },
       });
@@ -615,19 +607,14 @@ async function getBusyTimes(startDate, endDate, timezone) {
   return allBusyTimes;
 }
 
-function generateAvailableStartTimes(
-  appointment,
-  duration,
-  busyTimes,
-  timezone
-) {
+function generateAvailableStartTimes(appointment, duration, busyTimes) {
   const availableTimes = [];
   const now = new Date();
   const startTime = new Date(
-    `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+    `${appointment.appointmentDate}T${appointment.appointmentStartTime}Z`
   );
   const endTime = new Date(
-    `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+    `${appointment.appointmentDate}T${appointment.appointmentEndTime}Z`
   );
   const durationMs = duration * 60 * 1000;
   const bufferMs = 30 * 60 * 1000;
@@ -638,18 +625,14 @@ function generateAvailableStartTimes(
     if (currentTime > now) {
       const potentialEndTime = new Date(currentTime.getTime() + durationMs);
       if (
-        !isConflictingWithBusyTimesExcludingCurrent(
+        !isConflictingWithBusyTimes(
           currentTime,
           potentialEndTime,
           busyTimes,
-          bufferMs,
-          timezone
+          bufferMs
         )
       ) {
-        const timeInTimezone = new Date(
-          currentTime.toLocaleString("en-US", { timeZone: timezone })
-        );
-        availableTimes.push(timeInTimezone.toTimeString().substr(0, 5));
+        availableTimes.push(currentTime.toISOString().substr(11, 5));
       }
     }
     currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
@@ -658,13 +641,7 @@ function generateAvailableStartTimes(
   return availableTimes;
 }
 
-function isConflictingWithBusyTimesExcludingCurrent(
-  start,
-  end,
-  busyTimes,
-  bufferMs,
-  timezone
-) {
+function isConflictingWithBusyTimes(start, end, busyTimes, bufferMs) {
   const startWithBuffer = new Date(start.getTime() - bufferMs);
   const endWithBuffer = new Date(end.getTime() + bufferMs);
 
@@ -672,16 +649,17 @@ function isConflictingWithBusyTimesExcludingCurrent(
     const busyStart = new Date(busy.start);
     const busyEnd = new Date(busy.end);
 
-    const busyStartInTimezone = new Date(
-      busyStart.toLocaleString("en-US", { timeZone: timezone })
-    );
-    const busyEndInTimezone = new Date(
-      busyEnd.toLocaleString("en-US", { timeZone: timezone })
-    );
+    return startWithBuffer < busyEnd && endWithBuffer > busyStart;
+  });
+}
 
-    return (
-      startWithBuffer < busyEndInTimezone && endWithBuffer > busyStartInTimezone
-    );
+function convertToTimezone(date, time, timezone) {
+  const dateTime = new Date(`${date}T${time}Z`);
+  return dateTime.toLocaleTimeString("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
 
