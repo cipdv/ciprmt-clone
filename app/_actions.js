@@ -22,8 +22,9 @@ import {
   addMonths,
   differenceInDays,
   differenceInMilliseconds,
+  format,
 } from "date-fns";
-import { TZDate, tz } from "@date-fns/tz";
+import { TZDate, toDate, parseISO, tz } from "@date-fns/tz";
 
 // Set up JWT
 const secretKey = process.env.JWT_SECRET_KEY;
@@ -648,7 +649,7 @@ export async function getUsersAppointments(id) {
 export async function getAvailableAppointments(
   rmtLocationId,
   duration,
-  timezone = "America/New_York"
+  timezone = process.env.NEXT_PUBLIC_TIMEZONE
 ) {
   console.log(
     `getAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}, timezone: ${timezone}`
@@ -760,7 +761,7 @@ function generateAvailableStartTimes(
   appointment,
   duration,
   busyTimes,
-  timezone
+  timezone = process.env.NEXT_PUBLIC_TIMEZONE
 ) {
   const availableTimes = [];
   const now = new TZDate(new Date(), timezone);
@@ -779,10 +780,36 @@ function generateAvailableStartTimes(
 
   while (differenceInMilliseconds(endTime, currentTime) >= durationMs) {
     if (currentTime > now) {
+      const currentDate = format(currentTime, "yyyy-MM-dd");
+      const currentTimeFormatted = format(currentTime, "HH:mm");
       const potentialEndTime = addMinutes(currentTime, duration);
+
+      console.log(
+        `[${currentDate}] Checking time slot: ${currentTimeFormatted}`
+      );
+
+      const previousBusyTime = getPreviousBusyTime(
+        currentTime,
+        busyTimes,
+        timezone
+      );
+      const nextBusyTime = getNextBusyTime(
+        potentialEndTime,
+        busyTimes,
+        timezone
+      );
+
+      const hasSufficientBufferBefore =
+        !previousBusyTime ||
+        differenceInMilliseconds(currentTime, previousBusyTime) >= bufferMs;
+      const hasSufficientBufferAfter =
+        !nextBusyTime ||
+        differenceInMilliseconds(nextBusyTime, potentialEndTime) >= bufferMs;
 
       if (
         potentialEndTime <= endTime &&
+        hasSufficientBufferBefore &&
+        hasSufficientBufferAfter &&
         !isConflictingWithBusyTimes(
           currentTime,
           potentialEndTime,
@@ -790,23 +817,51 @@ function generateAvailableStartTimes(
           timezone
         )
       ) {
-        // Check if there's a 30-minute buffer after the appointment or if it's the last appointment of the day
-        const nextBusyTime = getNextBusyTime(
-          potentialEndTime,
-          busyTimes,
-          timezone
+        console.log(
+          `[${currentDate}] Previous busy time: ${
+            previousBusyTime
+              ? format(previousBusyTime, "yyyy-MM-dd HH:mm")
+              : "None"
+          }`
         );
-        if (
-          nextBusyTime === null ||
-          differenceInMilliseconds(nextBusyTime, potentialEndTime) >= bufferMs
-        ) {
-          availableTimes.push(
-            currentTime.toLocaleTimeString("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-              timeZone: timezone,
-            })
+        console.log(
+          `[${currentDate}] Next busy time: ${
+            nextBusyTime ? format(nextBusyTime, "yyyy-MM-dd HH:mm") : "None"
+          }`
+        );
+
+        if (previousBusyTime) {
+          const timeFromPreviousBusy =
+            differenceInMilliseconds(currentTime, previousBusyTime) / 60000;
+          console.log(
+            `[${currentDate}] Time from previous busy: ${timeFromPreviousBusy} minutes`
+          );
+        }
+
+        if (nextBusyTime) {
+          const timeUntilNextBusy =
+            differenceInMilliseconds(nextBusyTime, potentialEndTime) / 60000;
+          console.log(
+            `[${currentDate}] Time until next busy: ${timeUntilNextBusy} minutes`
+          );
+        }
+
+        console.log(
+          `[${currentDate}] Adding available time: ${currentTimeFormatted}`
+        );
+        availableTimes.push(format(currentTime, "HH:mm"));
+      } else {
+        if (!hasSufficientBufferBefore) {
+          console.log(
+            `[${currentDate}] Skipping time due to insufficient buffer before appointment`
+          );
+        } else if (!hasSufficientBufferAfter) {
+          console.log(
+            `[${currentDate}] Skipping time due to insufficient buffer after appointment`
+          );
+        } else {
+          console.log(
+            `[${currentDate}] Skipping time due to conflict with busy times`
           );
         }
       }
@@ -815,6 +870,15 @@ function generateAvailableStartTimes(
   }
 
   return availableTimes;
+}
+
+function getPreviousBusyTime(time, busyTimes, timezone) {
+  const previousBusy = busyTimes
+    .filter((busy) => new TZDate(busy.end, timezone) <= time)
+    .sort(
+      (a, b) => new TZDate(b.end, timezone) - new TZDate(a.end, timezone)
+    )[0];
+  return previousBusy ? new TZDate(previousBusy.end, timezone) : null;
 }
 
 function isConflictingWithBusyTimes(start, end, busyTimes, timezone) {
@@ -826,10 +890,11 @@ function isConflictingWithBusyTimes(start, end, busyTimes, timezone) {
 }
 
 function getNextBusyTime(time, busyTimes, timezone) {
-  const nextBusy = busyTimes.find((busy) => {
-    const busyStart = new TZDate(busy.start, timezone);
-    return busyStart > time;
-  });
+  const nextBusy = busyTimes
+    .filter((busy) => new TZDate(busy.start, timezone) >= time)
+    .sort(
+      (a, b) => new TZDate(a.start, timezone) - new TZDate(b.start, timezone)
+    )[0];
   return nextBusy ? new TZDate(nextBusy.start, timezone) : null;
 }
 
