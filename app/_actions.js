@@ -17,14 +17,19 @@ import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
 import {
-  addMinutes,
   addDays,
+  addMinutes,
   addMonths,
-  differenceInDays,
   differenceInMilliseconds,
+  differenceInMinutes,
   format,
+  isBefore,
+  isAfter,
+  isEqual,
+  parseISO,
+  subMinutes,
 } from "date-fns";
-import { TZDate, toDate, parseISO, tz } from "@date-fns/tz";
+import { TZDate, tz } from "@date-fns/tz";
 
 // Set up JWT
 const secretKey = process.env.JWT_SECRET_KEY;
@@ -646,6 +651,78 @@ export async function getUsersAppointments(id) {
   return serializeDocument(appointments);
 }
 
+// export async function getAvailableAppointments(
+//   rmtLocationId,
+//   duration,
+//   timezone = process.env.NEXT_PUBLIC_TIMEZONE
+// ) {
+//   console.log(
+//     `getAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}, timezone: ${timezone}`
+//   );
+
+//   const dbClient = await dbConnection;
+//   const db = await dbClient.db(process.env.DB_NAME);
+
+//   try {
+//     const objectId = new ObjectId(rmtLocationId);
+//     const tomorrow = new UTCDate(new Date());
+//     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+//     tomorrow.setUTCHours(0, 0, 0, 0);
+//     const tomorrowString = format(tomorrow, "yyyy-MM-dd", {
+//       timeZone: timezone,
+//     });
+
+//     // Calculate end date (4 months from tomorrow)
+//     const endDate = addMonths(tomorrow, 4);
+//     const endDateString = format(endDate, "yyyy-MM-dd", { timeZone: timezone });
+
+//     console.log(
+//       `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date range: ${tomorrowString} to ${endDateString}`
+//     );
+
+//     const appointments = await db
+//       .collection("appointments")
+//       .find({
+//         RMTLocationId: objectId,
+//         status: "available",
+//         appointmentDate: { $gte: tomorrowString, $lte: endDateString },
+//       })
+//       .sort({ appointmentDate: 1, appointmentStartTime: 1 })
+//       .toArray();
+
+//     console.log(`Found ${appointments.length} available appointments`);
+
+//     // Fetch busy times from Google Calendar
+//     const busyTimes = await getBusyTimes(
+//       tomorrowString,
+//       endDateString,
+//       timezone
+//     );
+
+//     const formattedAppointments = appointments
+//       .map((appointment) => {
+//         const availableTimes = generateAvailableStartTimes(
+//           appointment,
+//           parseInt(duration),
+//           busyTimes,
+//           timezone
+//         );
+//         return {
+//           date: appointment.appointmentDate,
+//           times: availableTimes,
+//         };
+//       })
+//       .filter((appointment) => appointment.times.length > 0);
+
+//     console.log("Formatted appointments:", formattedAppointments);
+
+//     return formattedAppointments;
+//   } catch (error) {
+//     console.error("Error fetching appointments:", error);
+//     throw error;
+//   }
+// }
+
 export async function getAvailableAppointments(
   rmtLocationId,
   duration,
@@ -655,21 +732,18 @@ export async function getAvailableAppointments(
     `getAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}, timezone: ${timezone}`
   );
 
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   try {
     const objectId = new ObjectId(rmtLocationId);
-    const tomorrow = new TZDate(
-      new Date().setDate(new Date().getDate() + 1),
-      timezone
-    );
+    const tomorrow = new TZDate(new Date(), timezone);
+    tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
-    const tomorrowString = tomorrow.toISOString().split("T")[0];
+    const tomorrowString = format(tomorrow, "yyyy-MM-dd");
 
     // Calculate end date (4 months from tomorrow)
-    const endDate = addMonths(tomorrow, 4);
-    const endDateString = endDate.toISOString().split("T")[0];
+    const endDate = addMonths(tomorrow, 3);
+    const endDateString = format(endDate, "yyyy-MM-dd");
 
     console.log(
       `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date range: ${tomorrowString} to ${endDateString}`
@@ -694,28 +768,28 @@ export async function getAvailableAppointments(
       timezone
     );
 
-    const groupedAppointments = appointments.reduce((acc, appointment) => {
-      const date = appointment.appointmentDate;
-      if (!acc[date]) {
-        acc[date] = [];
-      }
+    const formattedAppointments = await Promise.all(
+      appointments.map(async (appointment) => {
+        const availableTimes = await generateAvailableStartTimes(
+          appointment,
+          parseInt(duration),
+          busyTimes,
+          timezone
+        );
+        return {
+          date: appointment.appointmentDate,
+          times: availableTimes,
+        };
+      })
+    );
 
-      const availableTimes = generateAvailableStartTimes(
-        appointment,
-        parseInt(duration),
-        busyTimes,
-        timezone
-      );
-      acc[date].push(...availableTimes);
-      return acc;
-    }, {});
+    const filteredAppointments = formattedAppointments.filter(
+      (appointment) => appointment.times.length > 0
+    );
 
-    const result = Object.entries(groupedAppointments).map(([date, times]) => ({
-      date,
-      times: times.sort((a, b) => a.localeCompare(b)),
-    }));
+    console.log("Formatted appointments:", filteredAppointments);
 
-    return serializeDocument(result);
+    return filteredAppointments;
   } catch (error) {
     console.error("Error fetching appointments:", error);
     throw error;
@@ -723,46 +797,57 @@ export async function getAvailableAppointments(
 }
 
 async function getBusyTimes(startDate, endDate, timezone) {
-  const MAX_DAYS = 60; // Google Calendar API typically allows up to 2 months at a time
-  const allBusyTimes = [];
-
   try {
-    const tzStartDate = new TZDate(startDate, timezone);
-    const tzEndDate = new TZDate(endDate, timezone);
-    let currentStartDate = tzStartDate;
+    console.log(
+      `Fetching busy times from ${startDate} to ${endDate} in timezone ${timezone}`
+    );
 
-    while (currentStartDate < tzEndDate) {
-      const chunkEndDate = addDays(currentStartDate, MAX_DAYS);
-      const actualEndDate = chunkEndDate > tzEndDate ? tzEndDate : chunkEndDate;
+    const response = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: new TZDate(startDate, timezone).toISOString(),
+        timeMax: new TZDate(endDate, timezone).toISOString(),
+        timeZone: timezone,
+        items: [{ id: GOOGLE_CALENDAR_ID }],
+      },
+    });
 
-      const response = await calendar.freebusy.query({
-        requestBody: {
-          timeMin: currentStartDate.toISOString(),
-          timeMax: actualEndDate.toISOString(),
-          timeZone: timezone,
-          items: [{ id: GOOGLE_CALENDAR_ID }],
-        },
-      });
+    console.log(
+      "Raw response from Google Calendar:",
+      JSON.stringify(response.data, null, 2)
+    );
 
-      const busyTimes = response.data.calendars[GOOGLE_CALENDAR_ID].busy;
-      allBusyTimes.push(...busyTimes);
+    const busyTimes = response.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+      (busy) => ({
+        start: new TZDate(busy.start, timezone),
+        end: new TZDate(busy.end, timezone),
+      })
+    );
 
-      currentStartDate = addDays(actualEndDate, 1);
-    }
+    console.log(
+      "Parsed busy times:",
+      busyTimes.map((bt) => ({
+        start: bt.start.toISOString(),
+        end: bt.end.toISOString(),
+      }))
+    );
 
-    return allBusyTimes;
+    return busyTimes;
   } catch (error) {
     console.error("Error fetching busy times from Google Calendar:", error);
     return [];
   }
 }
 
-function generateAvailableStartTimes(
+async function generateAvailableStartTimes(
   appointment,
   duration,
   busyTimes,
-  timezone = process.env.NEXT_PUBLIC_TIMEZONE
+  timezone
 ) {
+  console.log(
+    `Generating available start times for ${appointment.appointmentDate} with timezone ${timezone} and duration ${duration}`
+  );
+
   const availableTimes = [];
   const now = new TZDate(new Date(), timezone);
   const startTime = new TZDate(
@@ -773,130 +858,257 @@ function generateAvailableStartTimes(
     `${appointment.appointmentDate}T${appointment.appointmentEndTime}`,
     timezone
   );
-  const durationMs = duration * 60 * 1000;
-  const bufferMs = 30 * 60 * 1000; // 30 minutes buffer
+  const durationMinutes = parseInt(duration);
+  const bufferMinutes = 30; // 30 minutes buffer
+
+  console.log(
+    `Appointment start time: ${startTime.toISOString()}, end time: ${endTime.toISOString()}`
+  );
+  console.log(
+    `Busy times:`,
+    busyTimes.map((bt) => `${bt.start.toISOString()} - ${bt.end.toISOString()}`)
+  );
 
   let currentTime = startTime;
 
-  while (differenceInMilliseconds(endTime, currentTime) >= durationMs) {
-    if (currentTime > now) {
-      const currentDate = format(currentTime, "yyyy-MM-dd");
-      const currentTimeFormatted = format(currentTime, "HH:mm");
-      const potentialEndTime = addMinutes(currentTime, duration);
+  while (addMinutes(currentTime, durationMinutes) <= endTime) {
+    const potentialEndTime = addMinutes(currentTime, durationMinutes);
+    console.log(
+      `Checking time slot: ${currentTime.toISOString()} - ${potentialEndTime.toISOString()}`
+    );
 
-      console.log(
-        `[${currentDate}] Checking time slot: ${currentTimeFormatted}`
-      );
-
-      const previousBusyTime = getPreviousBusyTime(
-        currentTime,
-        busyTimes,
-        timezone
-      );
-      const nextBusyTime = getNextBusyTime(
-        potentialEndTime,
-        busyTimes,
-        timezone
-      );
-
-      const hasSufficientBufferBefore =
-        !previousBusyTime ||
-        differenceInMilliseconds(currentTime, previousBusyTime) >= bufferMs;
-      const hasSufficientBufferAfter =
-        !nextBusyTime ||
-        differenceInMilliseconds(nextBusyTime, potentialEndTime) >= bufferMs;
-
-      if (
-        potentialEndTime <= endTime &&
-        hasSufficientBufferBefore &&
-        hasSufficientBufferAfter &&
-        !isConflictingWithBusyTimes(
-          currentTime,
-          potentialEndTime,
-          busyTimes,
-          timezone
-        )
-      ) {
-        console.log(
-          `[${currentDate}] Previous busy time: ${
-            previousBusyTime
-              ? format(previousBusyTime, "yyyy-MM-dd HH:mm")
-              : "None"
-          }`
-        );
-        console.log(
-          `[${currentDate}] Next busy time: ${
-            nextBusyTime ? format(nextBusyTime, "yyyy-MM-dd HH:mm") : "None"
-          }`
-        );
-
-        if (previousBusyTime) {
-          const timeFromPreviousBusy =
-            differenceInMilliseconds(currentTime, previousBusyTime) / 60000;
+    if (isAfter(currentTime, now)) {
+      const isConflicting = busyTimes.some((busy) => {
+        const busyStart = new TZDate(busy.start, timezone);
+        const busyEnd = new TZDate(busy.end, timezone);
+        const conflict =
+          (isBefore(currentTime, addMinutes(busyEnd, bufferMinutes)) &&
+            isAfter(potentialEndTime, addMinutes(busyStart, -bufferMinutes))) ||
+          isEqual(currentTime, addMinutes(busyStart, -bufferMinutes)) ||
+          isEqual(potentialEndTime, addMinutes(busyEnd, bufferMinutes));
+        if (conflict) {
           console.log(
-            `[${currentDate}] Time from previous busy: ${timeFromPreviousBusy} minutes`
+            `Conflict found with busy time: ${busyStart.toISOString()} - ${busyEnd.toISOString()}`
           );
         }
+        return conflict;
+      });
 
-        if (nextBusyTime) {
-          const timeUntilNextBusy =
-            differenceInMilliseconds(nextBusyTime, potentialEndTime) / 60000;
-          console.log(
-            `[${currentDate}] Time until next busy: ${timeUntilNextBusy} minutes`
-          );
-        }
+      if (!isConflicting) {
+        const previousBusyTime = getPreviousBusyTime(currentTime, busyTimes);
+        const nextBusyTime = getNextBusyTime(potentialEndTime, busyTimes);
 
-        console.log(
-          `[${currentDate}] Adding available time: ${currentTimeFormatted}`
-        );
-        availableTimes.push(format(currentTime, "HH:mm"));
-      } else {
-        if (!hasSufficientBufferBefore) {
+        const hasSufficientBufferBefore =
+          !previousBusyTime ||
+          differenceInMinutes(currentTime, previousBusyTime) >= bufferMinutes;
+        const hasSufficientBufferAfter =
+          !nextBusyTime ||
+          differenceInMinutes(nextBusyTime, potentialEndTime) >= bufferMinutes;
+
+        if (hasSufficientBufferBefore && hasSufficientBufferAfter) {
           console.log(
-            `[${currentDate}] Skipping time due to insufficient buffer before appointment`
+            `Available time slot found: ${format(currentTime, "HH:mm")}`
           );
-        } else if (!hasSufficientBufferAfter) {
-          console.log(
-            `[${currentDate}] Skipping time due to insufficient buffer after appointment`
-          );
+          availableTimes.push(format(currentTime, "HH:mm"));
         } else {
           console.log(
-            `[${currentDate}] Skipping time due to conflict with busy times`
+            `Insufficient buffer for time slot: ${format(currentTime, "HH:mm")}`
           );
         }
+      } else {
+        console.log(`Conflicting time slot: ${format(currentTime, "HH:mm")}`);
       }
+    } else {
+      console.log(`Time slot in the past: ${format(currentTime, "HH:mm")}`);
     }
-    currentTime = addMinutes(currentTime, 30);
+
+    currentTime = addMinutes(currentTime, 30); // Move to the next 30-minute slot
   }
 
+  console.log(
+    `Generated available times for ${appointment.appointmentDate}:`,
+    availableTimes
+  );
   return availableTimes;
 }
 
-function getPreviousBusyTime(time, busyTimes, timezone) {
-  const previousBusy = busyTimes
-    .filter((busy) => new TZDate(busy.end, timezone) <= time)
-    .sort(
-      (a, b) => new TZDate(b.end, timezone) - new TZDate(a.end, timezone)
-    )[0];
-  return previousBusy ? new TZDate(previousBusy.end, timezone) : null;
+function getPreviousBusyTime(currentTime, busyTimes) {
+  return busyTimes
+    .filter((busy) => isBefore(busy.end, currentTime))
+    .reduce(
+      (latest, busy) => (isAfter(busy.end, latest) ? busy.end : latest),
+      null
+    );
 }
 
-function isConflictingWithBusyTimes(start, end, busyTimes, timezone) {
-  return busyTimes.some((busy) => {
-    const busyStart = new TZDate(busy.start, timezone);
-    const busyEnd = new TZDate(busy.end, timezone);
-    return start < busyEnd && end > busyStart;
-  });
+function getNextBusyTime(currentTime, busyTimes) {
+  return busyTimes
+    .filter((busy) => isAfter(busy.start, currentTime))
+    .reduce(
+      (earliest, busy) =>
+        isBefore(busy.start, earliest) ? busy.start : earliest,
+      null
+    );
 }
 
-function getNextBusyTime(time, busyTimes, timezone) {
-  const nextBusy = busyTimes
-    .filter((busy) => new TZDate(busy.start, timezone) >= time)
-    .sort(
-      (a, b) => new TZDate(a.start, timezone) - new TZDate(b.start, timezone)
-    )[0];
-  return nextBusy ? new TZDate(nextBusy.start, timezone) : null;
-}
+// async function getBusyTimes(startDate, endDate, timezone) {
+//   const MAX_DAYS = 60;
+//   const allBusyTimes = [];
+
+//   try {
+//     const utcStartDate = parseISO(startDate);
+//     const utcEndDate = parseISO(endDate);
+//     let currentStartDate = utcStartDate;
+
+//     while (currentStartDate < utcEndDate) {
+//       const chunkEndDate = addDays(currentStartDate, MAX_DAYS);
+//       const actualEndDate =
+//         chunkEndDate > utcEndDate ? utcEndDate : chunkEndDate;
+
+//       console.log(
+//         `Fetching busy times from ${format(
+//           currentStartDate,
+//           "yyyy-MM-dd'T'HH:mm:ss.SSSxxx",
+//           { timeZone: timezone }
+//         )} to ${format(actualEndDate, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx", {
+//           timeZone: timezone,
+//         })}`
+//       );
+
+//       const response = await calendar.freebusy.query({
+//         requestBody: {
+//           timeMin: format(currentStartDate, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx", {
+//             timeZone: timezone,
+//           }),
+//           timeMax: format(actualEndDate, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx", {
+//             timeZone: timezone,
+//           }),
+//           timeZone: timezone,
+//           items: [{ id: GOOGLE_CALENDAR_ID }],
+//         },
+//       });
+
+//       console.log(
+//         "Raw response from Google Calendar:",
+//         JSON.stringify(response.data, null, 2)
+//       );
+
+//       const busyTimes = response.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+//         (busy) => ({
+//           start: parseISO(busy.start),
+//           end: parseISO(busy.end),
+//         })
+//       );
+
+//       console.log(
+//         "Parsed busy times:",
+//         busyTimes.map((bt) => ({
+//           start: format(bt.start, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx", {
+//             timeZone: timezone,
+//           }),
+//           end: format(bt.end, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx", {
+//             timeZone: timezone,
+//           }),
+//         }))
+//       );
+
+//       allBusyTimes.push(...busyTimes);
+
+//       currentStartDate = addDays(actualEndDate, 1);
+//     }
+
+//     return allBusyTimes;
+//   } catch (error) {
+//     console.error("Error fetching busy times from Google Calendar:", error);
+//     return [];
+//   }
+// }
+
+// function generateAvailableStartTimes(
+//   appointment,
+//   duration,
+//   busyTimes,
+//   timezone
+// ) {
+//   console.log(
+//     `Generating available start times for ${appointment.appointmentDate} with timezone ${timezone}`
+//   );
+
+//   const availableTimes = [];
+//   const now = new Date();
+//   const startTime = parseISO(
+//     `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+//   );
+//   const endTime = parseISO(
+//     `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+//   );
+//   const durationMs = duration * 60 * 1000;
+//   const bufferMs = 30 * 60 * 1000; // 30 minutes buffer
+
+//   let currentTime = startTime;
+
+//   while (
+//     differenceInMilliseconds(endTime, currentTime) >=
+//     durationMs + bufferMs
+//   ) {
+//     if (isAfter(currentTime, now)) {
+//       const potentialEndTime = addMinutes(currentTime, duration);
+
+//       const isConflicting = busyTimes.some((busy) => {
+//         return (
+//           (isBefore(currentTime, addMinutes(busy.end, 30)) &&
+//             isAfter(potentialEndTime, subMinutes(busy.start, 30))) ||
+//           isEqual(currentTime, subMinutes(busy.start, 30)) ||
+//           isEqual(potentialEndTime, addMinutes(busy.end, 30))
+//         );
+//       });
+
+//       if (!isConflicting) {
+//         const previousBusyTime = getPreviousBusyTime(currentTime, busyTimes);
+//         const nextBusyTime = getNextBusyTime(potentialEndTime, busyTimes);
+
+//         const hasSufficientBufferBefore =
+//           !previousBusyTime ||
+//           differenceInMilliseconds(currentTime, previousBusyTime) >= bufferMs;
+//         const hasSufficientBufferAfter =
+//           !nextBusyTime ||
+//           differenceInMilliseconds(nextBusyTime, potentialEndTime) >= bufferMs;
+
+//         if (hasSufficientBufferBefore && hasSufficientBufferAfter) {
+//           availableTimes.push(
+//             format(currentTime, "HH:mm", { timeZone: timezone })
+//           );
+//         }
+//       }
+//     }
+//     currentTime = addMinutes(currentTime, 30);
+//   }
+
+//   console.log(
+//     `Generated available times for ${appointment.appointmentDate}:`,
+//     availableTimes
+//   );
+//   return availableTimes;
+// }
+
+// function getPreviousBusyTime(currentTime, busyTimes) {
+//   return busyTimes
+//     .filter((busy) => isBefore(busy.end, currentTime))
+//     .reduce(
+//       (latest, busy) => (isAfter(busy.end, latest) ? busy.end : latest),
+//       null
+//     );
+// }
+
+// function getNextBusyTime(currentTime, busyTimes) {
+//   return busyTimes
+//     .filter((busy) => isAfter(busy.start, currentTime))
+//     .reduce(
+//       (earliest, busy) =>
+//         isBefore(busy.start, earliest) ? busy.start : earliest,
+//       null
+//     );
+// }
 
 export async function bookAppointment({
   location,
@@ -1737,3 +1949,146 @@ export async function deleteHealthHistory(id) {
     throw new Error("Failed to delete health history");
   }
 }
+
+// //////////////////functions from v0 for online booking....trying something different///////////////////
+
+// const locationSchema = z.object({
+//   name: z.string(),
+//   address: z.string(),
+//   contactInfo: z.string(),
+//   schedule: z.array(
+//     z.object({
+//       day: z.enum([
+//         "Monday",
+//         "Tuesday",
+//         "Wednesday",
+//         "Thursday",
+//         "Friday",
+//         "Saturday",
+//         "Sunday",
+//       ]),
+//       slots: z.array(
+//         z.object({
+//           start: z.string(),
+//           end: z.string(),
+//         })
+//       ),
+//     })
+//   ),
+// });
+
+// export async function addLocation(formData) {
+//   const db = await getDatabase();
+
+//   const rawData = Object.fromEntries(formData.entries());
+//   const validatedData = locationSchema.parse(rawData);
+
+//   const result = await db.collection("locations").insertOne(validatedData);
+
+//   if (result.acknowledged) {
+//     return { success: true, message: "Location added successfully" };
+//   } else {
+//     return { success: false, message: "Failed to add location" };
+//   }
+// }
+
+// export async function getLocations() {
+//   const db = await getDatabase();
+//   const locations = await db.collection("locations").find().toArray();
+//   return locations;
+// }
+
+// const serviceSchema = z.object({
+//   locationId: z.string(),
+//   name: z.string(),
+//   duration: z.number(),
+//   price: z.number(),
+// });
+
+// export async function addService(formData) {
+//   const db = await getDatabase();
+
+//   const rawData = Object.fromEntries(formData.entries());
+//   const validatedData = serviceSchema.parse(rawData);
+
+//   const result = await db.collection("services").insertOne(validatedData);
+
+//   if (result.acknowledged) {
+//     return { success: true, message: "Service added successfully" };
+//   } else {
+//     return { success: false, message: "Failed to add service" };
+//   }
+// }
+
+// export async function getServices(locationId) {
+//   const db = await getDatabase();
+//   const services = await db
+//     .collection("services")
+//     .find({ locationId })
+//     .toArray();
+//   return services;
+// }
+
+// const appointmentSchema = z.object({
+//   locationId: z.string(),
+//   serviceId: z.string(),
+//   slot: z.object({
+//     start: z.string(),
+//     end: z.string(),
+//   }),
+//   userInfo: z.object({
+//     name: z.string(),
+//     email: z.string().email(),
+//     phone: z.string(),
+//   }),
+// });
+
+// export async function bookAppointment2(formData) {
+//   const db = await getDatabase();
+
+//   const rawData = Object.fromEntries(formData.entries());
+//   const validatedData = appointmentSchema.parse(rawData);
+
+//   const result = await db.collection("appointments").insertOne(validatedData);
+
+//   if (result.acknowledged) {
+//     // Add event to Google Calendar
+//     await addToGoogleCalendar(validatedData);
+//     return { success: true, message: "Appointment booked successfully" };
+//   } else {
+//     return { success: false, message: "Failed to book appointment" };
+//   }
+// }
+
+// async function addToGoogleCalendar(appointmentData) {
+//   const auth = new google.auth.GoogleAuth({
+//     keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+//     scopes: ["https://www.googleapis.com/auth/calendar"],
+//   });
+
+//   const calendar = google.calendar({ version: "v3", auth });
+
+//   const event = {
+//     summary: "Massage Appointment",
+//     location: appointmentData.location.address,
+//     description: `${appointmentData.service.name} - ${appointmentData.service.duration} minutes`,
+//     start: {
+//       dateTime: appointmentData.slot.start,
+//       timeZone: "America/New_York", // Adjust this to your timezone
+//     },
+//     end: {
+//       dateTime: appointmentData.slot.end,
+//       timeZone: "America/New_York", // Adjust this to your timezone
+//     },
+//   };
+
+//   try {
+//     const res = await calendar.events.insert({
+//       calendarId: "primary",
+//       requestBody: event,
+//     });
+//     console.log("Event created: %s", res.data.htmlLink);
+//   } catch (error) {
+//     console.error("Error creating calendar event:", error);
+//   }
+// }

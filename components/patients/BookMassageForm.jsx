@@ -54,7 +54,26 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
           );
 
           console.log("Fetched appointment times:", times);
-          setAppointmentTimes(times);
+
+          // Group appointments by date
+          const groupedTimes = times.reduce((acc, appointment) => {
+            const { date, times } = appointment;
+            if (!acc[date]) {
+              acc[date] = [];
+            }
+            acc[date].push(...times);
+            return acc;
+          }, {});
+
+          // Convert grouped times back to array format
+          const groupedAppointments = Object.entries(groupedTimes).map(
+            ([date, times]) => ({
+              date,
+              times: times.sort(),
+            })
+          );
+
+          setAppointmentTimes(groupedAppointments);
         } catch (error) {
           console.error("Error fetching appointment times:", error);
           setError("Failed to fetch appointment times. Please try again.");
@@ -68,53 +87,25 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
   }, [formData.RMTLocationId, formData.duration]);
 
   const formatDate = (dateString) => {
-    console.log("formatDate input:", dateString);
-    console.log("Current timezone:", process.env.NEXT_PUBLIC_TIMEZONE);
-
-    // Assuming dateString is in 'YYYY-MM-DD' format
-    const [year, month, day] = dateString.split("-").map(Number);
-    console.log("Parsed date components:", { year, month, day });
-
-    // Create a date object in the specified timezone
+    const [year, month, day] = dateString.split("-");
     const date = new Date(year, month - 1, day);
-    console.log("Created date object:", date.toString());
-
-    const formatter = new Intl.DateTimeFormat("en-US", {
+    return date.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
       month: "long",
       day: "numeric",
-      timeZone: process.env.NEXT_PUBLIC_TIMEZONE,
     });
-
-    const formattedDate = formatter.format(date);
-    console.log("Formatted date:", formattedDate);
-
-    return formattedDate;
   };
 
   const formatTime = (timeString) => {
-    console.log("formatTime input:", timeString);
-
     const [hours, minutes] = timeString.split(":");
-    console.log("Parsed time components:", { hours, minutes });
-
     const date = new Date();
     date.setHours(parseInt(hours, 10));
     date.setMinutes(parseInt(minutes, 10));
-    console.log("Created date object for time:", date.toISOString());
-
-    const formatter = new Intl.DateTimeFormat("en-US", {
+    return date.toLocaleTimeString("en-US", {
       hour: "numeric",
-      minute: "numeric",
-      hour12: true,
-      timeZone: process.env.NEXT_PUBLIC_TIMEZONE,
+      minute: "2-digit",
     });
-
-    const formattedTime = formatter.format(date);
-    console.log("Formatted time:", formattedTime);
-
-    return formattedTime;
   };
 
   const renderAppointments = () => {
@@ -142,58 +133,45 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
 
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {dates.map((dateGroup, index) => {
-          console.log("Rendering date group:", dateGroup);
-          return (
-            <div key={index} className="bg-white shadow-md rounded-lg p-4">
-              <h4 className="text-lg font-semibold mb-2">
-                {formatDate(dateGroup.date)}
-              </h4>
-              <ul className="space-y-2">
-                {dateGroup.times.map((time, idx) => {
-                  const isSelected =
-                    selectedAppointment &&
-                    selectedAppointment.date === dateGroup.date &&
-                    selectedAppointment.time === time;
+        {dates.map((dateGroup, index) => (
+          <div key={index} className="bg-white shadow-md rounded-lg p-4">
+            <h4 className="text-lg font-semibold mb-2">
+              {formatDate(dateGroup.date)}
+            </h4>
+            <ul className="space-y-2">
+              {dateGroup.times.map((time, idx) => {
+                const isSelected =
+                  selectedAppointment &&
+                  selectedAppointment.date === dateGroup.date &&
+                  selectedAppointment.time === time;
 
-                  console.log("Rendering time slot:", {
-                    date: dateGroup.date,
-                    time,
-                    isSelected,
-                  });
-
-                  return (
-                    <li
-                      key={idx}
-                      className={`cursor-pointer p-2 rounded transition-colors ${
-                        isSelected
-                          ? "bg-blue-200 text-blue-800"
-                          : "text-gray-700 hover:bg-gray-100"
-                      }`}
-                      onClick={() => {
-                        console.log("Selected appointment:", {
-                          date: dateGroup.date,
-                          time,
-                        });
-                        setSelectedAppointment({
-                          date: dateGroup.date,
-                          time,
-                        });
-                        setFormData({
-                          ...formData,
-                          appointmentTime: time,
-                          appointmentDate: dateGroup.date,
-                        });
-                      }}
-                    >
-                      {formatTime(time)}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
+                return (
+                  <li
+                    key={idx}
+                    className={`cursor-pointer p-2 rounded transition-colors ${
+                      isSelected
+                        ? "bg-blue-200 text-blue-800"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={() => {
+                      setSelectedAppointment({
+                        date: dateGroup.date,
+                        time,
+                      });
+                      setFormData({
+                        ...formData,
+                        appointmentTime: time,
+                        appointmentDate: dateGroup.date,
+                      });
+                    }}
+                  >
+                    {formatTime(time)}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </div>
     );
   };
