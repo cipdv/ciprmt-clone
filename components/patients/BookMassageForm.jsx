@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getAvailableAppointments, bookAppointment } from "@/app/_actions";
+import { date } from "zod";
 
 function BookMassageForm({ rmtSetup, user, healthHistory }) {
   const router = useRouter();
@@ -55,23 +56,58 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
 
           console.log("Fetched appointment times:", times);
 
+          // Sort the times array by date
+          const sortedTimes = times.sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+          );
+
+          console.log("Sorted appointment times:", sortedTimes);
+
           // Group appointments by date
-          const groupedTimes = times.reduce((acc, appointment) => {
-            const { date, times } = appointment;
+          const groupedTimes = sortedTimes.reduce((acc, appointment) => {
+            const { date, startTime, endTime } = appointment;
             if (!acc[date]) {
               acc[date] = [];
             }
-            acc[date].push(...times);
+            acc[date].push({ startTime, endTime });
             return acc;
           }, {});
 
-          // Convert grouped times back to array format
+          console.log("Grouped appointment times:", groupedTimes);
+
+          // Convert grouped times back to array format and format the dates and times
           const groupedAppointments = Object.entries(groupedTimes).map(
-            ([date, times]) => ({
-              date,
-              times: times.sort(),
-            })
+            ([date, times]) => {
+              const formattedDate = new Date(
+                `${date}T00:00:00`
+              ).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              });
+
+              const formattedTimes = times.map(({ startTime, endTime }) => {
+                const start = new Date(`${date}T${startTime}`);
+                const end = new Date(`${date}T${endTime}`);
+                return `${start.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "numeric",
+                  hour12: true,
+                })} - ${end.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "numeric",
+                  hour12: true,
+                })}`;
+              });
+
+              return {
+                date: formattedDate,
+                times: formattedTimes.sort((a, b) => a.localeCompare(b)),
+              };
+            }
           );
+
+          console.log("Grouped appointments:", groupedAppointments);
 
           setAppointmentTimes(groupedAppointments);
         } catch (error) {
@@ -85,28 +121,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
 
     fetchAppointments();
   }, [formData.RMTLocationId, formData.duration]);
-
-  const formatDate = (dateString) => {
-    const [year, month, day] = dateString.split("-");
-    const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const formatTime = (timeString) => {
-    const [hours, minutes] = timeString.split(":");
-    const date = new Date();
-    date.setHours(parseInt(hours, 10));
-    date.setMinutes(parseInt(minutes, 10));
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
 
   const renderAppointments = () => {
     if (loading) {
@@ -135,9 +149,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {dates.map((dateGroup, index) => (
           <div key={index} className="bg-white shadow-md rounded-lg p-4">
-            <h4 className="text-lg font-semibold mb-2">
-              {formatDate(dateGroup.date)}
-            </h4>
+            <h4 className="text-lg font-semibold mb-2">{dateGroup.date}</h4>
             <ul className="space-y-2">
               {dateGroup.times.map((time, idx) => {
                 const isSelected =
@@ -156,7 +168,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                     onClick={() => {
                       setSelectedAppointment({
                         date: dateGroup.date,
-                        time,
+                        time: time,
                       });
                       setFormData({
                         ...formData,
@@ -165,7 +177,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                       });
                     }}
                   >
-                    {formatTime(time)}
+                    {time}
                   </li>
                 );
               })}
