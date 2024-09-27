@@ -63,7 +63,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                 year: "numeric",
                 month: "long",
                 day: "numeric",
-                timeZone: process.env.NEXT_PUBLIC_TIMEZONE,
               }
             );
             if (!acc[date]) {
@@ -104,7 +103,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
       hour: "numeric",
       minute: "numeric",
       hour12: true,
-      timeZone: process.env.NEXT_PUBLIC_TIMEZONE,
     });
   };
 

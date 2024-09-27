@@ -663,11 +663,9 @@ export async function getUsersAppointments(id) {
 export const getAvailableAppointments = async (rmtLocationId, duration) => {
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
-
-  // Convert duration to an integer
   const durationMinutes = parseInt(duration, 10);
+  const timezone = "America/Toronto";
 
-  // Fetch appointments with the given rmtLocationId and status 'available'
   const appointments = await appointmentsCollection
     .find({
       RMTLocationId: new ObjectId(rmtLocationId),
@@ -679,10 +677,10 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
   appointments.forEach((appointment) => {
     const startTime = new Date(
-      `${appointment.appointmentDate}T${appointment.appointmentStartTime}:00Z`
+      `${appointment.appointmentDate}T${appointment.appointmentStartTime}:00`
     );
     const endTime = new Date(
-      `${appointment.appointmentDate}T${appointment.appointmentEndTime}:00Z`
+      `${appointment.appointmentDate}T${appointment.appointmentEndTime}:00`
     );
 
     let currentTime = new Date(startTime);
@@ -693,26 +691,26 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
       if (nextTime <= endTime) {
         availableTimes.push({
-          start: currentTime.toISOString(),
-          end: nextTime.toISOString(),
+          start: currentTime.toLocaleString("en-US", { timeZone: timezone }),
+          end: nextTime.toLocaleString("en-US", { timeZone: timezone }),
         });
       }
 
-      currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
+      currentTime.setMinutes(currentTime.getMinutes() + 30);
     }
   });
 
   console.log("Available times:", availableTimes);
 
-  // Fetch busy times from Google Calendar
   const now = new Date();
-  const oneMonthLater = new Date();
+  const oneMonthLater = new Date(now);
   oneMonthLater.setMonth(now.getMonth() + 3);
 
   const busyTimes = await calendar.freebusy.query({
     requestBody: {
       timeMin: now.toISOString(),
       timeMax: oneMonthLater.toISOString(),
+      timeZone: timezone,
       items: [{ id: GOOGLE_CALENDAR_ID }],
     },
   });
@@ -721,13 +719,16 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
   console.log("Busy periods from Google:", busyPeriods);
 
-  // Filter out conflicting times
   const filteredAvailableTimes = availableTimes.filter((available) => {
     return !busyPeriods.some((busy) => {
       const availableStart = new Date(available.start);
       const availableEnd = new Date(available.end);
       const busyStart = new Date(busy.start);
       const busyEnd = new Date(busy.end);
+
+      // Add 30-minute buffer before and after the busy period
+      busyStart.setMinutes(busyStart.getMinutes() - 30);
+      busyEnd.setMinutes(busyEnd.getMinutes() + 30);
 
       return (
         (availableStart >= busyStart && availableStart < busyEnd) ||
@@ -737,17 +738,11 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     });
   });
 
-  // console.log("Filtered available times:", filteredAvailableTimes);
-
-  // Filter out dates that are not greater than today
-  const today = new Date().toISOString();
+  const today = new Date().toLocaleString("en-US", { timeZone: timezone });
   const futureAvailableTimes = filteredAvailableTimes.filter(
-    (available) => available.start > today
+    (available) => new Date(available.start) > new Date(today)
   );
 
-  // console.log("Future available times:", futureAvailableTimes);
-
-  // Sort the results by date
   const sortedAvailableTimes = futureAvailableTimes.sort(
     (a, b) => new Date(a.start) - new Date(b.start)
   );
