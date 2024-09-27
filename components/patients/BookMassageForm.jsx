@@ -50,7 +50,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
           const times = await getAvailableAppointments(
             formData.RMTLocationId,
             parseInt(formData.duration),
-            Intl.DateTimeFormat().resolvedOptions().timeZone // This will get the user's local timezone
+            process.env.NEXT_PUBLIC_TIMEZONE
           );
 
           console.log("Fetched appointment times:", times);
