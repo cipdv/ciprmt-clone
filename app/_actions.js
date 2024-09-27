@@ -815,31 +815,68 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     },
   });
 
-  const busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy;
+  const busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+    (period) => {
+      const start = period.start;
+      const end = period.end;
 
-  console.log("busy periods from google", busyPeriods);
+      // Function to add or subtract minutes from a date-time string
+      const addMinutes = (dateTimeStr, minutes) => {
+        const [date, time] = dateTimeStr.split("T");
+        const [hours, minutesStr] = time.split(":");
+        const totalMinutes =
+          parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
+        const newHours = Math.floor(totalMinutes / 60)
+          .toString()
+          .padStart(2, "0");
+        const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+        return `${date}T${newHours}:${newMinutes}:00Z`;
+      };
+
+      // Function to convert date-time string to desired format
+      const formatDateTime = (dateTimeStr) => {
+        const [date, time] = dateTimeStr.split("T");
+        const [hours, minutes] = time.split(":");
+        return {
+          date,
+          time: `${hours}:${minutes}`,
+        };
+      };
+
+      const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
+      const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+
+      return {
+        date: formatDateTime(bufferedStart).date,
+        startTime: formatDateTime(bufferedStart).time,
+        endTime: formatDateTime(bufferedEnd).time,
+      };
+    }
+  );
+
+  console.log("Busy periods with buffer:", busyPeriods);
 
   // Convert busy times from UTC to local timezone and format them
-  const localBusyPeriods = busyPeriods.map((period) => {
-    const start = new Date(period.start);
-    const end = new Date(period.end);
+  // const localBusyPeriods = busyPeriods.map((period) => {
+  //   const start = new Date(period.start);
+  //   const end = new Date(period.end);
 
-    // Add 30-minute buffer before and after the busy period
-    start.setMinutes(start.getMinutes() - 30);
-    end.setMinutes(end.getMinutes() + 30);
+  //   // Add 30-minute buffer before and after the busy period
+  //   start.setMinutes(start.getMinutes() - 30);
+  //   end.setMinutes(end.getMinutes() + 30);
 
-    return {
-      date: start.toISOString().split("T")[0], // Extract date in YYYY-MM-DD format
-      startTime: start.toTimeString().slice(0, 5), // Format as HH:MM
-      endTime: end.toTimeString().slice(0, 5), // Format as HH:MM
-    };
-  });
+  //   return {
+  //     date: start.toISOString().split("T")[0], // Extract date in YYYY-MM-DD format
+  //     startTime: start.toTimeString().slice(0, 5), // Format as HH:MM
+  //     endTime: end.toTimeString().slice(0, 5), // Format as HH:MM
+  //   };
+  // });
 
-  console.log("Busy times (local with buffer):", localBusyPeriods);
+  // console.log("Busy times (local with buffer):", localBusyPeriods);
 
   // Filter out conflicting times
   const filteredAvailableTimes = availableTimes.filter((available) => {
-    return !localBusyPeriods.some((busy) => {
+    return !busyPeriods.some((busy) => {
       return (
         available.date === busy.date &&
         ((available.startTime >= busy.startTime &&
