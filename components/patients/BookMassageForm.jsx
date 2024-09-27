@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getAvailableAppointments, bookAppointment } from "@/app/_actions";
+import { date } from "zod";
 
 function BookMassageForm({ rmtSetup, user, healthHistory }) {
   const router = useRouter();
@@ -55,31 +56,55 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
 
           console.log("Fetched appointment times:", times);
 
+          // Sort the times array by date
+          const sortedTimes = times.sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+          );
+
+          console.log("Sorted appointment times:", sortedTimes);
+
           // Group appointments by date
-          const groupedTimes = times.reduce((acc, appointment) => {
-            const date = new Date(appointment.start).toLocaleDateString(
-              "en-US",
-              {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              }
-            );
+          const groupedTimes = sortedTimes.reduce((acc, appointment) => {
+            const { date, startTime, endTime } = appointment;
             if (!acc[date]) {
               acc[date] = [];
             }
-            acc[date].push(appointment);
+            acc[date].push({ startTime, endTime });
             return acc;
           }, {});
 
-          // Convert grouped times to array format
+          console.log("Grouped appointment times:", groupedTimes);
+
+          // Convert grouped times back to array format and format the dates and times
           const groupedAppointments = Object.entries(groupedTimes).map(
-            ([date, appointments]) => ({
-              date,
-              times: appointments.sort(
-                (a, b) => new Date(a.start) - new Date(b.start)
-              ),
-            })
+            ([date, times]) => {
+              const formattedDate = new Date(
+                `${date}T00:00:00`
+              ).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              });
+
+              const formattedTimes = times.map(({ startTime, endTime }) => {
+                const start = new Date(`${date}T${startTime}`);
+                const end = new Date(`${date}T${endTime}`);
+                return `${start.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "numeric",
+                  hour12: true,
+                })} - ${end.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "numeric",
+                  hour12: true,
+                })}`;
+              });
+
+              return {
+                date: formattedDate,
+                times: formattedTimes.sort((a, b) => a.localeCompare(b)),
+              };
+            }
           );
 
           console.log("Grouped appointments:", groupedAppointments);
@@ -96,15 +121,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
 
     fetchAppointments();
   }, [formData.RMTLocationId, formData.duration]);
-
-  const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "numeric",
-      hour12: true,
-    });
-  };
 
   const renderAppointments = () => {
     if (loading) {
@@ -139,7 +155,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                 const isSelected =
                   selectedAppointment &&
                   selectedAppointment.date === dateGroup.date &&
-                  selectedAppointment.time === time.start;
+                  selectedAppointment.time === time;
 
                 return (
                   <li
@@ -152,16 +168,16 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                     onClick={() => {
                       setSelectedAppointment({
                         date: dateGroup.date,
-                        time: time.start,
+                        time: time,
                       });
                       setFormData({
                         ...formData,
-                        appointmentTime: time.start,
+                        appointmentTime: time,
                         appointmentDate: dateGroup.date,
                       });
                     }}
                   >
-                    {`${formatTime(time.start)} - ${formatTime(time.end)}`}
+                    {time}
                   </li>
                 );
               })}
@@ -341,7 +357,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
               <strong>Date:</strong> {formData.appointmentDate}
             </p>
             <p>
-              <strong>Time:</strong> {formatTime(formData.appointmentTime)}
+              <strong>Time:</strong> {formData.appointmentTime}
             </p>
           </div>
           <div className="flex space-x-4">
