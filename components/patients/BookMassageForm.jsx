@@ -50,7 +50,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
           const times = await getAvailableAppointments(
             formData.RMTLocationId,
             parseInt(formData.duration),
-            process.env.NEXT_PUBLIC_TIMEZONE
+            Intl.DateTimeFormat().resolvedOptions().timeZone // This will get the user's local timezone
           );
 
           console.log("Fetched appointment times:", times);
@@ -63,6 +63,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                 year: "numeric",
                 month: "long",
                 day: "numeric",
+                timeZone: process.env.NEXT_PUBLIC_TIMEZONE,
               }
             );
             if (!acc[date]) {
@@ -103,6 +104,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
       hour: "numeric",
       minute: "numeric",
       hour12: true,
+      timeZone: process.env.NEXT_PUBLIC_TIMEZONE,
     });
   };
 

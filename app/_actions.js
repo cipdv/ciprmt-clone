@@ -660,7 +660,12 @@ export async function getUsersAppointments(id) {
 ///////////////////FROM COPILOT///////////////////////////////////
 //////////////////////////////////////////////////////////////////
 
-export const getAvailableAppointments = async (rmtLocationId, duration) => {
+export const getAvailableAppointments = async (
+  rmtLocationId,
+  duration,
+  timezone
+) => {
+  console.log(timezone);
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
 
@@ -674,6 +679,16 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
       status: "available",
     })
     .toArray();
+
+  const convertToLocalTime = (utcDate) => {
+    try {
+      return new Date(utcDate).toLocaleString("en-US", { timeZone: timezone });
+    } catch (error) {
+      console.error(`Error converting time to ${timezone}:`, error);
+      // Fallback to UTC if there's an error with the provided timezone
+      return new Date(utcDate).toUTCString();
+    }
+  };
 
   const availableTimes = [];
 
@@ -693,8 +708,8 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
       if (nextTime <= endTime) {
         availableTimes.push({
-          start: currentTime.toISOString(),
-          end: nextTime.toISOString(),
+          start: convertToLocalTime(currentTime),
+          end: convertToLocalTime(nextTime),
         });
       }
 
@@ -726,8 +741,8 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     return !busyPeriods.some((busy) => {
       const availableStart = new Date(available.start);
       const availableEnd = new Date(available.end);
-      const busyStart = new Date(busy.start);
-      const busyEnd = new Date(busy.end);
+      const busyStart = new Date(convertToLocalTime(busy.start));
+      const busyEnd = new Date(convertToLocalTime(busy.end));
 
       return (
         (availableStart >= busyStart && availableStart < busyEnd) ||
@@ -737,15 +752,11 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     });
   });
 
-  // console.log("Filtered available times:", filteredAvailableTimes);
-
   // Filter out dates that are not greater than today
   const today = new Date().toISOString();
   const futureAvailableTimes = filteredAvailableTimes.filter(
-    (available) => available.start > today
+    (available) => new Date(available.start) > new Date(today)
   );
-
-  // console.log("Future available times:", futureAvailableTimes);
 
   // Sort the results by date
   const sortedAvailableTimes = futureAvailableTimes.sort(
