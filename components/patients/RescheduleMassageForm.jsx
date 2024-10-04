@@ -24,7 +24,101 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
     appointmentDate: "",
   });
 
-  const handleInputChange = async (event) => {
+  useEffect(() => {
+    console.log("current", currentAppointment);
+    const fetchAppointments = async () => {
+      if (formData.RMTLocationId && formData.duration) {
+        setLoading(true);
+        setError(null);
+        try {
+          console.log(
+            `Fetching appointments for RMTLocationId: ${formData.RMTLocationId}, duration: ${formData.duration}`
+          );
+          const times = await getAllAvailableAppointments(
+            formData.RMTLocationId,
+            parseInt(formData.duration),
+            currentAppointment.googleCalendarEventId
+          );
+
+          console.log("Fetched appointment times:", times);
+
+          // Sort the times array by date
+          const sortedTimes = times.sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+          );
+
+          console.log("Sorted appointment times:", sortedTimes);
+
+          // Group appointments by date
+          const groupedTimes = sortedTimes.reduce((acc, appointment) => {
+            const { date, startTime, endTime } = appointment;
+            if (!acc[date]) {
+              acc[date] = [];
+            }
+            acc[date].push({ startTime, endTime });
+            return acc;
+          }, {});
+
+          console.log("Grouped appointment times:", groupedTimes);
+
+          // Convert grouped times back to array format and format the dates and times
+          const groupedAppointments = Object.entries(groupedTimes).map(
+            ([date, times]) => {
+              const formattedDate = new Date(
+                `${date}T00:00:00`
+              ).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              });
+
+              // Sort times before formatting
+              times.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+              const formattedTimes = times.map(({ startTime, endTime }) => {
+                const start = new Date(`${date}T${startTime}`);
+                const end = new Date(`${date}T${endTime}`);
+                return `${start.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "numeric",
+                  hour12: true,
+                })} - ${end.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "numeric",
+                  hour12: true,
+                })}`;
+              });
+
+              return {
+                date: formattedDate,
+                times: formattedTimes,
+              };
+            }
+          );
+
+          console.log("Grouped appointments:", groupedAppointments);
+
+          setAppointmentTimes(groupedAppointments);
+        } catch (error) {
+          console.error("Error fetching appointment times:", error);
+          setError("Failed to fetch appointment times. Please try again.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    if (currentStep === 3) {
+      fetchAppointments();
+    }
+  }, [
+    formData.RMTLocationId,
+    formData.duration,
+    currentStep,
+    currentAppointment.googleCalendarEventId,
+  ]);
+
+  const handleInputChange = (event) => {
     const { name, value } = event.target;
     setFormData((prevData) => ({ ...prevData, [name]: value }));
 
@@ -40,34 +134,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
       }
     }
   };
-
-  useEffect(() => {
-    const fetchAppointments = async () => {
-      if (formData.RMTLocationId && formData.duration) {
-        setLoading(true);
-        setError(null);
-        try {
-          console.log(
-            `Fetching appointments for RMTLocationId: ${formData.RMTLocationId}, duration: ${formData.duration}`
-          );
-          const times = await getAllAvailableAppointments(
-            formData.RMTLocationId,
-            parseInt(formData.duration),
-            currentAppointment.googleCalendarEventId
-          );
-          console.log("Fetched appointment times:", times);
-          setAppointmentTimes(times);
-        } catch (error) {
-          console.error("Error fetching appointment times:", error);
-          setError("Failed to fetch appointment times. Please try again.");
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchAppointments();
-  }, [formData.RMTLocationId, formData.duration]);
 
   const renderAppointments = () => {
     if (loading) {
@@ -96,9 +162,7 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {dates.map((dateGroup, index) => (
           <div key={index} className="bg-white shadow-md rounded-lg p-4">
-            <h4 className="text-lg font-semibold mb-2">
-              {formatDate(dateGroup.date)}
-            </h4>
+            <h4 className="text-lg font-semibold mb-2">{dateGroup.date}</h4>
             <ul className="space-y-2">
               {dateGroup.times.map((time, idx) => {
                 const isSelected =
@@ -126,7 +190,7 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
                       });
                     }}
                   >
-                    {formatTime(time)}
+                    {time}
                   </li>
                 );
               })}
@@ -135,28 +199,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
         ))}
       </div>
     );
-  };
-
-  const formatDate = (dateString) => {
-    const [year, month, day] = dateString.split("-");
-    const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const formatTime = (timeString) => {
-    const [hours, minutes] = timeString.split(":");
-    const date = new Date();
-    date.setHours(parseInt(hours, 10));
-    date.setMinutes(parseInt(minutes, 10));
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
   };
 
   const nextStep = () => {
@@ -169,6 +211,12 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    console.log(
+      "jfkdsajkfdsa",
+      formData.appointmentTime,
+      formData.workplace,
+      formData.appointmentDate
+    );
     try {
       const result = await rescheduleAppointment(currentAppointment._id, {
         location: formData.location,
@@ -180,11 +228,9 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
       });
 
       if (result.success) {
-        // Appointment rescheduled successfully
         alert(result.message);
         router.push("/dashboard/patient");
       } else {
-        // Rescheduling failed
         alert(result.message);
       }
     } catch (error) {
@@ -195,18 +241,37 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
     }
   };
 
+  // Helper function to format time
+  const formatTime = (timeString) => {
+    const [hours, minutes] = timeString.split(":");
+    return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "numeric",
+      hour12: true,
+    });
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
       className="max-w-4xl mx-auto px-4 py-8 space-y-8"
     >
+      <h1 className="text-2xl sm:text-3xl mb-4">Reschedule Your Appointment</h1>
+
       <div className="bg-gray-100 p-4 rounded-lg mb-8">
         <h2 className="text-xl font-semibold mb-2">
           Current Appointment Details
         </h2>
         <p>
           <strong>Date:</strong>{" "}
-          {formatDate(currentAppointment.appointmentDate)}
+          {new Date(
+            `${currentAppointment.appointmentDate}T00:00:00`
+          ).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            timeZone: "UTC",
+          })}
         </p>
         <p>
           <strong>Time:</strong>{" "}
@@ -219,8 +284,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
           <strong>Location:</strong> {currentAppointment.location}
         </p>
       </div>
-
-      <h1 className="text-2xl sm:text-3xl mb-4">Reschedule Your Appointment</h1>
 
       {currentStep === 1 && (
         <div className="space-y-4">
@@ -365,10 +428,10 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
               <strong>Duration:</strong> {formData.duration} minutes
             </p>
             <p>
-              <strong>Date:</strong> {formatDate(formData.appointmentDate)}
+              <strong>Date:</strong> {formData.appointmentDate}
             </p>
             <p>
-              <strong>Time:</strong> {formatTime(formData.appointmentTime)}
+              <strong>Time:</strong> {formData.appointmentTime}
             </p>
           </div>
           <div className="flex space-x-4">

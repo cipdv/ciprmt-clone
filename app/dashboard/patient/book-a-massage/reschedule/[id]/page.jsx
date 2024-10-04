@@ -36,7 +36,6 @@ export default async function ReschedulePage({ params }) {
 
   return (
     <section className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Reschedule Your Appointment</h1>
       <RescheduleMassageForm
         rmtSetup={plainRmtSetup}
         currentAppointment={appointment}

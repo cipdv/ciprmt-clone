@@ -13,8 +13,14 @@ async function getUserDetails() {
 }
 
 const formatDate = (dateString) => {
-  const options = { year: "numeric", month: "long", day: "numeric" };
-  return new Date(dateString).toLocaleDateString("en-US", options);
+  const date = new Date(dateString);
+  const options = {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  };
+  return date.toLocaleDateString("en-US", options);
 };
 
 const formatPrice = (price) => {
@@ -22,6 +28,18 @@ const formatPrice = (price) => {
     return price.toFixed(2);
   }
   return price || "N/A";
+};
+
+const formatTime = (timeString) => {
+  if (!timeString) return "N/A";
+
+  const [hours, minutes] = timeString.split(":");
+  const date = new Date(2000, 0, 1, hours, minutes); // Year, month, and day are arbitrary
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 };
 
 async function ReceiptDetails({ params }) {
@@ -34,7 +52,7 @@ async function ReceiptDetails({ params }) {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Receipt Details</h1>
+      <h1 className="text-3xl  mb-6">Receipt Details</h1>
       <div className="bg-white shadow-md rounded-lg p-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -46,7 +64,9 @@ async function ReceiptDetails({ params }) {
           <div>
             <p className="text-gray-600">Time:</p>
             <p className="font-semibold">
-              {receipt.appointmentBeginsAt || "N/A"}
+              <p className="font-semibold">
+                {formatTime(receipt.appointmentBeginsAt)}
+              </p>
             </p>
           </div>
           <div>
@@ -58,10 +78,6 @@ async function ReceiptDetails({ params }) {
           <div>
             <p className="text-gray-600">Price:</p>
             <p className="font-semibold">${formatPrice(receipt.price)}</p>
-          </div>
-          <div>
-            <p className="text-gray-600">Receipt ID:</p>
-            <p className="font-semibold">{receipt._id || "N/A"}</p>
           </div>
         </div>
         <div className="mt-6">

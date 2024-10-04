@@ -16,7 +16,7 @@ function CancelButton() {
     <button
       type="submit"
       disabled={pending}
-      className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-red-800 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-buttons disabled:opacity-50 transition-colors duration-200"
     >
       {pending ? "Cancelling..." : "Confirm Cancellation"}
     </button>
@@ -45,7 +45,7 @@ function Modal({ isOpen, onClose, children }) {
         >
           &#8203;
         </span>
-        <div className="inline-block overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+        <div className="inline-block overflow-hidden text-left align-bottom transition-all transform bg-primary rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
           {children}
         </div>
       </div>
@@ -56,6 +56,7 @@ function Modal({ isOpen, onClose, children }) {
 export function CancelAppointmentForm({ id, appointmentDetails }) {
   const [state, formAction] = useFormState(cancelAppointment, initialState);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  console.log(appointmentDetails);
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);
@@ -74,38 +75,40 @@ export function CancelAppointmentForm({ id, appointmentDetails }) {
 
   return (
     <>
-      <button onClick={openModal} className="btn-small-delete">
+      <button
+        onClick={openModal}
+        className="btn-small-delete transition-colors duration-200 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+      >
         Cancel Appointment
       </button>
 
       <Modal isOpen={isModalOpen} onClose={closeModal}>
-        <div className="px-4 pt-5 pb-4 bg-white sm:p-6 sm:pb-4">
+        <div className="px-6 pt-6 pb-4 sm:p-6 sm:pb-4">
           <h3
-            className="text-lg font-medium leading-6 text-gray-900"
+            className="text-lg font-medium leading-6 text-gray-900 mb-4"
             id="modal-title"
           >
             Cancel Appointment
           </h3>
-          <div className="mt-2">
-            <p className="text-sm text-gray-500">
-              Are you sure you want to cancel this appointment? This action
-              cannot be undone.
+          <div className="mt-2 space-y-4">
+            <p className="text-sm text-gray-900">
+              Are you sure you want to cancel this appointment:{" "}
+              {appointmentDetails && (
+                <p className="text-sm font-semibold text-gray-700">
+                  {appointmentDetails}
+                </p>
+              )}
             </p>
-            {appointmentDetails && (
-              <p className="mt-2 text-sm text-gray-700">
-                Appointment Details: {appointmentDetails}
-              </p>
-            )}
           </div>
         </div>
-        <div className="px-4 py-3 bg-gray-50 sm:px-6 sm:flex sm:flex-row-reverse">
-          <form onSubmit={handleSubmit}>
+        <div className="px-6 py-4 sm:flex sm:flex-row-reverse sm:px-6">
+          <form onSubmit={handleSubmit} className="sm:ml-3 sm:w-auto">
             <input type="hidden" name="id" value={id} />
             <CancelButton />
           </form>
           <button
             type="button"
-            className=" inline-flex justify-center w-full px-4 py-2 mt-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+            className="mt-3 w-full sm:mt-0 sm:w-auto inline-flex justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
             onClick={closeModal}
           >
             Keep Appointment
@@ -126,39 +129,3 @@ export function CancelAppointmentForm({ id, appointmentDetails }) {
     </>
   );
 }
-
-// "use client";
-
-// import { useFormStatus } from "react-dom";
-// import { useFormState } from "react-dom";
-// import { cancelAppointment } from "@/app/_actions";
-
-// const initialState = {
-//   message: "",
-// };
-
-// function CancelAppointmentButton() {
-//   const { pending } = useFormStatus();
-
-//   return (
-//     <button type="submit" disabled={pending} className="btn-small-delete">
-//       {pending ? "Cancelling..." : "Cancel appointment"}
-//     </button>
-//   );
-// }
-
-// export function CancelAppointmentForm({ id }) {
-//   const [state, formAction] = useFormState(cancelAppointment, initialState);
-
-//   return (
-//     <form action={formAction}>
-//       <input type="hidden" name="id" value={id} />
-//       <CancelAppointmentButton />
-//       {state?.message && (
-//         <p aria-live="polite" className="mt-2 text-sm text-muted-foreground">
-//           {state?.message}
-//         </p>
-//       )}
-//     </form>
-//   );
-// }

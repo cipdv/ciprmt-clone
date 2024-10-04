@@ -53,9 +53,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
       "center"
     );
     doc.text(
-      `Date of treatment: ${new Date(
-        receipt.appointmentDate
-      ).toLocaleDateString()}`,
+      `Date of treatment: ${receipt.appointmentDate}`,
       pageCenter,
       80,
       null,

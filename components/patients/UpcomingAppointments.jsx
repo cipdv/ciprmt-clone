@@ -58,6 +58,8 @@ const AppointmentItem = ({ appointment }) => {
     }
   };
 
+  const appointmentDetailsString = `${appointment.formattedDate} at ${appointment.formattedTime} for ${appointment.duration} minutes`;
+
   return (
     <div className="mb-6 p-4 border border-gray-600 rounded-lg shadow-sm">
       <h2 className="text-xl mb-2">
@@ -76,14 +78,15 @@ const AppointmentItem = ({ appointment }) => {
         <Link href="/dashboard/patient/book-a-massage">
           <button className="btn-small">Book another appointment</button>
         </Link>
-        <CancelAppointmentForm id={appointment._id.toString()} />
+        <CancelAppointmentForm
+          id={appointment._id.toString()}
+          appointmentDetails={appointmentDetailsString}
+        />
       </div>
       {error && <p className="text-red-500 mt-2">{error}</p>}
       <div className="mt-4">
         {appointment.consentFormSubmittedAt ? (
-          <h1 className="text-xl font-semibold text-green-600">
-            Appointment confirmed
-          </h1>
+          <></>
         ) : (
           <div>
             <h3 className="text-lg font-semibold mb-2">

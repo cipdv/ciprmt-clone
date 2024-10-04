@@ -16,21 +16,6 @@ import { healthHistorySchema } from "./lib/zod/zodSchemas";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
-// import {
-//   addDays,
-//   addMinutes,
-//   addMonths,
-//   differenceInMilliseconds,
-//   differenceInMinutes,
-//   format,
-//   isBefore,
-//   isAfter,
-//   isEqual,
-//   parseISO,
-//   subMinutes,
-// } from "date-fns";
-// import { TZDate, tz } from "@date-fns/tz";
-
 // Set up JWT
 const secretKey = process.env.JWT_SECRET_KEY;
 const key = new TextEncoder().encode(secretKey);
@@ -74,6 +59,10 @@ function serializeDocument(doc) {
     })
   );
 }
+
+//////////////////////////////////////////////////
+////////////////AUTH//////////////////////////////
+//////////////////////////////////////////////////
 
 export async function encrypt(payload) {
   return await new SignJWT(payload)
@@ -198,6 +187,7 @@ export async function registerNewPatient(prevState, formData) {
       phone,
       userType: "patient",
       password: hashedPassword,
+      rmtId: "615b37ba970196ca0d3122fe",
       createdAt: new Date(),
     };
 
@@ -310,6 +300,10 @@ export const verifyAuth = async (token) => {
     throw new Error("Invalid token");
   }
 };
+
+//////////////////////////////////////////////////
+//////////SCHEDULING//////////////////////////////
+//////////////////////////////////////////////////
 
 export async function submitScheduleSetup(prevState, formData) {
   console.log(formData);
@@ -498,139 +492,6 @@ export async function RMTSetup({
   return;
 }
 
-// export async function RMTSetup({
-//   address,
-//   contactInfo,
-//   workplaceType,
-//   massageServices,
-//   workDays,
-// }) {
-//   const session = await getSession();
-//   if (session.resultObj.userType !== "rmt") {
-//     return {
-//       message: "You must be logged in as a RMT to create a new set up.",
-//     };
-//   }
-
-//   const { locationName, streetAddress, city, province, country, postalCode } =
-//     address;
-//   const { phone, email } = contactInfo;
-
-//   const trimAndCapitalize = (str) =>
-//     typeof str === "string" ? str.trim().toUpperCase() : "";
-//   const capitalize = (str) =>
-//     typeof str === "string"
-//       ? str.trim().replace(/\b\w/g, (char) => char.toUpperCase())
-//       : "";
-//   const formatPhoneNumber = (phone) => {
-//     const cleaned =
-//       typeof phone === "string" ? phone.trim().replace(/\D/g, "") : "";
-//     const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
-//     if (match) {
-//       return `${match[1]}-${match[2]}-${match[3]}`;
-//     }
-//     return phone;
-//   };
-
-//   const formattedPhone = formatPhoneNumber(phone);
-//   const formattedEmail =
-//     typeof email === "string" ? email.trim().toLowerCase() : "";
-
-//   const formattedFormData = {
-//     address: {
-//       locationName: capitalize(locationName),
-//       streetAddress:
-//         typeof streetAddress === "string" ? streetAddress.trim() : "",
-//       city: capitalize(city),
-//       province: capitalize(province),
-//       country: capitalize(country),
-//       postalCode: trimAndCapitalize(postalCode),
-//     },
-//     contactInfo: {
-//       phone: formattedPhone,
-//       email: formattedEmail,
-//     },
-//     workDays,
-//     workplaceType,
-//     massageServices,
-//   };
-
-//   const { _id } = session.resultObj;
-//   const dbClient = await dbConnection;
-//   const db = await dbClient.db(process.env.DB_NAME);
-
-//   const setup = {
-//     userId: _id,
-//     formattedFormData,
-//   };
-
-//   try {
-//     const result = await db.collection("rmtLocations").insertOne(setup);
-//     if (result.acknowledged) {
-//       console.log("Document inserted with _id:", result.insertedId);
-
-//       const appointments = [];
-//       const today = new Date();
-//       const daysOfWeek = [
-//         "Sunday",
-//         "Monday",
-//         "Tuesday",
-//         "Wednesday",
-//         "Thursday",
-//         "Friday",
-//         "Saturday",
-//       ];
-
-//       for (const workDay of workDays) {
-//         const dayIndex = daysOfWeek.indexOf(workDay.day);
-//         for (let i = 0; i < 8; i++) {
-//           const appointmentDate = new Date(today);
-//           const daysUntilNextWorkday = (dayIndex - today.getDay() + 7) % 7;
-//           appointmentDate.setDate(
-//             today.getDate() + daysUntilNextWorkday + i * 7
-//           );
-//           for (const timeSlot of workDay.appointmentTimes) {
-//             const expiryDate = new Date(appointmentDate);
-//             expiryDate.setDate(expiryDate.getDate() + 7);
-
-//             appointments.push({
-//               RMTLocationId: result.insertedId,
-//               appointmentDate: appointmentDate.toISOString().split("T")[0],
-//               appointmentStartTime: timeSlot.start,
-//               appointmentEndTime: timeSlot.end,
-//               status: "available",
-//               expiryDate: expiryDate,
-//             });
-//           }
-//         }
-//       }
-
-//       const appointmentResult = await db
-//         .collection("appointments")
-//         .insertMany(appointments);
-//       if (appointmentResult.acknowledged) {
-//         console.log("Appointments inserted:", appointmentResult.insertedCount);
-
-//         await db.collection("appointments").createIndex(
-//           { expiryDate: 1 },
-//           {
-//             expireAfterSeconds: 0,
-//             partialFilterExpression: { status: "available" },
-//           }
-//         );
-//       } else {
-//         console.error("Failed to insert appointments.");
-//       }
-//     } else {
-//       console.error("Failed to insert the document.");
-//     }
-//   } catch (error) {
-//     console.error("An error occurred while inserting the document:", error);
-//   }
-
-//   return;
-// }
-
 export const getRMTSetup = async () => {
   const session = await getSession();
 
@@ -706,7 +567,7 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
   // Fetch busy times from Google Calendar
   const now = new Date();
   const oneMonthLater = new Date();
-  oneMonthLater.setMonth(now.getMonth() + 3);
+  oneMonthLater.setMonth(now.getMonth() + 2.5);
 
   const busyTimes = await calendar.freebusy.query({
     requestBody: {
@@ -782,8 +643,11 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     (a, b) => new Date(a.date) - new Date(b.date)
   );
 
+  console.log("Available times:", sortedAvailableTimes);
   return sortedAvailableTimes;
 };
+
+////////working function
 
 export async function bookAppointment({
   location,
@@ -793,6 +657,7 @@ export async function bookAppointment({
   appointmentDate,
   RMTLocationId,
 }) {
+  console.log("appointmentTime", appointmentTime, appointmentDate);
   const session = await getSession();
   if (!session) {
     return {
@@ -805,21 +670,20 @@ export async function bookAppointment({
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
-  // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
-  const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
+  // appointmentDate is already in "YYYY-MM-DD" format, so we don't need to convert it
 
-  // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
-  const [startTime, endTime] = appointmentTime.split(" - ");
-  const formattedStartTime = new Date(
-    `${appointmentDate} ${startTime}`
-  ).toLocaleTimeString("en-US", {
+  // Parse the appointmentTime (which is now just the start time)
+  const [hours, minutes] = appointmentTime.split(":");
+  const startDateTime = new Date(`${appointmentDate}T${hours}:${minutes}:00`);
+  const endDateTime = new Date(startDateTime.getTime() + duration * 60000); // Add duration in milliseconds
+
+  const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
   });
-  const formattedEndTime = new Date(
-    `${appointmentDate} ${endTime}`
-  ).toLocaleTimeString("en-US", {
+
+  const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
@@ -828,7 +692,7 @@ export async function bookAppointment({
   try {
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
-      appointmentDate: formattedDate,
+      appointmentDate: appointmentDate,
       appointmentStartTime: { $lte: formattedStartTime },
       appointmentEndTime: { $gte: formattedEndTime },
     };
@@ -839,11 +703,11 @@ export async function bookAppointment({
       location: location,
       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
       start: {
-        dateTime: `${formattedDate}T${formattedStartTime}:00`,
+        dateTime: startDateTime.toISOString(),
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: `${formattedDate}T${formattedEndTime}:00`,
+        dateTime: endDateTime.toISOString(),
         timeZone: "America/Toronto",
       },
       colorId: "2", // Sage color
@@ -965,6 +829,9 @@ export const cancelAppointment = async (prevState, formData) => {
         consentFormSubmittedAt: null,
         googleCalendarEventId: null,
         googleCalendarEventLink: null,
+        appointmentBeginsAt: null,
+        appointmentEndsAt: null,
+        location: null,
       },
     };
 
@@ -1087,224 +954,371 @@ export async function setAppointmentStatus(appointmentId, status) {
   }
 }
 
-export async function getAllAvailableAppointments(
+////working version
+// export const getAllAvailableAppointments = async (
+//   rmtLocationId,
+//   duration,
+//   currentEventGoogleId
+// ) => {
+//   const db = await getDatabase();
+//   const appointmentsCollection = db.collection("appointments");
+
+//   // Convert duration to an integer
+//   const durationMinutes = parseInt(duration, 10);
+
+//   // Fetch appointments with the given rmtLocationId and status 'available' or 'rescheduling'
+//   const appointments = await appointmentsCollection
+//     .find({
+//       RMTLocationId: new ObjectId(rmtLocationId),
+//       status: { $in: ["available", "rescheduling"] },
+//     })
+//     .toArray();
+
+//   const availableTimes = [];
+
+//   appointments.forEach((appointment) => {
+//     const startTime = new Date(
+//       `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+//     );
+//     const endTime = new Date(
+//       `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+//     );
+
+//     let currentTime = new Date(startTime);
+
+//     while (currentTime <= endTime) {
+//       const nextTime = new Date(currentTime);
+//       nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
+
+//       if (nextTime <= endTime) {
+//         availableTimes.push({
+//           date: appointment.appointmentDate,
+//           startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
+//           endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+//         });
+//       }
+
+//       currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
+//     }
+//   });
+
+//   // Fetch busy times from Google Calendar
+//   const now = new Date();
+//   const oneMonthLater = new Date();
+//   oneMonthLater.setMonth(now.getMonth() + 2.5);
+
+//   const busyTimes = await calendar.freebusy.query({
+//     requestBody: {
+//       timeMin: now.toISOString(),
+//       timeMax: oneMonthLater.toISOString(),
+//       items: [{ id: GOOGLE_CALENDAR_ID }],
+//       timeZone: "America/Toronto",
+//     },
+//   });
+
+//   // Fetch the current event details
+//   let currentEvent = null;
+//   if (currentEventGoogleId) {
+//     try {
+//       const event = await calendar.events.get({
+//         calendarId: GOOGLE_CALENDAR_ID,
+//         eventId: currentEventGoogleId,
+//       });
+//       currentEvent = event.data;
+//     } catch (error) {
+//       console.error("Error fetching current event:", error);
+//     }
+//   }
+
+//   let busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+//     (period) => {
+//       const start = period.start;
+//       const end = period.end;
+
+//       // Function to add or subtract minutes from a date-time string
+//       const addMinutes = (dateTimeStr, minutes) => {
+//         const [date, time] = dateTimeStr.split("T");
+//         const [hours, minutesStr] = time.split(":");
+//         const totalMinutes =
+//           parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
+//         const newHours = Math.floor(totalMinutes / 60)
+//           .toString()
+//           .padStart(2, "0");
+//         const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+//         return `${date}T${newHours}:${newMinutes}:00Z`;
+//       };
+
+//       // Function to convert date-time string to desired format
+//       const formatDateTime = (dateTimeStr) => {
+//         const [date, time] = dateTimeStr.split("T");
+//         const [hours, minutes] = time.split(":");
+//         return {
+//           date,
+//           time: `${hours}:${minutes}`,
+//         };
+//       };
+
+//       const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
+//       const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+
+//       return {
+//         date: formatDateTime(bufferedStart).date,
+//         startTime: formatDateTime(bufferedStart).time,
+//         endTime: formatDateTime(bufferedEnd).time,
+//       };
+//     }
+//   );
+
+//   // Remove the current event from busyPeriods if it exists
+//   if (currentEvent) {
+//     const currentEventStart = new Date(
+//       currentEvent.start.dateTime || currentEvent.start.date
+//     );
+//     const currentEventEnd = new Date(
+//       currentEvent.end.dateTime || currentEvent.end.date
+//     );
+
+//     const currentEventDate = currentEventStart.toISOString().split("T")[0];
+//     const currentEventStartTime = currentEventStart.toTimeString().slice(0, 5);
+//     const currentEventEndTime = currentEventEnd.toTimeString().slice(0, 5);
+
+//     busyPeriods = busyPeriods.filter(
+//       (period) =>
+//         !(
+//           period.date === currentEventDate &&
+//           period.startTime <= currentEventStartTime &&
+//           period.endTime >= currentEventEndTime
+//         )
+//     );
+//   }
+
+//   // Filter out conflicting times
+//   const filteredAvailableTimes = availableTimes.filter((available) => {
+//     return !busyPeriods.some((busy) => {
+//       return (
+//         available.date === busy.date &&
+//         ((available.startTime >= busy.startTime &&
+//           available.startTime < busy.endTime) ||
+//           (available.endTime > busy.startTime &&
+//             available.endTime <= busy.endTime) ||
+//           (available.startTime <= busy.startTime &&
+//             available.endTime >= busy.endTime))
+//       );
+//     });
+//   });
+
+//   // Filter out dates that are not greater than today
+//   const today = new Date().toISOString().split("T")[0];
+//   const futureAvailableTimes = filteredAvailableTimes.filter(
+//     (available) => available.date > today
+//   );
+
+//   // Sort the results by date
+//   const sortedAvailableTimes = futureAvailableTimes.sort(
+//     (a, b) => new Date(a.date) - new Date(b.date)
+//   );
+
+//   // If the current event exists and is in the future, add it to the sorted available times
+//   // if (currentEvent) {
+//   //   const currentEventStart = new Date(
+//   //     currentEvent.start.dateTime || currentEvent.start.date
+//   //   );
+//   //   const currentEventEnd = new Date(
+//   //     currentEvent.end.dateTime || currentEvent.end.date
+//   //   );
+
+//   //   if (currentEventStart >= now) {
+//   //     sortedAvailableTimes.push({
+//   //       date: currentEventStart.toISOString().split("T")[0],
+//   //       startTime: currentEventStart.toTimeString().slice(0, 5),
+//   //       endTime: currentEventEnd.toTimeString().slice(0, 5),
+//   //       isCurrentAppointment: true,
+//   //     });
+
+//   //     // Re-sort the array to ensure the current appointment is in the correct position
+//   //     sortedAvailableTimes.sort((a, b) => new Date(a.date) - new Date(b.date));
+//   //   }
+//   // }
+
+//   console.log("Available times:", sortedAvailableTimes);
+//   return sortedAvailableTimes;
+// };
+
+export const getAllAvailableAppointments = async (
   rmtLocationId,
   duration,
-  currentAppointmentGoogleId
-) {
-  console.log(
-    `getAllAvailableAppointments called with rmtLocationId: ${rmtLocationId}, duration: ${duration}, currentAppointmentGoogleId: ${currentAppointmentGoogleId}`
-  );
-
-  if (!currentAppointmentGoogleId) {
-    console.warn(
-      "currentAppointmentGoogleId is null or undefined. This may affect the ability to exclude the current appointment from busy times."
-    );
-  }
-
+  currentEventGoogleId
+) => {
   const db = await getDatabase();
+  const appointmentsCollection = db.collection("appointments");
 
-  try {
-    const objectId = new ObjectId(rmtLocationId);
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    const tomorrowString = tomorrow.toISOString().split("T")[0];
+  // Convert duration to an integer
+  const durationMinutes = parseInt(duration, 10);
 
-    const endDate = new Date(tomorrow);
-    endDate.setMonth(endDate.getMonth() + 3);
-    const endDateString = endDate.toISOString().split("T")[0];
+  // Fetch appointments with the given rmtLocationId and status 'available' or 'rescheduling'
+  const appointments = await appointmentsCollection
+    .find({
+      RMTLocationId: new ObjectId(rmtLocationId),
+      status: { $in: ["available", "rescheduling"] },
+    })
+    .toArray();
 
-    console.log(
-      `Fetching appointments for RMTLocationId: ${rmtLocationId}, duration: ${duration}, date range: ${tomorrowString} to ${endDateString}`
-    );
-
-    let currentAppointment = null;
-    const appointments = await db
-      .collection("appointments")
-      .find({
-        RMTLocationId: objectId,
-        appointmentDate: { $gte: tomorrowString, $lte: endDateString },
-      })
-      .sort({ appointmentDate: 1, appointmentStartTime: 1 })
-      .toArray();
-
-    if (currentAppointmentGoogleId) {
-      currentAppointment = appointments.find(
-        (apt) =>
-          apt.googleCalendarEventId === currentAppointmentGoogleId ||
-          apt.googleCalendarEventLink === currentAppointmentGoogleId
-      );
-      if (currentAppointment) {
-        console.log("Current appointment found:", currentAppointment);
-      } else {
-        console.log("Current appointment not found in the database");
-      }
-    }
-
-    console.log(`Found ${appointments.length} potential appointments`);
-
-    const busyTimes = await getBusyTimesExcludingCurrent(
-      tomorrowString,
-      endDateString,
-      currentAppointmentGoogleId
-    );
-
-    const groupedAppointments = appointments.reduce((acc, appointment) => {
-      const date = appointment.appointmentDate;
-      if (!acc[date]) {
-        acc[date] = [];
-      }
-
-      const availableTimes = generateAvailableStartTimesForRescheduling(
-        appointment,
-        parseInt(duration),
-        busyTimes,
-        currentAppointment
-      );
-      acc[date].push(...availableTimes);
-      return acc;
-    }, {});
-
-    const result = Object.entries(groupedAppointments).map(([date, times]) => ({
-      date,
-      times: times.sort(),
-    }));
-
-    return serializeDocument(result);
-  } catch (error) {
-    console.error("Error fetching appointments:", error);
-    throw error;
-  }
-}
-
-//helper function to get busy times from Google Calendar excluding current appointment
-async function getBusyTimesExcludingCurrent(
-  startDate,
-  endDate,
-  currentAppointmentGoogleId
-) {
-  const MAX_DAYS = 60;
-  const allBusyTimes = [];
-  let currentStartDate = new Date(startDate);
-  const finalEndDate = new Date(endDate);
-
-  while (currentStartDate < finalEndDate) {
-    let currentEndDate = new Date(currentStartDate);
-    currentEndDate.setDate(currentEndDate.getDate() + MAX_DAYS);
-
-    if (currentEndDate > finalEndDate) {
-      currentEndDate = finalEndDate;
-    }
-
-    try {
-      const response = await calendar.freebusy.query({
-        resource: {
-          timeMin: currentStartDate.toISOString(),
-          timeMax: currentEndDate.toISOString(),
-          items: [{ id: GOOGLE_CALENDAR_ID }],
-        },
-      });
-
-      const busyTimes = response.data.calendars[GOOGLE_CALENDAR_ID].busy;
-
-      const filteredBusyTimes = busyTimes.filter((busyTime) => {
-        if (!currentAppointmentGoogleId) return true;
-        return !busyTime.id || busyTime.id !== currentAppointmentGoogleId;
-      });
-
-      allBusyTimes.push(...filteredBusyTimes);
-    } catch (error) {
-      console.error("Error fetching busy times from Google Calendar:", error);
-    }
-
-    currentStartDate = new Date(currentEndDate);
-    currentStartDate.setDate(currentStartDate.getDate() + 1);
-  }
-
-  return allBusyTimes;
-}
-
-//helper function to generate available start times for rescheduling
-function generateAvailableStartTimesForRescheduling(
-  appointment,
-  duration,
-  busyTimes,
-  currentAppointment
-) {
   const availableTimes = [];
-  const now = new Date();
-  const isCurrentAppointment =
-    currentAppointment &&
-    appointment.appointmentDate === currentAppointment.appointmentDate &&
-    appointment.appointmentStartTime ===
-      currentAppointment.appointmentStartTime;
 
-  const startTime = new Date(
-    `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
-  );
-  const endTime = new Date(
-    `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
-  );
-  const durationMs = duration * 60 * 1000;
-  const bufferMs = 30 * 60 * 1000;
+  appointments.forEach((appointment) => {
+    const startTime = new Date(
+      `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+    );
+    const endTime = new Date(
+      `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+    );
 
-  let currentTime = startTime;
+    let currentTime = new Date(startTime);
 
-  while (currentTime.getTime() + durationMs <= endTime.getTime()) {
-    if (currentTime > now) {
-      const potentialEndTime = new Date(currentTime.getTime() + durationMs);
-      if (
-        isCurrentAppointment ||
-        !isConflictingWithBusyTimesForRescheduling(
-          currentTime,
-          potentialEndTime,
-          busyTimes,
-          bufferMs,
-          currentAppointment
-        )
-      ) {
-        availableTimes.push(currentTime.toTimeString().substr(0, 5));
+    while (currentTime <= endTime) {
+      const nextTime = new Date(currentTime);
+      nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
+
+      if (nextTime <= endTime) {
+        availableTimes.push({
+          date: appointment.appointmentDate,
+          startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
+          endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+        });
       }
+
+      currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
     }
-    currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
-  }
-
-  return availableTimes;
-}
-
-//helper function to check if appointment time is conflicting with busy times for rescheduling
-function isConflictingWithBusyTimesForRescheduling(
-  start,
-  end,
-  busyTimes,
-  bufferMs,
-  currentAppointment
-) {
-  const startWithBuffer = new Date(start.getTime() - bufferMs);
-  const endWithBuffer = new Date(end.getTime() + bufferMs);
-
-  if (
-    currentAppointment &&
-    start >=
-      new Date(
-        `${currentAppointment.appointmentDate}T${currentAppointment.appointmentStartTime}`
-      ) &&
-    end <=
-      new Date(
-        `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndTime}`
-      )
-  ) {
-    return false;
-  }
-
-  return busyTimes.some((busy) => {
-    const busyStart = new Date(busy.start);
-    const busyEnd = new Date(busy.end);
-    return startWithBuffer < busyEnd && endWithBuffer > busyStart;
   });
-}
 
+  // Fetch busy times from Google Calendar
+  const now = new Date();
+  const oneMonthLater = new Date();
+  oneMonthLater.setMonth(now.getMonth() + 2.5);
+
+  const busyTimes = await calendar.freebusy.query({
+    requestBody: {
+      timeMin: now.toISOString(),
+      timeMax: oneMonthLater.toISOString(),
+      items: [{ id: GOOGLE_CALENDAR_ID }],
+      timeZone: "America/Toronto",
+    },
+  });
+
+  // Fetch the current event details
+  let currentEvent = null;
+  if (currentEventGoogleId) {
+    try {
+      const event = await calendar.events.get({
+        calendarId: GOOGLE_CALENDAR_ID,
+        eventId: currentEventGoogleId,
+      });
+      currentEvent = event.data;
+    } catch (error) {
+      console.error("Error fetching current event:", error);
+    }
+  }
+
+  let busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+    (period) => {
+      const start = period.start;
+      const end = period.end;
+
+      // Function to add or subtract minutes from a date-time string
+      const addMinutes = (dateTimeStr, minutes) => {
+        const [date, time] = dateTimeStr.split("T");
+        const [hours, minutesStr] = time.split(":");
+        const totalMinutes =
+          parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
+        const newHours = Math.floor(totalMinutes / 60)
+          .toString()
+          .padStart(2, "0");
+        const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+        return `${date}T${newHours}:${newMinutes}:00Z`;
+      };
+
+      // Function to convert date-time string to desired format
+      const formatDateTime = (dateTimeStr) => {
+        const [date, time] = dateTimeStr.split("T");
+        const [hours, minutes] = time.split(":");
+        return {
+          date,
+          time: `${hours}:${minutes}`,
+        };
+      };
+
+      const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
+      const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+
+      return {
+        date: formatDateTime(bufferedStart).date,
+        startTime: formatDateTime(bufferedStart).time,
+        endTime: formatDateTime(bufferedEnd).time,
+      };
+    }
+  );
+
+  // Remove the current event from busyPeriods if it exists
+  if (currentEvent) {
+    const currentEventStart = new Date(
+      currentEvent.start.dateTime || currentEvent.start.date
+    );
+    const currentEventEnd = new Date(
+      currentEvent.end.dateTime || currentEvent.end.date
+    );
+
+    const currentEventDate = currentEventStart.toISOString().split("T")[0];
+    const currentEventStartTime = currentEventStart.toTimeString().slice(0, 5);
+    const currentEventEndTime = currentEventEnd.toTimeString().slice(0, 5);
+
+    busyPeriods = busyPeriods.filter(
+      (period) =>
+        !(
+          period.date === currentEventDate &&
+          period.startTime <= currentEventStartTime &&
+          period.endTime >= currentEventEndTime
+        )
+    );
+  }
+
+  // Filter out conflicting times
+  const filteredAvailableTimes = availableTimes.filter((available) => {
+    return !busyPeriods.some((busy) => {
+      return (
+        available.date === busy.date &&
+        ((available.startTime >= busy.startTime &&
+          available.startTime < busy.endTime) ||
+          (available.endTime > busy.startTime &&
+            available.endTime <= busy.endTime) ||
+          (available.startTime <= busy.startTime &&
+            available.endTime >= busy.endTime))
+      );
+    });
+  });
+
+  // Filter out dates that are not greater than today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Set to the start of today
+  const futureAvailableTimes = filteredAvailableTimes.filter(
+    (available) => new Date(available.date) > today
+  );
+
+  // Sort the results by date and then by time
+  const sortedAvailableTimes = futureAvailableTimes.sort((a, b) => {
+    // First, compare the dates
+    if (a.date !== b.date) {
+      return new Date(a.date) - new Date(b.date);
+    }
+
+    // If dates are the same, compare the start times
+    return a.startTime.localeCompare(b.startTime);
+  });
+
+  console.log("Available times:", sortedAvailableTimes);
+  return sortedAvailableTimes;
+};
+
+////Working version
 export async function rescheduleAppointment(
   currentAppointmentId,
   {
@@ -1326,23 +1340,30 @@ export async function rescheduleAppointment(
 
   const { _id, firstName, lastName, email } = session.resultObj;
 
-  const db = await getDatabase();
+  const dbClient = await dbConnection;
+  const db = await dbClient.db(process.env.DB_NAME);
 
-  function addDurationToTime(appointmentTime, duration) {
-    const [hours, minutes] = appointmentTime.split(":").map(Number);
-    const durationInMinutes = Number(duration);
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    date.setMinutes(date.getMinutes() + durationInMinutes);
-    const updatedHours = String(date.getHours()).padStart(2, "0");
-    const updatedMinutes = String(date.getMinutes()).padStart(2, "0");
-    return `${updatedHours}:${updatedMinutes}`;
-  }
+  // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
+  const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
 
-  const formattedEndTime = addDurationToTime(appointmentTime, duration);
+  // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
+  const [startTime, endTime] = appointmentTime.split(" - ");
+  const formattedStartTime = new Date(
+    `${appointmentDate} ${startTime}`
+  ).toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const formattedEndTime = new Date(
+    `${appointmentDate} ${endTime}`
+  ).toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   try {
-    // Fetch the current appointment to get the Google Calendar event ID
     const currentAppointment = await db
       .collection("appointments")
       .findOne({ _id: new ObjectId(currentAppointmentId) });
@@ -1354,18 +1375,17 @@ export async function rescheduleAppointment(
       });
     }
 
-    // Update the Google Calendar event
     if (currentAppointment.googleCalendarEventId) {
       const updatedEvent = {
         summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
         location: location,
         description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
         start: {
-          dateTime: `${appointmentDate}T${appointmentTime}:00`,
+          dateTime: `${formattedDate}T${formattedStartTime}:00`,
           timeZone: "America/Toronto",
         },
         end: {
-          dateTime: `${appointmentDate}T${formattedEndTime}:00`,
+          dateTime: `${formattedDate}T${formattedEndTime}:00`,
           timeZone: "America/Toronto",
         },
         colorId: "2", // Sage color
@@ -1380,7 +1400,6 @@ export async function rescheduleAppointment(
         console.log("Google Calendar event updated successfully.");
       } catch (calendarError) {
         console.error("Error updating Google Calendar event:", calendarError);
-        // We'll continue with the rescheduling even if the Calendar update fails
       }
     }
 
@@ -1409,8 +1428,8 @@ export async function rescheduleAppointment(
 
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
-      appointmentDate: appointmentDate,
-      appointmentStartTime: { $lte: appointmentTime },
+      appointmentDate: formattedDate,
+      appointmentStartTime: { $lte: formattedStartTime },
       appointmentEndTime: { $gte: formattedEndTime },
       status: { $in: ["available", "rescheduling"] },
     };
@@ -1419,7 +1438,7 @@ export async function rescheduleAppointment(
       $set: {
         status: "booked",
         location: location,
-        appointmentBeginsAt: appointmentTime,
+        appointmentBeginsAt: formattedStartTime,
         appointmentEndsAt: formattedEndTime,
         userId: _id,
         duration: duration,
@@ -1442,7 +1461,6 @@ export async function rescheduleAppointment(
     } else {
       console.log("No matching appointment found for rescheduling.");
 
-      // If rescheduling fails, revert the Google Calendar event to its original state
       if (currentAppointment.googleCalendarEventId) {
         try {
           await calendar.events.update({
@@ -1496,10 +1514,6 @@ export async function rescheduleAppointment(
     });
   }
 }
-
-////////////////////////////////////////////////////////////
-////////////////////HEALTH HISTORY//////////////////////////
-////////////////////////////////////////////////////////////
 
 async function checkAuth() {
   const session = await getSession();
@@ -1631,146 +1645,3 @@ export async function deleteHealthHistory(id) {
     throw new Error("Failed to delete health history");
   }
 }
-
-// //////////////////functions from v0 for online booking....trying something different///////////////////
-
-// const locationSchema = z.object({
-//   name: z.string(),
-//   address: z.string(),
-//   contactInfo: z.string(),
-//   schedule: z.array(
-//     z.object({
-//       day: z.enum([
-//         "Monday",
-//         "Tuesday",
-//         "Wednesday",
-//         "Thursday",
-//         "Friday",
-//         "Saturday",
-//         "Sunday",
-//       ]),
-//       slots: z.array(
-//         z.object({
-//           start: z.string(),
-//           end: z.string(),
-//         })
-//       ),
-//     })
-//   ),
-// });
-
-// export async function addLocation(formData) {
-//   const db = await getDatabase();
-
-//   const rawData = Object.fromEntries(formData.entries());
-//   const validatedData = locationSchema.parse(rawData);
-
-//   const result = await db.collection("locations").insertOne(validatedData);
-
-//   if (result.acknowledged) {
-//     return { success: true, message: "Location added successfully" };
-//   } else {
-//     return { success: false, message: "Failed to add location" };
-//   }
-// }
-
-// export async function getLocations() {
-//   const db = await getDatabase();
-//   const locations = await db.collection("locations").find().toArray();
-//   return locations;
-// }
-
-// const serviceSchema = z.object({
-//   locationId: z.string(),
-//   name: z.string(),
-//   duration: z.number(),
-//   price: z.number(),
-// });
-
-// export async function addService(formData) {
-//   const db = await getDatabase();
-
-//   const rawData = Object.fromEntries(formData.entries());
-//   const validatedData = serviceSchema.parse(rawData);
-
-//   const result = await db.collection("services").insertOne(validatedData);
-
-//   if (result.acknowledged) {
-//     return { success: true, message: "Service added successfully" };
-//   } else {
-//     return { success: false, message: "Failed to add service" };
-//   }
-// }
-
-// export async function getServices(locationId) {
-//   const db = await getDatabase();
-//   const services = await db
-//     .collection("services")
-//     .find({ locationId })
-//     .toArray();
-//   return services;
-// }
-
-// const appointmentSchema = z.object({
-//   locationId: z.string(),
-//   serviceId: z.string(),
-//   slot: z.object({
-//     start: z.string(),
-//     end: z.string(),
-//   }),
-//   userInfo: z.object({
-//     name: z.string(),
-//     email: z.string().email(),
-//     phone: z.string(),
-//   }),
-// });
-
-// export async function bookAppointment2(formData) {
-//   const db = await getDatabase();
-
-//   const rawData = Object.fromEntries(formData.entries());
-//   const validatedData = appointmentSchema.parse(rawData);
-
-//   const result = await db.collection("appointments").insertOne(validatedData);
-
-//   if (result.acknowledged) {
-//     // Add event to Google Calendar
-//     await addToGoogleCalendar(validatedData);
-//     return { success: true, message: "Appointment booked successfully" };
-//   } else {
-//     return { success: false, message: "Failed to book appointment" };
-//   }
-// }
-
-// async function addToGoogleCalendar(appointmentData) {
-//   const auth = new google.auth.GoogleAuth({
-//     keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-//     scopes: ["https://www.googleapis.com/auth/calendar"],
-//   });
-
-//   const calendar = google.calendar({ version: "v3", auth });
-
-//   const event = {
-//     summary: "Massage Appointment",
-//     location: appointmentData.location.address,
-//     description: `${appointmentData.service.name} - ${appointmentData.service.duration} minutes`,
-//     start: {
-//       dateTime: appointmentData.slot.start,
-//       timeZone: "America/New_York", // Adjust this to your timezone
-//     },
-//     end: {
-//       dateTime: appointmentData.slot.end,
-//       timeZone: "America/New_York", // Adjust this to your timezone
-//     },
-//   };
-
-//   try {
-//     const res = await calendar.events.insert({
-//       calendarId: "primary",
-//       requestBody: event,
-//     });
-//     console.log("Event created: %s", res.data.htmlLink);
-//   } catch (error) {
-//     console.error("Error creating calendar event:", error);
-//   }
-// }
