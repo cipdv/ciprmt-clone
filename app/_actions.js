@@ -689,6 +689,13 @@ export async function bookAppointment({
     minute: "2-digit",
   });
 
+  console.log("startDateTime", startDateTime);
+  console.log("endDateTime", endDateTime);
+  console.log("startdate time isostring", startDateTime.toISOString());
+  console.log("end date time isostring", endDateTime.toISOString());
+  console.log("formattedStartTime", formattedStartTime);
+  console.log("formattedEndTime", formattedEndTime);
+
   try {
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
@@ -703,11 +710,12 @@ export async function bookAppointment({
       location: location,
       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
       start: {
-        dateTime: startDateTime.toISOString(),
+        // dateTime: startDateTime.toISOString(),
+        dateTime: startDateTime,
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: endDateTime.toISOString(),
+        dateTime: endDateTime,
         timeZone: "America/Toronto",
       },
       colorId: "2", // Sage color
@@ -1330,6 +1338,8 @@ export async function rescheduleAppointment(
     RMTLocationId,
   }
 ) {
+  console.log("appointmentTime", appointmentTime, appointmentDate);
+
   const session = await getSession();
   if (!session) {
     return serializeDocument({
@@ -1362,6 +1372,9 @@ export async function rescheduleAppointment(
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  console.log("formattedStartTime", formattedStartTime);
+  console.log("formattedEndTime", formattedEndTime);
 
   try {
     const currentAppointment = await db
