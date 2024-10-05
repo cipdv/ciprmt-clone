@@ -887,14 +887,7 @@ export async function bookAppointment({
 
     const result = await db.collection("appointments").updateOne(query, update);
 
-    if (result.matchedCount > 0) {
-      console.log("Appointment updated successfully.");
-      revalidatePath("/dashboard/patient");
-      return {
-        success: true,
-        message: "Appointment booked successfully.",
-      };
-    } else {
+    if (result.matchedCount === 0) {
       console.log("No matching appointment found.");
       // If no matching appointment, delete the created Google Calendar event
       try {
@@ -914,6 +907,9 @@ export async function bookAppointment({
           "No matching appointment found. Please try again or contact support.",
       };
     }
+
+    console.log("Appointment updated successfully.");
+    revalidatePath("/dashboard/patient");
   } catch (error) {
     console.error("An error occurred while updating the appointment:", error);
     return {
@@ -921,6 +917,9 @@ export async function bookAppointment({
       message: "An error occurred while booking the appointment.",
     };
   }
+
+  // Redirect is placed at the end of the function, outside of any try-catch blocks
+  redirect("/dashboard/patient");
 }
 
 export const cancelAppointment = async (prevState, formData) => {
