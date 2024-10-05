@@ -24,6 +24,23 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
     appointmentDate: "",
   });
 
+  const formatDateForISO = (dateString) => {
+    const date = new Date(dateString);
+    return date.toISOString().split("T")[0]; // Returns YYYY-MM-DD
+  };
+
+  const formatTimeFor24Hour = (timeString) => {
+    const [time, modifier] = timeString.split(" ");
+    let [hours, minutes] = time.split(":");
+    if (hours === "12") {
+      hours = "00";
+    }
+    if (modifier === "PM") {
+      hours = parseInt(hours, 10) + 12 + "";
+    }
+    return `${hours.padStart(2, "0")}:${minutes}`;
+  };
+
   useEffect(() => {
     console.log("current", currentAppointment);
     const fetchAppointments = async () => {
@@ -185,8 +202,8 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
                       });
                       setFormData({
                         ...formData,
-                        appointmentTime: time,
-                        appointmentDate: dateGroup.date,
+                        appointmentTime: formatTimeFor24Hour(time), // Converts "1:00 PM" to "13:00"
+                        appointmentDate: formatDateForISO(dateGroup.date), // Converts "October 7, 2024" to "2024-10-07"
                       });
                     }}
                   >
@@ -211,12 +228,7 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    console.log(
-      "jfkdsajkfdsa",
-      formData.appointmentTime,
-      formData.workplace,
-      formData.appointmentDate
-    );
+
     try {
       const result = await rescheduleAppointment(currentAppointment._id, {
         location: formData.location,
@@ -428,10 +440,26 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
               <strong>Duration:</strong> {formData.duration} minutes
             </p>
             <p>
-              <strong>Date:</strong> {formData.appointmentDate}
+              <strong>Date:</strong>{" "}
+              {new Date(
+                `${formData.appointmentDate}T00:00:00`
+              ).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "America/Toronto",
+              })}
             </p>
             <p>
-              <strong>Time:</strong> {formData.appointmentTime}
+              <strong>Time:</strong>{" "}
+              {new Date(
+                `${formData.appointmentDate}T${formData.appointmentTime}`
+              ).toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "numeric",
+                hour12: true,
+                timeZone: "America/Toronto",
+              })}
             </p>
           </div>
           <div className="flex space-x-4">

@@ -6,7 +6,6 @@ export async function bookAppointment({
   appointmentDate,
   RMTLocationId,
 }) {
-  console.log("appointmentTime", appointmentTime, appointmentDate);
   const session = await getSession();
   if (!session) {
     return {
@@ -19,47 +18,38 @@ export async function bookAppointment({
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
-  // appointmentDate is already in "YYYY-MM-DD" format, so we don't need to convert it
+  function addDurationToTime(appointmentTime, duration) {
+    const [hours, minutes] = appointmentTime.split(":").map(Number);
+    const durationInMinutes = Number(duration);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    date.setMinutes(date.getMinutes() + durationInMinutes);
+    const updatedHours = String(date.getHours()).padStart(2, "0");
+    const updatedMinutes = String(date.getMinutes()).padStart(2, "0");
+    return `${updatedHours}:${updatedMinutes}`;
+  }
 
-  // Parse the appointmentTime (which is now just the start time)
-  const [hours, minutes] = appointmentTime.split(":");
-  const startDateTime = new Date(`${appointmentDate}T${hours}:${minutes}:00`);
-  const endDateTime = new Date(startDateTime.getTime() + duration * 60000); // Add duration in milliseconds
-
-  const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  console.log("formattedStartTime", formattedStartTime);
-  console.log("formattedEndTime", formattedEndTime);
+  const formattedEndTime = addDurationToTime(appointmentTime, duration);
 
   try {
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
       appointmentDate: appointmentDate,
-      appointmentStartTime: { $lte: formattedStartTime },
+      appointmentStartTime: { $lte: appointmentTime },
       appointmentEndTime: { $gte: formattedEndTime },
     };
 
-    // Create Google Calendar event
+    // Create Google Calendar event first
     const event = {
       summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
       location: location,
       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
       start: {
-        dateTime: startDateTime.toISOString(),
+        dateTime: `${appointmentDate}T${appointmentTime}:00`,
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: endDateTime.toISOString(),
+        dateTime: `${appointmentDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
       colorId: "2", // Sage color
@@ -83,7 +73,7 @@ export async function bookAppointment({
       $set: {
         status: "booked",
         location: location,
-        appointmentBeginsAt: formattedStartTime,
+        appointmentBeginsAt: appointmentTime,
         appointmentEndsAt: formattedEndTime,
         userId: _id,
         duration: duration,

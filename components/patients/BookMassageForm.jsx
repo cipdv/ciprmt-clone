@@ -187,7 +187,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                       setFormData({
                         ...formData,
                         appointmentTime: time.startTime,
-                        appointmentDate: dateGroup.date,
+                        appointmentDate: dateGroup.date, // This should already be in YYYY-MM-DD format
                       });
                     }}
                   >
@@ -368,10 +368,26 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
               <strong>Duration:</strong> {formData.duration} minutes
             </p>
             <p>
-              <strong>Date:</strong> {formData.appointmentDate}
+              <strong>Date:</strong>{" "}
+              {new Date(
+                `${formData.appointmentDate}T00:00:00`
+              ).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "America/Toronto",
+              })}
             </p>
             <p>
-              <strong>Time:</strong> {formData.appointmentTime}
+              <strong>Time:</strong>{" "}
+              {new Date(
+                `${formData.appointmentDate}T${formData.appointmentTime}`
+              ).toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "numeric",
+                hour12: true,
+                timeZone: "America/Toronto",
+              })}
             </p>
           </div>
           <div className="flex space-x-4">
