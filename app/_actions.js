@@ -804,38 +804,35 @@ export async function bookAppointment({
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
-  // Create a Date object in the America/Toronto time zone
-  const torontoTime = (dateString, timeString) => {
-    const date = new Date(`${dateString}T${timeString}`);
-    return new Date(
-      date.toLocaleString("en-US", { timeZone: "America/Toronto" })
-    );
-  };
+  // Ensure appointmentDate is in "YYYY-MM-DD" format
+  const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
 
-  const startDateTime = torontoTime(appointmentDate, appointmentTime);
+  // Convert appointmentTime to "HH:MM" (24-hour format)
+  const formattedStartTime = new Date(
+    `${appointmentDate} ${appointmentTime}`
+  ).toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  // Calculate end time
+  const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
   const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+  const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
-  const formatTimeForDB = (date) => {
-    return date.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "America/Toronto",
-    });
-  };
-
-  const formattedStartTime = formatTimeForDB(startDateTime);
-  const formattedEndTime = formatTimeForDB(endDateTime);
-
-  console.log("startDateTime", startDateTime);
-  console.log("endDateTime", endDateTime);
+  console.log("formattedDate", formattedDate);
   console.log("formattedStartTime", formattedStartTime);
   console.log("formattedEndTime", formattedEndTime);
 
   try {
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
-      appointmentDate: appointmentDate,
+      appointmentDate: formattedDate,
       appointmentStartTime: { $lte: formattedStartTime },
       appointmentEndTime: { $gte: formattedEndTime },
       status: "available",
@@ -849,11 +846,11 @@ export async function bookAppointment({
       location: location,
       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
       start: {
-        dateTime: startDateTime.toISOString(),
+        dateTime: `${formattedDate}T${formattedStartTime}:00`,
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: endDateTime.toISOString(),
+        dateTime: `${formattedDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
       colorId: "2", // Sage color
@@ -1471,207 +1468,6 @@ export const getAllAvailableAppointments = async (
 };
 
 ////Working version
-// export async function rescheduleAppointment(
-//   currentAppointmentId,
-//   {
-//     location,
-//     duration,
-//     appointmentTime,
-//     workplace,
-//     appointmentDate,
-//     RMTLocationId,
-//   }
-// ) {
-//   console.log("appointmentTime", appointmentTime, appointmentDate);
-
-//   const session = await getSession();
-//   if (!session) {
-//     return serializeDocument({
-//       success: false,
-//       message: "You must be logged in to reschedule an appointment.",
-//     });
-//   }
-
-//   const { _id, firstName, lastName, email } = session.resultObj;
-
-//   const dbClient = await dbConnection;
-//   const db = await dbClient.db(process.env.DB_NAME);
-
-//   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
-//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
-
-//   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
-//   const [startTime, endTime] = appointmentTime.split(" - ");
-//   const formattedStartTime = new Date(
-//     `${appointmentDate} ${startTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-//   const formattedEndTime = new Date(
-//     `${appointmentDate} ${endTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-
-//   console.log("formattedStartTime", formattedStartTime);
-//   console.log("formattedEndTime", formattedEndTime);
-
-//   try {
-//     const currentAppointment = await db
-//       .collection("appointments")
-//       .findOne({ _id: new ObjectId(currentAppointmentId) });
-
-//     if (!currentAppointment) {
-//       return serializeDocument({
-//         success: false,
-//         message: "Current appointment not found.",
-//       });
-//     }
-
-//     if (currentAppointment.googleCalendarEventId) {
-//       const updatedEvent = {
-//         summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
-//         location: location,
-//         description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
-//         start: {
-//           dateTime: `${formattedDate}T${formattedStartTime}:00`,
-//           timeZone: "America/Toronto",
-//         },
-//         end: {
-//           dateTime: `${formattedDate}T${formattedEndTime}:00`,
-//           timeZone: "America/Toronto",
-//         },
-//         colorId: "2", // Sage color
-//       };
-
-//       try {
-//         await calendar.events.update({
-//           calendarId: GOOGLE_CALENDAR_ID,
-//           eventId: currentAppointment.googleCalendarEventId,
-//           resource: updatedEvent,
-//         });
-//         console.log("Google Calendar event updated successfully.");
-//       } catch (calendarError) {
-//         console.error("Error updating Google Calendar event:", calendarError);
-//       }
-//     }
-
-//     const currentAppointmentUpdate = await db
-//       .collection("appointments")
-//       .updateOne(
-//         { _id: new ObjectId(currentAppointmentId) },
-//         {
-//           $set: {
-//             status: "available",
-//             userId: null,
-//             consentForm: null,
-//             consentFormSubmittedAt: null,
-//             googleCalendarEventId: null,
-//             googleCalendarEventLink: null,
-//           },
-//         }
-//       );
-
-//     if (currentAppointmentUpdate.matchedCount === 0) {
-//       return serializeDocument({
-//         success: false,
-//         message: "Current appointment not found.",
-//       });
-//     }
-
-//     const query = {
-//       RMTLocationId: new ObjectId(RMTLocationId),
-//       appointmentDate: formattedDate,
-//       appointmentStartTime: { $lte: formattedStartTime },
-//       appointmentEndTime: { $gte: formattedEndTime },
-//       status: { $in: ["available", "rescheduling"] },
-//     };
-
-//     const update = {
-//       $set: {
-//         status: "booked",
-//         location: location,
-//         appointmentBeginsAt: formattedStartTime,
-//         appointmentEndsAt: formattedEndTime,
-//         userId: _id,
-//         duration: duration,
-//         workplace: workplace,
-//         googleCalendarEventId: currentAppointment.googleCalendarEventId,
-//         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-//       },
-//     };
-
-//     const result = await db.collection("appointments").updateOne(query, update);
-
-//     if (result.matchedCount > 0) {
-//       console.log("Appointment rescheduled successfully.");
-
-//       revalidatePath("/dashboard/patient");
-//       return serializeDocument({
-//         success: true,
-//         message: "Appointment rescheduled successfully.",
-//       });
-//     } else {
-//       console.log("No matching appointment found for rescheduling.");
-
-//       if (currentAppointment.googleCalendarEventId) {
-//         try {
-//           await calendar.events.update({
-//             calendarId: GOOGLE_CALENDAR_ID,
-//             eventId: currentAppointment.googleCalendarEventId,
-//             resource: {
-//               start: {
-//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
-//                 timeZone: "America/Toronto",
-//               },
-//               end: {
-//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
-//                 timeZone: "America/Toronto",
-//               },
-//             },
-//           });
-//           console.log("Google Calendar event reverted successfully.");
-//         } catch (calendarError) {
-//           console.error(
-//             "Error reverting Google Calendar event:",
-//             calendarError
-//           );
-//         }
-//       }
-
-//       await db.collection("appointments").updateOne(
-//         { _id: new ObjectId(currentAppointmentId) },
-//         {
-//           $set: {
-//             status: "booked",
-//             userId: _id,
-//             googleCalendarEventId: currentAppointment.googleCalendarEventId,
-//             googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-//           },
-//         }
-//       );
-
-//       return serializeDocument({
-//         success: false,
-//         message: "No matching appointment found for rescheduling.",
-//       });
-//     }
-//   } catch (error) {
-//     console.error(
-//       "An error occurred while rescheduling the appointment:",
-//       error
-//     );
-//     return serializeDocument({
-//       success: false,
-//       message: "An error occurred while rescheduling the appointment.",
-//     });
-//   }
-// }
-
 export async function rescheduleAppointment(
   currentAppointmentId,
   {
@@ -1687,10 +1483,10 @@ export async function rescheduleAppointment(
 
   const session = await getSession();
   if (!session) {
-    return {
+    return serializeDocument({
       success: false,
       message: "You must be logged in to reschedule an appointment.",
-    };
+    });
   }
 
   const { _id, firstName, lastName, email } = session.resultObj;
@@ -1698,52 +1494,52 @@ export async function rescheduleAppointment(
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
-  // Parse the appointmentTime and create start and end DateTimes
-  const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
-  const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+  // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
+  const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
 
-  const formatTime = (date) => {
-    return date.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "America/Toronto",
-    });
-  };
+  // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
+  const [startTime, endTime] = appointmentTime.split(" - ");
+  const formattedStartTime = new Date(
+    `${appointmentDate} ${startTime}`
+  ).toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const formattedEndTime = new Date(
+    `${appointmentDate} ${endTime}`
+  ).toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
-  const formattedStartTime = formatTime(startDateTime);
-  const formattedEndTime = formatTime(endDateTime);
-
-  console.log("startDateTime", startDateTime);
-  console.log("endDateTime", endDateTime);
   console.log("formattedStartTime", formattedStartTime);
   console.log("formattedEndTime", formattedEndTime);
 
   try {
-    // Fetch the current appointment
     const currentAppointment = await db
       .collection("appointments")
       .findOne({ _id: new ObjectId(currentAppointmentId) });
 
     if (!currentAppointment) {
-      return {
+      return serializeDocument({
         success: false,
         message: "Current appointment not found.",
-      };
+      });
     }
 
-    // Update Google Calendar event
     if (currentAppointment.googleCalendarEventId) {
       const updatedEvent = {
         summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
         location: location,
         description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
         start: {
-          dateTime: startDateTime.toISOString(),
+          dateTime: `${formattedDate}T${formattedStartTime}:00`,
           timeZone: "America/Toronto",
         },
         end: {
-          dateTime: endDateTime.toISOString(),
+          dateTime: `${formattedDate}T${formattedEndTime}:00`,
           timeZone: "America/Toronto",
         },
         colorId: "2", // Sage color
@@ -1758,14 +1554,9 @@ export async function rescheduleAppointment(
         console.log("Google Calendar event updated successfully.");
       } catch (calendarError) {
         console.error("Error updating Google Calendar event:", calendarError);
-        return {
-          success: false,
-          message: "Failed to update Google Calendar event.",
-        };
       }
     }
 
-    // Update the current appointment to available
     const currentAppointmentUpdate = await db
       .collection("appointments")
       .updateOne(
@@ -1783,19 +1574,18 @@ export async function rescheduleAppointment(
       );
 
     if (currentAppointmentUpdate.matchedCount === 0) {
-      return {
+      return serializeDocument({
         success: false,
-        message: "Failed to update current appointment.",
-      };
+        message: "Current appointment not found.",
+      });
     }
 
-    // Find and update the new appointment slot
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
-      appointmentDate: appointmentDate,
+      appointmentDate: formattedDate,
       appointmentStartTime: { $lte: formattedStartTime },
       appointmentEndTime: { $gte: formattedEndTime },
-      status: "available",
+      status: { $in: ["available", "rescheduling"] },
     };
 
     const update = {
@@ -1814,22 +1604,17 @@ export async function rescheduleAppointment(
 
     const result = await db.collection("appointments").updateOne(query, update);
 
-    if (result.matchedCount === 0) {
-      console.log("No matching appointment found for rescheduling.");
-      // Revert changes if no matching new appointment found
-      await db.collection("appointments").updateOne(
-        { _id: new ObjectId(currentAppointmentId) },
-        {
-          $set: {
-            status: "booked",
-            userId: _id,
-            googleCalendarEventId: currentAppointment.googleCalendarEventId,
-            googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-          },
-        }
-      );
+    if (result.matchedCount > 0) {
+      console.log("Appointment rescheduled successfully.");
 
-      // Revert Google Calendar event
+      revalidatePath("/dashboard/patient");
+      return serializeDocument({
+        success: true,
+        message: "Appointment rescheduled successfully.",
+      });
+    } else {
+      console.log("No matching appointment found for rescheduling.");
+
       if (currentAppointment.googleCalendarEventId) {
         try {
           await calendar.events.update({
@@ -1855,29 +1640,242 @@ export async function rescheduleAppointment(
         }
       }
 
-      return {
+      await db.collection("appointments").updateOne(
+        { _id: new ObjectId(currentAppointmentId) },
+        {
+          $set: {
+            status: "booked",
+            userId: _id,
+            googleCalendarEventId: currentAppointment.googleCalendarEventId,
+            googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+          },
+        }
+      );
+
+      return serializeDocument({
         success: false,
         message: "No matching appointment found for rescheduling.",
-      };
+      });
     }
-
-    // If we reach here, the rescheduling was successful
-    revalidatePath("/dashboard/patient");
-    return {
-      success: true,
-      message: "Appointment rescheduled successfully.",
-    };
   } catch (error) {
     console.error(
       "An error occurred while rescheduling the appointment:",
       error
     );
-    return {
+    return serializeDocument({
       success: false,
       message: "An error occurred while rescheduling the appointment.",
-    };
+    });
   }
 }
+
+//from v0 to correct date issues
+// export async function rescheduleAppointment(
+//   currentAppointmentId,
+//   {
+//     location,
+//     duration,
+//     appointmentTime,
+//     workplace,
+//     appointmentDate,
+//     RMTLocationId,
+//   }
+// ) {
+//   console.log("appointmentTime", appointmentTime, appointmentDate);
+
+//   const session = await getSession();
+//   if (!session) {
+//     return {
+//       success: false,
+//       message: "You must be logged in to reschedule an appointment.",
+//     };
+//   }
+
+//   const { _id, firstName, lastName, email } = session.resultObj;
+
+//   const dbClient = await dbConnection;
+//   const db = await dbClient.db(process.env.DB_NAME);
+
+//   // Parse the appointmentTime and create start and end DateTimes
+//   const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
+//   const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+
+//   const formatTime = (date) => {
+//     return date.toLocaleTimeString("en-US", {
+//       hour12: false,
+//       hour: "2-digit",
+//       minute: "2-digit",
+//       timeZone: "America/Toronto",
+//     });
+//   };
+
+//   const formattedStartTime = formatTime(startDateTime);
+//   const formattedEndTime = formatTime(endDateTime);
+
+//   console.log("startDateTime", startDateTime);
+//   console.log("endDateTime", endDateTime);
+//   console.log("formattedStartTime", formattedStartTime);
+//   console.log("formattedEndTime", formattedEndTime);
+
+//   try {
+//     // Fetch the current appointment
+//     const currentAppointment = await db
+//       .collection("appointments")
+//       .findOne({ _id: new ObjectId(currentAppointmentId) });
+
+//     if (!currentAppointment) {
+//       return {
+//         success: false,
+//         message: "Current appointment not found.",
+//       };
+//     }
+
+//     // Update Google Calendar event
+//     if (currentAppointment.googleCalendarEventId) {
+//       const updatedEvent = {
+//         summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
+//         location: location,
+//         description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
+//         start: {
+//           dateTime: startDateTime.toISOString(),
+//           timeZone: "America/Toronto",
+//         },
+//         end: {
+//           dateTime: endDateTime.toISOString(),
+//           timeZone: "America/Toronto",
+//         },
+//         colorId: "2", // Sage color
+//       };
+
+//       try {
+//         await calendar.events.update({
+//           calendarId: GOOGLE_CALENDAR_ID,
+//           eventId: currentAppointment.googleCalendarEventId,
+//           resource: updatedEvent,
+//         });
+//         console.log("Google Calendar event updated successfully.");
+//       } catch (calendarError) {
+//         console.error("Error updating Google Calendar event:", calendarError);
+//         return {
+//           success: false,
+//           message: "Failed to update Google Calendar event.",
+//         };
+//       }
+//     }
+
+//     // Update the current appointment to available
+//     const currentAppointmentUpdate = await db
+//       .collection("appointments")
+//       .updateOne(
+//         { _id: new ObjectId(currentAppointmentId) },
+//         {
+//           $set: {
+//             status: "available",
+//             userId: null,
+//             consentForm: null,
+//             consentFormSubmittedAt: null,
+//             googleCalendarEventId: null,
+//             googleCalendarEventLink: null,
+//           },
+//         }
+//       );
+
+//     if (currentAppointmentUpdate.matchedCount === 0) {
+//       return {
+//         success: false,
+//         message: "Failed to update current appointment.",
+//       };
+//     }
+
+//     // Find and update the new appointment slot
+//     const query = {
+//       RMTLocationId: new ObjectId(RMTLocationId),
+//       appointmentDate: appointmentDate,
+//       appointmentStartTime: { $lte: formattedStartTime },
+//       appointmentEndTime: { $gte: formattedEndTime },
+//       status: "available",
+//     };
+
+//     const update = {
+//       $set: {
+//         status: "booked",
+//         location: location,
+//         appointmentBeginsAt: formattedStartTime,
+//         appointmentEndsAt: formattedEndTime,
+//         userId: _id,
+//         duration: duration,
+//         workplace: workplace,
+//         googleCalendarEventId: currentAppointment.googleCalendarEventId,
+//         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+//       },
+//     };
+
+//     const result = await db.collection("appointments").updateOne(query, update);
+
+//     if (result.matchedCount === 0) {
+//       console.log("No matching appointment found for rescheduling.");
+//       // Revert changes if no matching new appointment found
+//       await db.collection("appointments").updateOne(
+//         { _id: new ObjectId(currentAppointmentId) },
+//         {
+//           $set: {
+//             status: "booked",
+//             userId: _id,
+//             googleCalendarEventId: currentAppointment.googleCalendarEventId,
+//             googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+//           },
+//         }
+//       );
+
+//       // Revert Google Calendar event
+//       if (currentAppointment.googleCalendarEventId) {
+//         try {
+//           await calendar.events.update({
+//             calendarId: GOOGLE_CALENDAR_ID,
+//             eventId: currentAppointment.googleCalendarEventId,
+//             resource: {
+//               start: {
+//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//               end: {
+//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//             },
+//           });
+//           console.log("Google Calendar event reverted successfully.");
+//         } catch (calendarError) {
+//           console.error(
+//             "Error reverting Google Calendar event:",
+//             calendarError
+//           );
+//         }
+//       }
+
+//       return {
+//         success: false,
+//         message: "No matching appointment found for rescheduling.",
+//       };
+//     }
+
+//     // If we reach here, the rescheduling was successful
+//     revalidatePath("/dashboard/patient");
+//     return {
+//       success: true,
+//       message: "Appointment rescheduled successfully.",
+//     };
+//   } catch (error) {
+//     console.error(
+//       "An error occurred while rescheduling the appointment:",
+//       error
+//     );
+//     return {
+//       success: false,
+//       message: "An error occurred while rescheduling the appointment.",
+//     };
+//   }
+// }
 async function checkAuth() {
   const session = await getSession();
   if (!session || !session.resultObj?._id) {
