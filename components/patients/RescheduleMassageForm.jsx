@@ -25,7 +25,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
   });
 
   useEffect(() => {
-    console.log("current", currentAppointment);
     const fetchAppointments = async () => {
       if (formData.RMTLocationId && formData.duration) {
         setLoading(true);
@@ -208,12 +207,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    console.log(
-      "jfkdsajkfdsa",
-      formData.appointmentTime,
-      formData.workplace,
-      formData.appointmentDate
-    );
     try {
       const result = await rescheduleAppointment(currentAppointment._id, {
         location: formData.location,
@@ -238,16 +231,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
     }
   };
 
-  // Helper function to format time
-  const formatTime = (timeString) => {
-    const [hours, minutes] = timeString.split(":");
-    return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "numeric",
-      hour12: true,
-    });
-  };
-
   return (
     <form
       onSubmit={handleSubmit}
@@ -262,17 +245,24 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
         <p>
           <strong>Date:</strong>{" "}
           {new Date(
-            `${currentAppointment.appointmentDate}T00:00:00`
+            `${currentAppointment.appointmentDate}T00:00:00-04:00`
           ).toLocaleDateString("en-US", {
             year: "numeric",
             month: "long",
             day: "numeric",
-            timeZone: "UTC",
+            timeZone: "America/Toronto",
           })}
         </p>
         <p>
           <strong>Time:</strong>{" "}
-          {formatTime(currentAppointment.appointmentBeginsAt)}
+          {new Date(
+            `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}-04:00`
+          ).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "numeric",
+            hour12: true,
+            timeZone: "America/Toronto",
+          })}
         </p>
         <p>
           <strong>Duration:</strong> {currentAppointment.duration} minutes
