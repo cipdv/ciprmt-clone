@@ -1,3 +1,6 @@
+import { revalidatePath } from "next/cache";
+import { ObjectId } from "mongodb";
+
 export async function bookAppointment({
   location,
   duration,
@@ -6,9 +9,11 @@ export async function bookAppointment({
   appointmentDate,
   RMTLocationId,
 }) {
+  console.log("appointmentTime", appointmentTime, appointmentDate);
   const session = await getSession();
   if (!session) {
     return {
+      success: false,
       message: "You must be logged in to book an appointment.",
     };
   }
@@ -18,38 +23,56 @@ export async function bookAppointment({
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
-  function addDurationToTime(appointmentTime, duration) {
-    const [hours, minutes] = appointmentTime.split(":").map(Number);
-    const durationInMinutes = Number(duration);
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    date.setMinutes(date.getMinutes() + durationInMinutes);
-    const updatedHours = String(date.getHours()).padStart(2, "0");
-    const updatedMinutes = String(date.getMinutes()).padStart(2, "0");
-    return `${updatedHours}:${updatedMinutes}`;
-  }
+  // Create a Date object in the America/Toronto time zone
+  const torontoTime = (dateString, timeString) => {
+    const date = new Date(`${dateString}T${timeString}`);
+    return new Date(
+      date.toLocaleString("en-US", { timeZone: "America/Toronto" })
+    );
+  };
 
-  const formattedEndTime = addDurationToTime(appointmentTime, duration);
+  const startDateTime = torontoTime(appointmentDate, appointmentTime);
+  const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+
+  const formatTimeForDB = (date) => {
+    return date.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Toronto",
+    });
+  };
+
+  const formattedStartTime = formatTimeForDB(startDateTime);
+  const formattedEndTime = formatTimeForDB(endDateTime);
+
+  console.log("startDateTime", startDateTime);
+  console.log("endDateTime", endDateTime);
+  console.log("formattedStartTime", formattedStartTime);
+  console.log("formattedEndTime", formattedEndTime);
 
   try {
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
       appointmentDate: appointmentDate,
-      appointmentStartTime: { $lte: appointmentTime },
+      appointmentStartTime: { $lte: formattedStartTime },
       appointmentEndTime: { $gte: formattedEndTime },
+      status: "available",
     };
 
-    // Create Google Calendar event first
+    console.log("Database query:", query);
+
+    // Create Google Calendar event
     const event = {
       summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
       location: location,
       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
       start: {
-        dateTime: `${appointmentDate}T${appointmentTime}:00`,
+        dateTime: startDateTime.toISOString(),
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: `${appointmentDate}T${formattedEndTime}:00`,
+        dateTime: endDateTime.toISOString(),
         timeZone: "America/Toronto",
       },
       colorId: "2", // Sage color
@@ -65,6 +88,7 @@ export async function bookAppointment({
     } catch (error) {
       console.error("Error creating Google Calendar event:", error);
       return {
+        success: false,
         message: "An error occurred while creating the Google Calendar event.",
       };
     }
@@ -73,7 +97,7 @@ export async function bookAppointment({
       $set: {
         status: "booked",
         location: location,
-        appointmentBeginsAt: appointmentTime,
+        appointmentBeginsAt: formattedStartTime,
         appointmentEndsAt: formattedEndTime,
         userId: _id,
         duration: duration,
@@ -87,6 +111,11 @@ export async function bookAppointment({
 
     if (result.matchedCount > 0) {
       console.log("Appointment updated successfully.");
+      revalidatePath("/dashboard/patient");
+      return {
+        success: true,
+        message: "Appointment booked successfully.",
+      };
     } else {
       console.log("No matching appointment found.");
       // If no matching appointment, delete the created Google Calendar event
@@ -102,16 +131,16 @@ export async function bookAppointment({
         console.error("Error deleting Google Calendar event:", deleteError);
       }
       return {
-        message: "No matching appointment found.",
+        success: false,
+        message:
+          "No matching appointment found. Please try again or contact support.",
       };
     }
   } catch (error) {
     console.error("An error occurred while updating the appointment:", error);
     return {
+      success: false,
       message: "An error occurred while booking the appointment.",
     };
   }
-
-  revalidatePath("/dashboard/patient");
-  redirect("/dashboard/patient");
 }

@@ -781,6 +781,7 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 // }
 
 //latest version of this function from v0 to correct date issues
+
 export async function bookAppointment({
   location,
   duration,
@@ -793,6 +794,7 @@ export async function bookAppointment({
   const session = await getSession();
   if (!session) {
     return {
+      success: false,
       message: "You must be logged in to book an appointment.",
     };
   }
@@ -802,11 +804,18 @@ export async function bookAppointment({
   const dbClient = await dbConnection;
   const db = await dbClient.db(process.env.DB_NAME);
 
-  // Parse the appointmentTime and create start and end DateTimes
-  const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
+  // Create a Date object in the America/Toronto time zone
+  const torontoTime = (dateString, timeString) => {
+    const date = new Date(`${dateString}T${timeString}`);
+    return new Date(
+      date.toLocaleString("en-US", { timeZone: "America/Toronto" })
+    );
+  };
+
+  const startDateTime = torontoTime(appointmentDate, appointmentTime);
   const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
 
-  const formatTime = (date) => {
+  const formatTimeForDB = (date) => {
     return date.toLocaleTimeString("en-US", {
       hour12: false,
       hour: "2-digit",
@@ -815,8 +824,8 @@ export async function bookAppointment({
     });
   };
 
-  const formattedStartTime = formatTime(startDateTime);
-  const formattedEndTime = formatTime(endDateTime);
+  const formattedStartTime = formatTimeForDB(startDateTime);
+  const formattedEndTime = formatTimeForDB(endDateTime);
 
   console.log("startDateTime", startDateTime);
   console.log("endDateTime", endDateTime);
@@ -860,6 +869,7 @@ export async function bookAppointment({
     } catch (error) {
       console.error("Error creating Google Calendar event:", error);
       return {
+        success: false,
         message: "An error occurred while creating the Google Calendar event.",
       };
     }
@@ -882,6 +892,11 @@ export async function bookAppointment({
 
     if (result.matchedCount > 0) {
       console.log("Appointment updated successfully.");
+      revalidatePath("/dashboard/patient");
+      return {
+        success: true,
+        message: "Appointment booked successfully.",
+      };
     } else {
       console.log("No matching appointment found.");
       // If no matching appointment, delete the created Google Calendar event
@@ -897,18 +912,18 @@ export async function bookAppointment({
         console.error("Error deleting Google Calendar event:", deleteError);
       }
       return {
-        message: "No matching appointment found.",
+        success: false,
+        message:
+          "No matching appointment found. Please try again or contact support.",
       };
     }
   } catch (error) {
     console.error("An error occurred while updating the appointment:", error);
     return {
+      success: false,
       message: "An error occurred while booking the appointment.",
     };
   }
-
-  revalidatePath("/dashboard/patient");
-  redirect("/dashboard/patient");
 }
 
 export const cancelAppointment = async (prevState, formData) => {
