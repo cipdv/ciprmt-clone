@@ -711,11 +711,11 @@ export async function bookAppointment({
       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
       start: {
         // dateTime: startDateTime.toISOString(),
-        dateTime: startDateTime,
+        dateTime: `${startDateTime}`,
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: endDateTime,
+        dateTime: `${endDateTime}`,
         timeZone: "America/Toronto",
       },
       colorId: "2", // Sage color
