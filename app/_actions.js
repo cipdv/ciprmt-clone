@@ -988,6 +988,8 @@ export const getAllAvailableAppointments = async (
 
   const availableTimes = [];
 
+  console.log("appointments", appointments);
+
   appointments.forEach((appointment) => {
     const startTime = new Date(
       `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
@@ -1013,6 +1015,8 @@ export const getAllAvailableAppointments = async (
       currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
     }
   });
+
+  console.log("availableTimes", availableTimes);
 
   // Fetch busy times from Google Calendar
   const now = new Date();
@@ -1080,6 +1084,8 @@ export const getAllAvailableAppointments = async (
       };
     }
   );
+
+  console.log("busyPeriods", busyPeriods);
 
   // Remove the current event from busyPeriods if it exists
   if (currentEvent) {
