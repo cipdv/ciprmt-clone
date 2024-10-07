@@ -15,6 +15,15 @@ import { z } from "zod";
 import { healthHistorySchema } from "./lib/zod/zodSchemas";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
+import {
+  addMinutes,
+  format,
+  isWithinInterval,
+  parseISO,
+  subMinutes,
+  set,
+  areIntervalsOverlapping,
+} from "date-fns";
 
 // Set up JWT
 const secretKey = process.env.JWT_SECRET_KEY;
@@ -967,219 +976,335 @@ export async function setAppointmentStatus(appointmentId, status) {
 }
 
 //working version...not in production
-export const getAllAvailableAppointments = async (
+// export const getAllAvailableAppointments = async (
+//   rmtLocationId,
+//   duration,
+//   currentEventGoogleId
+// ) => {
+//   const db = await getDatabase();
+//   const appointmentsCollection = db.collection("appointments");
+
+//   // Convert duration to an integer
+//   const durationMinutes = parseInt(duration, 10);
+
+//   // Fetch appointments with the given rmtLocationId and status 'available' or 'rescheduling'
+//   const appointments = await appointmentsCollection
+//     .find({
+//       RMTLocationId: new ObjectId(rmtLocationId),
+//       status: { $in: ["available", "rescheduling"] },
+//     })
+//     .toArray();
+
+//   const availableTimes = [];
+
+//   console.log("appointments", appointments);
+
+//   appointments.forEach((appointment) => {
+//     const startTime = new Date(
+//       `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+//     );
+//     const endTime = new Date(
+//       `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+//     );
+
+//     let currentTime = new Date(startTime);
+
+//     while (currentTime <= endTime) {
+//       const nextTime = new Date(currentTime);
+//       nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
+
+//       if (nextTime <= endTime) {
+//         availableTimes.push({
+//           date: appointment.appointmentDate,
+//           startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
+//           endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+//         });
+//       }
+
+//       currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
+//     }
+//   });
+
+//   console.log("availableTimes", availableTimes);
+
+//   // Fetch busy times from Google Calendar
+//   const now = new Date();
+//   const oneMonthLater = new Date();
+//   oneMonthLater.setMonth(now.getMonth() + 2.5);
+
+//   const busyTimes = await calendar.freebusy.query({
+//     requestBody: {
+//       timeMin: now.toISOString(),
+//       timeMax: oneMonthLater.toISOString(),
+//       items: [{ id: GOOGLE_CALENDAR_ID }],
+//       timeZone: "America/Toronto",
+//     },
+//   });
+
+//   // Fetch the current event details
+//   let currentEvent = null;
+//   if (currentEventGoogleId) {
+//     try {
+//       const event = await calendar.events.get({
+//         calendarId: GOOGLE_CALENDAR_ID,
+//         eventId: currentEventGoogleId,
+//       });
+//       currentEvent = event.data;
+//     } catch (error) {
+//       console.error("Error fetching current event:", error);
+//     }
+//   }
+
+//   let busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+//     (period) => {
+//       const start = period.start;
+//       const end = period.end;
+
+//       // Function to add or subtract minutes from a date-time string
+//       const addMinutes = (dateTimeStr, minutes) => {
+//         const [date, time] = dateTimeStr.split("T");
+//         const [hours, minutesStr] = time.split(":");
+//         const totalMinutes =
+//           parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
+//         const newHours = Math.floor(totalMinutes / 60)
+//           .toString()
+//           .padStart(2, "0");
+//         const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+//         return `${date}T${newHours}:${newMinutes}:00Z`;
+//       };
+
+//       // Function to convert date-time string to desired format
+//       const formatDateTime = (dateTimeStr) => {
+//         const [date, time] = dateTimeStr.split("T");
+//         const [hours, minutes] = time.split(":");
+//         return {
+//           date,
+//           time: `${hours}:${minutes}`,
+//         };
+//       };
+
+//       const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
+//       const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+
+//       return {
+//         date: formatDateTime(bufferedStart).date,
+//         startTime: formatDateTime(bufferedStart).time,
+//         endTime: formatDateTime(bufferedEnd).time,
+//       };
+//     }
+//   );
+
+//   console.log("busyPeriods", busyPeriods);
+
+//   // Remove the current event from busyPeriods if it exists
+//   if (currentEvent) {
+//     const currentEventStart = new Date(
+//       currentEvent.start.dateTime || currentEvent.start.date
+//     );
+//     const currentEventEnd = new Date(
+//       currentEvent.end.dateTime || currentEvent.end.date
+//     );
+
+//     const currentEventDate = currentEventStart.toISOString().split("T")[0];
+//     const currentEventStartTime = currentEventStart.toTimeString().slice(0, 5);
+//     const currentEventEndTime = currentEventEnd.toTimeString().slice(0, 5);
+
+//     busyPeriods = busyPeriods.filter(
+//       (period) =>
+//         !(
+//           period.date === currentEventDate &&
+//           period.startTime <= currentEventStartTime &&
+//           period.endTime >= currentEventEndTime
+//         )
+//     );
+//   }
+
+//   // Filter out conflicting times
+//   // const filteredAvailableTimes = availableTimes.filter((available) => {
+//   //   return !busyPeriods.some((busy) => {
+//   //     return (
+//   //       available.date === busy.date &&
+//   //       ((available.startTime >= busy.startTime &&
+//   //         available.startTime < busy.endTime) ||
+//   //         (available.endTime > busy.startTime &&
+//   //           available.endTime <= busy.endTime) ||
+//   //         (available.startTime <= busy.startTime &&
+//   //           available.endTime >= busy.endTime))
+//   //     );
+//   //   });
+//   // });
+
+//   // Filter out conflicting times
+//   const filteredAvailableTimes = availableTimes.filter((available) => {
+//     const availableStart = new Date(
+//       `${available.date}T${available.startTime}:00`
+//     );
+//     const availableEnd = new Date(`${available.date}T${available.endTime}:00`);
+
+//     return !busyPeriods.some((busy) => {
+//       const busyStart = new Date(`${busy.date}T${busy.startTime}:00`);
+//       const busyEnd = new Date(`${busy.date}T${busy.endTime}:00`);
+
+//       return (
+//         (availableStart >= busyStart && availableStart < busyEnd) ||
+//         (availableEnd > busyStart && availableEnd <= busyEnd) ||
+//         (availableStart <= busyStart && availableEnd >= busyEnd)
+//       );
+//     });
+//   });
+
+//   // Filter out dates that are not greater than today
+//   const today = new Date().toISOString().split("T")[0];
+//   const futureAvailableTimes = filteredAvailableTimes.filter(
+//     (available) => available.date > today
+//   );
+
+//   // Sort the results by date
+//   const sortedAvailableTimes = futureAvailableTimes.sort(
+//     (a, b) => new Date(a.date) - new Date(b.date)
+//   );
+
+//   // If the current event exists and is in the future, add it to the sorted available times
+//   // if (currentEvent) {
+//   //   const currentEventStart = new Date(
+//   //     currentEvent.start.dateTime || currentEvent.start.date
+//   //   );
+//   //   const currentEventEnd = new Date(
+//   //     currentEvent.end.dateTime || currentEvent.end.date
+//   //   );
+
+//   //   if (currentEventStart >= now) {
+//   //     sortedAvailableTimes.push({
+//   //       date: currentEventStart.toISOString().split("T")[0],
+//   //       startTime: currentEventStart.toTimeString().slice(0, 5),
+//   //       endTime: currentEventEnd.toTimeString().slice(0, 5),
+//   //       isCurrentAppointment: true,
+//   //     });
+
+//   //     // Re-sort the array to ensure the current appointment is in the correct position
+//   //     sortedAvailableTimes.sort((a, b) => new Date(a.date) - new Date(b.date));
+//   //   }
+//   // }
+
+//   console.log("Available times:", sortedAvailableTimes);
+//   return sortedAvailableTimes;
+// };
+
+export async function getAllAvailableAppointments(
   rmtLocationId,
   duration,
   currentEventGoogleId
-) => {
+) {
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
 
-  // Convert duration to an integer
-  const durationMinutes = parseInt(duration, 10);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  // Fetch appointments with the given rmtLocationId and status 'available' or 'rescheduling'
-  const appointments = await appointmentsCollection
-    .find({
-      RMTLocationId: new ObjectId(rmtLocationId),
-      status: { $in: ["available", "rescheduling"] },
-    })
-    .toArray();
+  try {
+    const appointments = await appointmentsCollection
+      .find({
+        RMTLocationId: new ObjectId(rmtLocationId),
+        status: { $in: ["available", "rescheduling"] },
+        appointmentDate: { $gte: today.toISOString().split("T")[0] },
+      })
+      .toArray();
 
-  const availableTimes = [];
+    console.log(`Fetched ${appointments.length} appointments from MongoDB`);
 
-  console.log("appointments", appointments);
-
-  appointments.forEach((appointment) => {
-    const startTime = new Date(
-      `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+    const twoMonthsFromNow = new Date(
+      today.getFullYear(),
+      today.getMonth() + 2,
+      today.getDate()
     );
-    const endTime = new Date(
-      `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+    const events = await getGoogleCalendarEvents(
+      today,
+      twoMonthsFromNow,
+      currentEventGoogleId
     );
 
-    let currentTime = new Date(startTime);
+    console.log(`Fetched ${events.length} events from Google Calendar`);
 
-    while (currentTime <= endTime) {
-      const nextTime = new Date(currentTime);
-      nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
-
-      if (nextTime <= endTime) {
-        availableTimes.push({
-          date: appointment.appointmentDate,
-          startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
-          endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+    const availableAppointments = appointments.reduce((acc, appointment) => {
+      try {
+        const appointmentDate = parseISO(appointment.appointmentDate);
+        const appointmentStart = set(appointmentDate, {
+          hours: parseInt(appointment.appointmentStartTime.split(":")[0]),
+          minutes: parseInt(appointment.appointmentStartTime.split(":")[1]),
         });
+        const appointmentEnd = set(appointmentDate, {
+          hours: parseInt(appointment.appointmentEndTime.split(":")[0]),
+          minutes: parseInt(appointment.appointmentEndTime.split(":")[1]),
+        });
+
+        if (
+          (appointmentEnd.getTime() - appointmentStart.getTime()) / 60000 <
+          duration
+        ) {
+          return acc;
+        }
+
+        const hasConflict = events.some((event) => {
+          const eventStart = new Date(event.start.dateTime || event.start.date);
+          const eventEnd = new Date(event.end.dateTime || event.end.date);
+
+          // Check if the appointment overlaps with the event, considering the 30-minute buffer
+          return areIntervalsOverlapping(
+            {
+              start: subMinutes(appointmentStart, 30),
+              end: addMinutes(appointmentEnd, 30),
+            },
+            { start: eventStart, end: eventEnd },
+            { inclusive: false }
+          );
+        });
+
+        if (!hasConflict) {
+          acc.push({
+            date: format(appointmentStart, "yyyy-MM-dd"),
+            startTime: format(appointmentStart, "HH:mm"),
+            endTime: format(appointmentEnd, "HH:mm"),
+          });
+        }
+
+        return acc;
+      } catch (error) {
+        console.error("Error processing appointment:", appointment, error);
+        return acc;
       }
+    }, []);
 
-      currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
-    }
-  });
+    console.log(
+      `Filtered to ${availableAppointments.length} available appointments`
+    );
 
-  console.log("availableTimes", availableTimes);
-
-  // Fetch busy times from Google Calendar
-  const now = new Date();
-  const oneMonthLater = new Date();
-  oneMonthLater.setMonth(now.getMonth() + 2.5);
-
-  const busyTimes = await calendar.freebusy.query({
-    requestBody: {
-      timeMin: now.toISOString(),
-      timeMax: oneMonthLater.toISOString(),
-      items: [{ id: GOOGLE_CALENDAR_ID }],
-      timeZone: "America/Toronto",
-    },
-  });
-
-  // Fetch the current event details
-  let currentEvent = null;
-  if (currentEventGoogleId) {
-    try {
-      const event = await calendar.events.get({
-        calendarId: GOOGLE_CALENDAR_ID,
-        eventId: currentEventGoogleId,
-      });
-      currentEvent = event.data;
-    } catch (error) {
-      console.error("Error fetching current event:", error);
-    }
+    return availableAppointments;
+  } catch (error) {
+    console.error("Error in getAvailableAppointments:", error);
+    throw error;
   }
+}
 
-  let busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
-    (period) => {
-      const start = period.start;
-      const end = period.end;
-
-      // Function to add or subtract minutes from a date-time string
-      const addMinutes = (dateTimeStr, minutes) => {
-        const [date, time] = dateTimeStr.split("T");
-        const [hours, minutesStr] = time.split(":");
-        const totalMinutes =
-          parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
-        const newHours = Math.floor(totalMinutes / 60)
-          .toString()
-          .padStart(2, "0");
-        const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
-        return `${date}T${newHours}:${newMinutes}:00Z`;
-      };
-
-      // Function to convert date-time string to desired format
-      const formatDateTime = (dateTimeStr) => {
-        const [date, time] = dateTimeStr.split("T");
-        const [hours, minutes] = time.split(":");
-        return {
-          date,
-          time: `${hours}:${minutes}`,
-        };
-      };
-
-      const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
-      const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
-
-      return {
-        date: formatDateTime(bufferedStart).date,
-        startTime: formatDateTime(bufferedStart).time,
-        endTime: formatDateTime(bufferedEnd).time,
-      };
-    }
-  );
-
-  console.log("busyPeriods", busyPeriods);
-
-  // Remove the current event from busyPeriods if it exists
-  if (currentEvent) {
-    const currentEventStart = new Date(
-      currentEvent.start.dateTime || currentEvent.start.date
-    );
-    const currentEventEnd = new Date(
-      currentEvent.end.dateTime || currentEvent.end.date
-    );
-
-    const currentEventDate = currentEventStart.toISOString().split("T")[0];
-    const currentEventStartTime = currentEventStart.toTimeString().slice(0, 5);
-    const currentEventEndTime = currentEventEnd.toTimeString().slice(0, 5);
-
-    busyPeriods = busyPeriods.filter(
-      (period) =>
-        !(
-          period.date === currentEventDate &&
-          period.startTime <= currentEventStartTime &&
-          period.endTime >= currentEventEndTime
-        )
-    );
-  }
-
-  // Filter out conflicting times
-  // const filteredAvailableTimes = availableTimes.filter((available) => {
-  //   return !busyPeriods.some((busy) => {
-  //     return (
-  //       available.date === busy.date &&
-  //       ((available.startTime >= busy.startTime &&
-  //         available.startTime < busy.endTime) ||
-  //         (available.endTime > busy.startTime &&
-  //           available.endTime <= busy.endTime) ||
-  //         (available.startTime <= busy.startTime &&
-  //           available.endTime >= busy.endTime))
-  //     );
-  //   });
-  // });
-
-  // Filter out conflicting times
-  const filteredAvailableTimes = availableTimes.filter((available) => {
-    const availableStart = new Date(
-      `${available.date}T${available.startTime}:00`
-    );
-    const availableEnd = new Date(`${available.date}T${available.endTime}:00`);
-
-    return !busyPeriods.some((busy) => {
-      const busyStart = new Date(`${busy.date}T${busy.startTime}:00`);
-      const busyEnd = new Date(`${busy.date}T${busy.endTime}:00`);
-
-      return (
-        (availableStart >= busyStart && availableStart < busyEnd) ||
-        (availableEnd > busyStart && availableEnd <= busyEnd) ||
-        (availableStart <= busyStart && availableEnd >= busyEnd)
-      );
+async function getGoogleCalendarEvents(timeMin, timeMax, currentEventGoogleId) {
+  try {
+    const response = await calendar.events.list({
+      calendarId: GOOGLE_CALENDAR_ID,
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime",
     });
-  });
 
-  // Filter out dates that are not greater than today
-  const today = new Date().toISOString().split("T")[0];
-  const futureAvailableTimes = filteredAvailableTimes.filter(
-    (available) => available.date > today
-  );
-
-  // Sort the results by date
-  const sortedAvailableTimes = futureAvailableTimes.sort(
-    (a, b) => new Date(a.date) - new Date(b.date)
-  );
-
-  // If the current event exists and is in the future, add it to the sorted available times
-  // if (currentEvent) {
-  //   const currentEventStart = new Date(
-  //     currentEvent.start.dateTime || currentEvent.start.date
-  //   );
-  //   const currentEventEnd = new Date(
-  //     currentEvent.end.dateTime || currentEvent.end.date
-  //   );
-
-  //   if (currentEventStart >= now) {
-  //     sortedAvailableTimes.push({
-  //       date: currentEventStart.toISOString().split("T")[0],
-  //       startTime: currentEventStart.toTimeString().slice(0, 5),
-  //       endTime: currentEventEnd.toTimeString().slice(0, 5),
-  //       isCurrentAppointment: true,
-  //     });
-
-  //     // Re-sort the array to ensure the current appointment is in the correct position
-  //     sortedAvailableTimes.sort((a, b) => new Date(a.date) - new Date(b.date));
-  //   }
-  // }
-
-  console.log("Available times:", sortedAvailableTimes);
-  return sortedAvailableTimes;
-};
+    return response.data.items.filter(
+      (event) =>
+        event.id !== currentEventGoogleId &&
+        event.transparency !== "transparent"
+    );
+  } catch (error) {
+    console.error("Error fetching Google Calendar events:", error);
+    return [];
+  }
+}
 
 //working version (production)
 export async function rescheduleAppointment(
