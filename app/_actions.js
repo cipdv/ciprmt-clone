@@ -966,7 +966,7 @@ export async function setAppointmentStatus(appointmentId, status) {
   }
 }
 
-//working version (production)
+//working version...not in production
 export const getAllAvailableAppointments = async (
   rmtLocationId,
   duration,
@@ -1111,16 +1111,35 @@ export const getAllAvailableAppointments = async (
   }
 
   // Filter out conflicting times
+  // const filteredAvailableTimes = availableTimes.filter((available) => {
+  //   return !busyPeriods.some((busy) => {
+  //     return (
+  //       available.date === busy.date &&
+  //       ((available.startTime >= busy.startTime &&
+  //         available.startTime < busy.endTime) ||
+  //         (available.endTime > busy.startTime &&
+  //           available.endTime <= busy.endTime) ||
+  //         (available.startTime <= busy.startTime &&
+  //           available.endTime >= busy.endTime))
+  //     );
+  //   });
+  // });
+
+  // Filter out conflicting times
   const filteredAvailableTimes = availableTimes.filter((available) => {
+    const availableStart = new Date(
+      `${available.date}T${available.startTime}:00`
+    );
+    const availableEnd = new Date(`${available.date}T${available.endTime}:00`);
+
     return !busyPeriods.some((busy) => {
+      const busyStart = new Date(`${busy.date}T${busy.startTime}:00`);
+      const busyEnd = new Date(`${busy.date}T${busy.endTime}:00`);
+
       return (
-        available.date === busy.date &&
-        ((available.startTime >= busy.startTime &&
-          available.startTime < busy.endTime) ||
-          (available.endTime > busy.startTime &&
-            available.endTime <= busy.endTime) ||
-          (available.startTime <= busy.startTime &&
-            available.endTime >= busy.endTime))
+        (availableStart >= busyStart && availableStart < busyEnd) ||
+        (availableEnd > busyStart && availableEnd <= busyEnd) ||
+        (availableStart <= busyStart && availableEnd >= busyEnd)
       );
     });
   });
