@@ -1190,6 +1190,8 @@ export async function setAppointmentStatus(appointmentId, status) {
 //   return sortedAvailableTimes;
 // };
 
+//this function works in both development and production, but needs to add current appointment time to the available times
+
 export const getAllAvailableAppointments = async (
   rmtLocationId,
   duration,
@@ -1201,7 +1203,7 @@ export const getAllAvailableAppointments = async (
   // Convert duration to an integer
   const durationMinutes = parseInt(duration, 10);
 
-  // Fetch appointments with the given rmtLocationId and status 'available'
+  // Fetch appointments with the given rmtLocationId and status 'available' or 'rescheduling'
   const appointments = await appointmentsCollection
     .find({
       RMTLocationId: new ObjectId(rmtLocationId),
@@ -1251,44 +1253,63 @@ export const getAllAvailableAppointments = async (
     },
   });
 
-  const busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
-    (period) => {
-      const start = period.start;
-      const end = period.end;
+  // Fetch the event with the currentEventGoogleId
+  const event = await calendar.events.get({
+    calendarId: GOOGLE_CALENDAR_ID,
+    eventId: currentEventGoogleId,
+  });
 
-      // Function to add or subtract minutes from a date-time string
-      const addMinutes = (dateTimeStr, minutes) => {
-        const [date, time] = dateTimeStr.split("T");
-        const [hours, minutesStr] = time.split(":");
-        const totalMinutes =
-          parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
-        const newHours = Math.floor(totalMinutes / 60)
-          .toString()
-          .padStart(2, "0");
-        const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
-        return `${date}T${newHours}:${newMinutes}:00Z`;
-      };
+  // Filter out the event with the currentEventGoogleId from the busyTimes
+  const filteredBusyTimes = busyTimes.data.calendars[
+    GOOGLE_CALENDAR_ID
+  ].busy.filter((busyTime) => {
+    const busyStart = new Date(busyTime.start).toISOString();
+    const busyEnd = new Date(busyTime.end).toISOString();
+    const eventStart = new Date(
+      event.data.start.dateTime || event.data.start.date
+    ).toISOString();
+    const eventEnd = new Date(
+      event.data.end.dateTime || event.data.end.date
+    ).toISOString();
+    return !(busyStart === eventStart && busyEnd === eventEnd);
+  });
 
-      // Function to convert date-time string to desired format
-      const formatDateTime = (dateTimeStr) => {
-        const [date, time] = dateTimeStr.split("T");
-        const [hours, minutes] = time.split(":");
-        return {
-          date,
-          time: `${hours}:${minutes}`,
-        };
-      };
+  const busyPeriods = filteredBusyTimes.map((period) => {
+    const start = period.start;
+    const end = period.end;
 
-      const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
-      const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+    // Function to add or subtract minutes from a date-time string
+    const addMinutes = (dateTimeStr, minutes) => {
+      const [date, time] = dateTimeStr.split("T");
+      const [hours, minutesStr] = time.split(":");
+      const totalMinutes =
+        parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
+      const newHours = Math.floor(totalMinutes / 60)
+        .toString()
+        .padStart(2, "0");
+      const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+      return `${date}T${newHours}:${newMinutes}:00Z`;
+    };
 
+    // Function to convert date-time string to desired format
+    const formatDateTime = (dateTimeStr) => {
+      const [date, time] = dateTimeStr.split("T");
+      const [hours, minutes] = time.split(":");
       return {
-        date: formatDateTime(bufferedStart).date,
-        startTime: formatDateTime(bufferedStart).time,
-        endTime: formatDateTime(bufferedEnd).time,
+        date,
+        time: `${hours}:${minutes}`,
       };
-    }
-  );
+    };
+
+    const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
+    const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+
+    return {
+      date: formatDateTime(bufferedStart).date,
+      startTime: formatDateTime(bufferedStart).time,
+      endTime: formatDateTime(bufferedEnd).time,
+    };
+  });
 
   // Filter out conflicting times
   const filteredAvailableTimes = availableTimes.filter((available) => {
