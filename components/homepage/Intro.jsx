@@ -27,7 +27,7 @@ const Intro = () => {
           <div className="space-y-4">
             <p className="text-sm sm:text-base">
               I'm very passionate about health and well-being. I love taking
-              care of my body with exercise, healthy foods, and spending time
+              care of myself with exercise, healthy foods, and spending time
               with friends and family. My favourite activities include
               volleyball, rock climbing, swimming, skating, and just being
               outdoors with nature.

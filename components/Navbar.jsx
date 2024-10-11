@@ -18,7 +18,7 @@ const Navbar = async () => {
         {!session ? (
           <>
             <li>
-              <Link href="/about">FAQ</Link>
+              <Link href="/faq">FAQ</Link>
             </li>
 
             <li>
@@ -70,13 +70,10 @@ const Navbar = async () => {
         ) : (
           <>
             <li>
-              <Link href="/dashboard/patient/about">About</Link>
-            </li>
-            <li>
               <Link href="/dashboard/patient/services">Services</Link>
             </li>
             <li>
-              <Link href="/dashboard/patient/contact">Contact</Link>
+              <Link href="/dashboard/patient/contact">Contact Cip</Link>
             </li>
             <li>
               <Link href="/dashboard/patient/receipts">Receipts</Link>

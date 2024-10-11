@@ -228,9 +228,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
     >
       {currentStep === 1 && (
         <div className="space-y-4">
-          <h1 className="text-2xl sm:text-3xl">
-            Select the location where you would like to book a massage:
-          </h1>
+          <h1 className="text-2xl sm:text-3xl">Select a location:</h1>
           <select
             name="location"
             value={formData.location}
@@ -265,7 +263,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
       {currentStep === 2 && (
         <div className="space-y-4">
           <h1 className="text-2xl sm:text-3xl">
-            What length of massage session would you like to book?
+            What treatment would you like to book?
           </h1>
           <select
             name="duration"
@@ -312,7 +310,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
       {currentStep === 3 && (
         <div className="space-y-4">
           <h1 className="text-2xl sm:text-3xl">
-            Select a date and time for your massage:
+            Select a date and time for your appointment:
           </h1>
           {renderAppointments()}
           {appointmentTimes.length > 0 && (

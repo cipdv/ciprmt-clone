@@ -33,18 +33,25 @@ const Receipts = ({ user, receipts }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const receiptsPerPage = 10;
 
+  console.log(receipts);
+
   // Filter receipts with valid prices and past dates
-  const validReceipts = receipts.filter(
-    (receipt) =>
+  const validReceipts = receipts.filter((receipt) => {
+    const appointmentDate = new Date(receipt.appointmentDate);
+    const today = new Date();
+    return (
       receipt.price != null &&
       receipt.price !== undefined &&
-      new Date(receipt.appointmentDate) < new Date()
-  );
+      appointmentDate < today
+    );
+  });
 
   // Sort receipts by date, most recent first
   validReceipts.sort(
     (a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate)
   );
+
+  console.log(validReceipts);
 
   const latestReceipt = validReceipts[0];
 
