@@ -94,7 +94,7 @@ export default function ConsentForm({ id }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mt-10 p-6 bg-authForms rounded-lg shadow-md space-y-5"
+      className=" p-6 bg-authForms rounded-lg shadow-md space-y-5"
     >
       <h2 className="text-2xl font-bold mb-6">Massage Consent Form</h2>
 

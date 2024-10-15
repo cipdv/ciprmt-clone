@@ -89,7 +89,7 @@ const AppointmentItem = ({ appointment }) => {
           <></>
         ) : (
           <div>
-            <h3 className="text-lg font-semibold mb-2">
+            <h3 className="text-lg font-semibold mb-4">
               Please complete the consent form:
             </h3>
             <AppointmentConsent id={appointment._id} />
