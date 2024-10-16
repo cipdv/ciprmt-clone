@@ -1508,8 +1508,8 @@ export async function resetPassword(email) {
     await saveResetTokenToDatabase(email, token);
 
     const transporter = createTransport({
-      host: "smtp.privateemail.com",
-      port: 587,
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
       secure: false, // Use TLS
       auth: {
         user: process.env.EMAIL_USER,

@@ -3,12 +3,15 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { resetPasswordWithToken } from "@/app/_actions";
+import Link from "next/link";
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   const [token, setToken] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -32,74 +35,73 @@ export default function ResetPasswordPage() {
     }
   };
 
+  const togglePasswordVisibility = (field) => {
+    if (field === "password") {
+      setShowPassword(!showPassword);
+    } else {
+      setShowConfirmPassword(!showConfirmPassword);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Reset Your Password
-        </h2>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700"
-              >
-                New Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Confirm New Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Reset Password
-              </button>
-            </div>
-          </form>
-
-          {message && (
-            <div className="mt-6">
-              <p className="text-sm text-center text-gray-600">{message}</p>
-            </div>
-          )}
+    <div className="min-h-screen flex flex-col py-12 sm:px-6 lg:px-8">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-authForms p-4 rounded-md mt-6 w-full lg:w-2/5 mx-auto space-y-4"
+      >
+        <h1 className="text-2xl font-bold mb-4">Reset Your Password</h1>
+        <div className="flex items-center">
+          <input
+            type={showPassword ? "text" : "password"}
+            placeholder="New Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+          />
+          <button
+            type="button"
+            onClick={() => togglePasswordVisibility("password")}
+            className="ml-2 transform transition-transform duration-300 hover:scale-110"
+          >
+            {showPassword ? (
+              <img src="/images/icons8-hide-16.png" alt="Hide password" />
+            ) : (
+              <img src="/images/icons8-eye-16.png" alt="Show password" />
+            )}
+          </button>
         </div>
-      </div>
+        <div className="flex items-center">
+          <input
+            type={showConfirmPassword ? "text" : "password"}
+            placeholder="Confirm New Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+          />
+          <button
+            type="button"
+            onClick={() => togglePasswordVisibility("confirm")}
+            className="ml-2 transform transition-transform duration-300 hover:scale-110"
+          >
+            {showConfirmPassword ? (
+              <img src="/images/icons8-hide-16.png" alt="Hide password" />
+            ) : (
+              <img src="/images/icons8-eye-16.png" alt="Show password" />
+            )}
+          </button>
+        </div>
+        <div>
+          <button
+            type="submit"
+            className="w-2/3 p-2 bg-gray-800 text-white rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800"
+          >
+            Reset Password
+          </button>
+        </div>
+        {message && <p className="text-red-500 text-lg font-bold">{message}</p>}
+      </form>
     </div>
   );
 }
