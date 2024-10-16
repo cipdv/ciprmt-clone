@@ -25,6 +25,7 @@ export async function middleware(request) {
       "/password-reset",
       "/contact",
       "/faq",
+      "/reset-password",
       new RegExp("^/password-reset/set-new-password/.*$"),
     ].some((path) =>
       typeof path === "string"

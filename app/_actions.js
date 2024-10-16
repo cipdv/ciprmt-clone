@@ -1466,3 +1466,113 @@ export async function sendMessageToCip(prevState, formData) {
   console.log(formData);
   return;
 }
+
+//////////////////////////////////////////////////
+//////////PASSWORD RESET//////////////////////////
+//////////////////////////////////////////////////
+
+import { createTransport } from "nodemailer";
+import { randomBytes } from "crypto";
+
+async function saveResetTokenToDatabase(email, token) {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    const result = await usersCollection.updateOne(
+      { email: email },
+      {
+        $set: {
+          resetToken: token,
+          resetTokenExpires: new Date(Date.now() + 3600000), // Token expires in 1 hour
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      throw new Error("No user found with that email address.");
+    }
+
+    console.log(`Reset token saved for user: ${email}`);
+  } catch (error) {
+    console.error("Error in saveResetTokenToDatabase:", error);
+    throw error;
+  }
+}
+
+export async function resetPassword(email) {
+  try {
+    const token = randomBytes(32).toString("hex");
+    console.log(`Generated reset token for ${email}: ${token}`);
+
+    await saveResetTokenToDatabase(email, token);
+
+    const transporter = createTransport({
+      host: "smtp.privateemail.com",
+      port: 587,
+      secure: false, // Use TLS
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Password Reset Request",
+      text: `To reset your password, please click on this link: ${resetUrl}`,
+      html: `
+        <p>To reset your password, please click on this link: <a href="${resetUrl}">Reset Password</a></p>
+        
+      `,
+    });
+
+    console.log(`Reset email sent to ${email}`);
+    return {
+      message:
+        "Password reset link sent to your email. Check your inbox (and spam folder).",
+    };
+  } catch (error) {
+    console.error("Error in resetPassword:", error);
+    throw new Error(
+      "Failed to process password reset request. Please try again."
+    );
+  }
+}
+
+export async function resetPasswordWithToken(token, newPassword) {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    // Find user with the given reset token and check if it's still valid
+    const user = await usersCollection.findOne({
+      resetToken: token,
+      resetTokenExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new Error("Invalid or expired reset token");
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user's password and remove reset token
+    await usersCollection.updateOne(
+      { _id: user._id },
+      {
+        $set: { password: hashedPassword },
+        $unset: { resetToken: "", resetTokenExpires: "" },
+      }
+    );
+
+    return { message: "Your password has been reset successfully" };
+  } catch (error) {
+    console.error("Error resetting password:", error);
+    throw new Error("Failed to reset password. Please try again.");
+  }
+}

@@ -83,7 +83,7 @@ const SignInForm = () => {
       <SubmitButton />
       <h2 className="pt-6 text-bold text-lg">
         <Link href="/auth/sign-up">
-          Haven't signed up yet? Click here to sign up.
+          <strong>Haven't signed up yet?</strong> Click here to sign up.
         </Link>
       </h2>
       <h2 className="mt-4 text-black">
