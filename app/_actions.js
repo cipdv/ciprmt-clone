@@ -1340,6 +1340,7 @@ export async function addHealthHistory(data) {
     const userId = await checkAuth();
     const db = await getDatabase();
     const healthHistoryCollection = db.collection("healthhistories");
+    const usersCollection = db.collection("users");
 
     // Validate data against Zod schema
     const validatedData = healthHistorySchema.parse(data);
@@ -1353,6 +1354,34 @@ export async function addHealthHistory(data) {
     const result = await healthHistoryCollection.insertOne(healthHistoryData);
 
     if (result.acknowledged) {
+      // Update the user's lastHealthHistoryUpdate field
+      await usersCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { lastHealthHistoryUpdate: new Date() } }
+      );
+
+      // Regenerate the session with updated user data
+      const updatedUser = await usersCollection.findOne({
+        _id: new ObjectId(userId),
+      });
+      const session = await getSession();
+      const newSession = {
+        ...session,
+        resultObj: {
+          ...session.resultObj,
+          lastHealthHistoryUpdate: updatedUser.lastHealthHistoryUpdate,
+        },
+      };
+
+      const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+      const encryptedSession = await encrypt({ ...newSession, expires });
+
+      cookies().set("session", encryptedSession, {
+        expires,
+        httpOnly: true,
+        secure: true,
+      });
+
       revalidatePath("/dashboard/patient");
       return { success: true, id: result.insertedId };
     } else {
@@ -1368,6 +1397,41 @@ export async function addHealthHistory(data) {
     throw new Error("Failed to add health history");
   }
 }
+
+//working version (production)
+// export async function addHealthHistory(data) {
+//   try {
+//     const userId = await checkAuth();
+//     const db = await getDatabase();
+//     const healthHistoryCollection = db.collection("healthhistories");
+
+//     // Validate data against Zod schema
+//     const validatedData = healthHistorySchema.parse(data);
+
+//     const healthHistoryData = {
+//       ...validatedData,
+//       createdAt: new Date(),
+//       userId: new ObjectId(userId),
+//     };
+
+//     const result = await healthHistoryCollection.insertOne(healthHistoryData);
+
+//     if (result.acknowledged) {
+//       revalidatePath("/dashboard/patient");
+//       return { success: true, id: result.insertedId };
+//     } else {
+//       throw new Error("Failed to insert health history");
+//     }
+//   } catch (error) {
+//     console.error("Error adding health history:", error);
+//     if (error instanceof z.ZodError) {
+//       throw new Error(
+//         `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
+//       );
+//     }
+//     throw new Error("Failed to add health history");
+//   }
+// }
 
 export async function getClientHealthHistories(id) {
   try {

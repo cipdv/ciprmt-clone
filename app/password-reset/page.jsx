@@ -41,7 +41,7 @@ export default function PasswordResetPage() {
             Send Reset Link
           </button>
         </div>
-        {message && <p className="text-red-500 text-lg font-bold">{message}</p>}
+        {message && <p className="text-red-500 text-lg ">{message}</p>}
         <h2 className="pt-6 text-bold text-lg">
           <Link href="/auth/sign-in">
             Remember your password? Click here to sign in.

@@ -204,15 +204,15 @@ const NavItems = ({ session, logout, closeMenu, mobile = false }) => {
     </>
   ) : (
     <>
-      {/* <li className={itemClass}>
+      <li className={itemClass}>
         <Link
-          href="/dashboard/patient/services"
+          href="/dashboard/patient/health-history"
           className="hover:text-gray-300 transition duration-300"
           onClick={closeMenu}
         >
-          Services
+          Health History
         </Link>
-      </li> */}
+      </li>
       <li className={itemClass}>
         <Link
           href="/dashboard/patient/contact"
