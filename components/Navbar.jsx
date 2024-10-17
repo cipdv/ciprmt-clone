@@ -15,7 +15,7 @@ const Navbar = ({ session, logout }) => {
     <nav className="bg-navbar text-white py-12">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 lg:px-24">
         <div className="flex items-center justify-between">
-          <Link href="/" className="text-3xl font-serif">
+          <Link href="/" className="text-3xl font-serif" onClick={closeMenu}>
             CipRMT.com
           </Link>
           {session && (
@@ -109,7 +109,7 @@ const Navbar = ({ session, logout }) => {
 };
 
 const NavItems = ({ session, logout, closeMenu, mobile = false }) => {
-  const itemClass = mobile ? "block py-2" : "";
+  const itemClass = mobile ? "block py-2 text-right" : "";
 
   return session.resultObj.userType === "rmt" ? (
     <>

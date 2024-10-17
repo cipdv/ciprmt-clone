@@ -153,8 +153,8 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
     }
 
     const dates = appointmentTimes.slice(
-      currentPage * 5,
-      (currentPage + 1) * 5
+      currentPage * 6,
+      (currentPage + 1) * 6
     );
 
     return (
@@ -255,7 +255,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
             onClick={nextStep}
             disabled={!formData.location}
           >
-            Next
+            Next Step
           </button>
         </div>
       )}
@@ -301,7 +301,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
               onClick={nextStep}
               disabled={!formData.duration}
             >
-              Next
+              Next Step
             </button>
           </div>
         </div>
@@ -321,7 +321,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                 disabled={currentPage === 0}
                 className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                Previous
+                Previous Dates
               </button>
               <button
                 type="button"
@@ -329,7 +329,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
                 disabled={(currentPage + 1) * 5 >= appointmentTimes.length}
                 className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                Next
+                More Dates
               </button>
             </div>
           )}
@@ -347,7 +347,7 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
               onClick={nextStep}
               disabled={!selectedAppointment}
             >
-              Next
+              Next Step
             </button>
           </div>
         </div>
