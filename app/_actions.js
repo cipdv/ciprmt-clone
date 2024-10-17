@@ -1,29 +1,33 @@
 "use server";
 
-import dbConnection from "./lib/database/dbconnection";
+// External libraries
 import { ObjectId } from "mongodb";
-import { getDatabase } from "./lib/database/dbconnection";
+import { SignJWT, jwtVerify } from "jose";
+import bcrypt from "bcryptjs";
+import { z } from "zod";
+import { google } from "googleapis";
+import { createTransport } from "nodemailer";
+import { randomBytes } from "crypto";
+import { OAuth2Client } from "google-auth-library";
+import he from "he";
+
+// Next.js specific imports
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
-import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import bcrypt from "bcryptjs";
-import { registerPatientSchema, loginSchema } from "./lib/zod/zodSchemas";
+
+// Database connections
+import dbConnection from "./lib/database/dbconnection";
+import { getDatabase } from "./lib/database/dbconnection";
 import client from "./lib/database/db";
-import { z } from "zod";
-import { healthHistorySchema } from "./lib/zod/zodSchemas";
-import { google } from "googleapis";
-import { OAuth2Client } from "google-auth-library";
+
+// Zod schemas
 import {
-  addMinutes,
-  format,
-  isWithinInterval,
-  parseISO,
-  subMinutes,
-  set,
-  areIntervalsOverlapping,
-} from "date-fns";
+  registerPatientSchema,
+  loginSchema,
+  healthHistorySchema,
+} from "./lib/zod/zodSchemas";
 
 // Set up JWT
 const secretKey = process.env.JWT_SECRET_KEY;
@@ -53,6 +57,20 @@ const calendar = google.calendar({
   version: "v3",
   auth: jwtClient,
 });
+
+//setup nodemailer for sending emails
+
+export const createEmailTransporter = () => {
+  return createTransport({
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT,
+    secure: false, // Use TLS
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+};
 
 // Helper function to serialize MongoDB documents
 function serializeDocument(doc) {
@@ -1527,16 +1545,87 @@ export async function deleteHealthHistory(id) {
 //////////////////////////////////////////////////
 
 export async function sendMessageToCip(prevState, formData) {
-  console.log(formData);
-  return;
-}
+  try {
+    const currentUser = await getSession();
 
+    if (!currentUser || !currentUser.resultObj) {
+      throw new Error("User not authenticated");
+    }
+
+    const transporter = await createEmailTransporter();
+
+    const userName = currentUser.resultObj.preferredName
+      ? `${currentUser.resultObj.preferredName} ${currentUser.resultObj.lastName}`
+      : `${currentUser.resultObj.firstName} ${currentUser.resultObj.lastName}`;
+
+    const message = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>New message from CipRMT.com</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background-color: #f0f0f0; padding: 20px; border-radius: 5px;">
+        <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">New message from CipRMT.com</h2>
+        <p style="font-weight: bold;">This is a message from ${he.encode(
+          userName
+        )}:</p>
+        <div style="background-color: #ffffff; border-left: 4px solid #3498db; padding: 15px; margin: 10px 0;">
+          <p style="margin: 0;">${he.encode(formData.get("message"))}</p>
+        </div>
+        <div style="margin-top: 20px; background-color: #e8f4f8; padding: 15px; border-radius: 5px;">
+          <p style="margin: 5px 0;">
+            <strong>Reply by email:</strong> 
+            <a href="mailto:${he.encode(
+              currentUser.resultObj.email
+            )}" style="color: #3498db; text-decoration: none;">${he.encode(
+      currentUser.resultObj.email
+    )}</a>
+          </p>
+          <p style="margin: 5px 0;">
+            <strong>Reply by phone:</strong> 
+            <a href="tel:${he.encode(
+              currentUser.resultObj.phone
+            )}" style="color: #3498db; text-decoration: none;">${he.encode(
+      currentUser.resultObj.phone
+    )}</a>
+          </p>
+        </div>
+        <div style="margin-top: 20px; font-size: 12px; color: #7f8c8d; text-align: center;">
+          <p>This is an automated message from CipRMT.com. Please do not reply directly to this email.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: `CipRMT.com: Message from ${userName}`,
+      text: `New message from ${userName}:
+
+${formData.get("message")}
+
+Reply by email: ${currentUser.resultObj.email}
+Reply by phone: ${currentUser.resultObj.phone}`,
+      html: message,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error sending message:", error);
+    return {
+      success: false,
+      message: "Failed to send message",
+    };
+  }
+}
 //////////////////////////////////////////////////
 //////////PASSWORD RESET//////////////////////////
 //////////////////////////////////////////////////
-
-import { createTransport } from "nodemailer";
-import { randomBytes } from "crypto";
 
 async function saveResetTokenToDatabase(email, token) {
   try {
@@ -1571,15 +1660,17 @@ export async function resetPassword(email) {
 
     await saveResetTokenToDatabase(email, token);
 
-    const transporter = createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: false, // Use TLS
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    const transporter = createEmailTransporter();
+
+    // const transporter = createTransport({
+    //   host: process.env.EMAIL_HOST,
+    //   port: process.env.EMAIL_PORT,
+    //   secure: false, // Use TLS
+    //   auth: {
+    //     user: process.env.EMAIL_USER,
+    //     pass: process.env.EMAIL_PASS,
+    //   },
+    // });
 
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
 
