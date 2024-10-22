@@ -206,6 +206,15 @@ const NavItems = ({ session, logout, closeMenu, mobile = false }) => {
     <>
       <li className={itemClass}>
         <Link
+          href="/dashboard/patient/book-a-massage"
+          className="hover:text-gray-300 transition duration-300"
+          onClick={closeMenu}
+        >
+          Book a Massage
+        </Link>
+      </li>
+      <li className={itemClass}>
+        <Link
           href="/dashboard/patient/health-history"
           className="hover:text-gray-300 transition duration-300"
           onClick={closeMenu}

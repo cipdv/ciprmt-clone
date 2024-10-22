@@ -17,10 +17,8 @@ import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
-// Database connections
-import dbConnection from "./lib/database/dbconnection";
-import { getDatabase } from "./lib/database/dbconnection";
-import client from "./lib/database/db";
+// Database connection
+import { getDatabase } from "./lib/database/mongoDbConnection";
 
 // Zod schemas
 import {
@@ -255,8 +253,7 @@ export async function login(prevState, formData) {
 
   const user = data;
 
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const result = await db.collection("users").findOne({ email: user.email });
 
   if (!result) {
@@ -338,15 +335,13 @@ export async function submitScheduleSetup(prevState, formData) {
 }
 
 export async function getAllTreatments() {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const treatments = await db.collection("treatments").find({}).toArray();
   return serializeDocument(treatments);
 }
 
 export async function getTreatmentById(id) {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const treatment = await db
     .collection("treatments")
     .findOne({ _id: new ObjectId(id) });
@@ -354,22 +349,19 @@ export async function getTreatmentById(id) {
 }
 
 export async function getAllUsers() {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const users = await db.collection("users").find({}).toArray();
   return serializeDocument(users);
 }
 
 export async function getAllSurveys() {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const surveys = await db.collection("surveys").find({}).toArray();
   return serializeDocument(surveys);
 }
 
 export async function getReceipts(id) {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const receipts = await db
     .collection("appointments")
     .find({ userId: id })
@@ -378,8 +370,7 @@ export async function getReceipts(id) {
 }
 
 export async function getReceiptById(id) {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const receipt = await db
     .collection("appointments")
     .findOne({ _id: new ObjectId(id) });
@@ -444,8 +435,7 @@ export async function RMTSetup({
   };
 
   const { _id } = session.resultObj;
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   const setup = {
     userId: _id,
@@ -523,8 +513,7 @@ export const getRMTSetup = async () => {
   const session = await getSession();
 
   const { rmtId } = session.resultObj;
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   const setupArray = await db
     .collection("rmtLocations")
@@ -535,8 +524,7 @@ export const getRMTSetup = async () => {
 };
 
 export async function getUsersAppointments(id) {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
   const appointments = await db
     .collection("appointments")
     .find({ userId: id })
@@ -667,7 +655,6 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     (a, b) => new Date(a.date) - new Date(b.date)
   );
 
-  console.log("Available times:", sortedAvailableTimes);
   return sortedAvailableTimes;
 };
 
@@ -680,7 +667,6 @@ export async function bookAppointment({
   appointmentDate,
   RMTLocationId,
 }) {
-  console.log("appointmentTime", appointmentTime, appointmentDate);
   const session = await getSession();
   if (!session) {
     return {
@@ -691,8 +677,7 @@ export async function bookAppointment({
 
   const { _id, firstName, lastName, email } = session.resultObj;
 
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   // Ensure appointmentDate is in "YYYY-MM-DD" format
   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
@@ -715,10 +700,6 @@ export async function bookAppointment({
     minute: "2-digit",
   });
 
-  console.log("formattedDate", formattedDate);
-  console.log("formattedStartTime", formattedStartTime);
-  console.log("formattedEndTime", formattedEndTime);
-
   try {
     const query = {
       RMTLocationId: new ObjectId(RMTLocationId),
@@ -727,8 +708,6 @@ export async function bookAppointment({
       appointmentEndTime: { $gte: formattedEndTime },
       status: "available",
     };
-
-    console.log("Database query:", query);
 
     // Create Google Calendar event
     const event = {
@@ -808,7 +787,6 @@ export async function bookAppointment({
     };
   }
 
-  // Redirect is placed at the end of the function, outside of any try-catch blocks
   redirect("/dashboard/patient");
 }
 
@@ -824,8 +802,7 @@ export const cancelAppointment = async (prevState, formData) => {
 
   const { _id } = session.resultObj;
 
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   try {
     const query = {
@@ -900,8 +877,7 @@ export const cancelAppointment = async (prevState, formData) => {
 };
 
 export async function getAppointmentById(id) {
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   try {
     const appointment = await db.collection("appointments").findOne({
@@ -948,8 +924,6 @@ export async function submitConsentForm(data) {
   } catch (error) {
     console.error("Error submitting consent form:", error);
     return { success: false, error: error.message };
-  } finally {
-    await client.close();
   }
 }
 
@@ -1139,7 +1113,6 @@ export const getAllAvailableAppointments = async (
     (a, b) => new Date(a.date) - new Date(b.date)
   );
 
-  console.log("Available times:", sortedAvailableTimes);
   return sortedAvailableTimes;
 };
 
@@ -1155,8 +1128,6 @@ export async function rescheduleAppointment(
     RMTLocationId,
   }
 ) {
-  console.log("appointmentTime", appointmentTime, appointmentDate);
-
   const session = await getSession();
   if (!session) {
     return serializeDocument({
@@ -1167,8 +1138,7 @@ export async function rescheduleAppointment(
 
   const { _id, firstName, lastName, email } = session.resultObj;
 
-  const dbClient = await dbConnection;
-  const db = await dbClient.db(process.env.DB_NAME);
+  const db = await getDatabase();
 
   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
@@ -1189,9 +1159,6 @@ export async function rescheduleAppointment(
     hour: "2-digit",
     minute: "2-digit",
   });
-
-  console.log("formattedStartTime", formattedStartTime);
-  console.log("formattedEndTime", formattedEndTime);
 
   try {
     const currentAppointment = await db
@@ -1475,10 +1442,6 @@ export async function getClientHealthHistories(id) {
     // Serialize the health histories
     const serializedHealthHistories = healthHistories.map(serializeDocument);
 
-    console.log(
-      `Retrieved ${serializedHealthHistories.length} health histories for user ${authenticatedUserId}`
-    );
-
     return serializedHealthHistories;
   } catch (error) {
     console.error("Error fetching client health histories:", error);
@@ -1656,7 +1619,6 @@ async function saveResetTokenToDatabase(email, token) {
 export async function resetPassword(email) {
   try {
     const token = randomBytes(32).toString("hex");
-    console.log(`Generated reset token for ${email}: ${token}`);
 
     await saveResetTokenToDatabase(email, token);
 
