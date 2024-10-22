@@ -9,7 +9,7 @@ const Intro = () => {
         <div className="flex flex-col md:flex-row items-center md:space-x-8 space-y-8 md:space-y-0">
           <div className="w-full md:w-1/3 flex-shrink-0">
             <Image
-              src="/images/cip-profile-pic.jpg"
+              src="/images/cip-oct24.jpg"
               width={300}
               height={300}
               alt="Cip de Vries"
@@ -27,10 +27,10 @@ const Intro = () => {
             <div className="space-y-4">
               <p className="text-sm sm:text-base">
                 I'm very passionate about health and well-being. I love taking
-                care of myself with exercise, healthy foods, and spending time
-                with friends and family. My favourite activities include
-                volleyball, rock climbing, swimming, skating, and just being
-                outdoors with nature.
+                care of myself with exercise, good foods, and spending time with
+                friends and family. My favourite activities include volleyball,
+                rock climbing, swimming, skating, and just being outdoors with
+                nature.
               </p>
               <p className="text-sm sm:text-base">
                 As your <strong>Registered Massage Therapist</strong>, I promise

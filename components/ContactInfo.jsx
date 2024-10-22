@@ -58,7 +58,7 @@ const ContactInfo = () => {
       <div className="flex flex-col md:flex-row items-center md:space-x-8 space-y-8 md:space-y-0">
         <div className="w-full md:w-1/3 flex-shrink-0">
           <Image
-            src="/images/cip-profile-pic.jpg"
+            src="/images/cip-oct24.jpg"
             width={300}
             height={300}
             alt="Cip de Vries"
