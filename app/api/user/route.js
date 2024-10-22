@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/app/_actions";
-import { getDatabase } from "@/app/lib/database/dbconnection";
+import { getDatabase } from "@/app/lib/database/mongoDbConnection";
 import { ObjectId } from "mongodb";
 
 export async function GET() {
