@@ -6,9 +6,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { google } from "googleapis";
-import { createTransport } from "nodemailer";
 import { randomBytes } from "crypto";
-import { OAuth2Client } from "google-auth-library";
 import he from "he";
 
 // Next.js specific imports
@@ -19,6 +17,9 @@ import { cookies } from "next/headers";
 
 // Database connection
 import { getDatabase } from "./lib/database/mongoDbConnection";
+
+// Nodemailer transporter
+import { getEmailTransporter } from "./lib/transporter/nodemailer";
 
 // Zod schemas
 import {
@@ -44,6 +45,8 @@ const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
 const GOOGLE_PROJECT_NUMBER = process.env.GOOGLE_PROJECT_NUMBER;
 const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
 
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 const jwtClient = new google.auth.JWT(
   GOOGLE_CLIENT_EMAIL,
   null,
@@ -55,20 +58,6 @@ const calendar = google.calendar({
   version: "v3",
   auth: jwtClient,
 });
-
-//setup nodemailer for sending emails
-
-export const createEmailTransporter = () => {
-  return createTransport({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    secure: false, // Use TLS
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-};
 
 // Helper function to serialize MongoDB documents
 function serializeDocument(doc) {
@@ -117,99 +106,34 @@ export const getCurrentMember = async () => {
 };
 
 export async function registerNewPatient(prevState, formData) {
-  const formDataObj = Object.fromEntries(formData.entries());
-  formDataObj.email = formDataObj.email.toLowerCase().trim();
-  formDataObj.firstName =
-    formDataObj.firstName.charAt(0).toUpperCase() +
-    formDataObj.firstName.slice(1);
-  formDataObj.preferredName =
-    formDataObj.preferredName.charAt(0).toUpperCase() +
-    formDataObj.preferredName.slice(1);
-  formDataObj.phone = formDataObj.phone.replace(/\D/g, "");
-
-  const result = registerPatientSchema.safeParse(formDataObj);
-
-  if (result.error) {
-    const passwordError = result.error.issues.find(
-      (issue) =>
-        issue.path[0] === "password" &&
-        issue.type === "string" &&
-        issue.minimum === 6
+  try {
+    const result = registerPatientSchema.safeParse(
+      Object.fromEntries(formData.entries())
     );
-
-    const confirmPasswordError = result.error.issues.find(
-      (issue) =>
-        issue.path[0] === "confirmPassword" &&
-        issue.type === "string" &&
-        issue.minimum === 6
-    );
-
-    if (passwordError) {
-      return { password: "^ Password must be at least 8 characters long" };
-    }
-
-    if (confirmPasswordError) {
-      return {
-        confirmPassword:
-          "^ Passwords must be at least 8 characters long and match",
-      };
-    }
-
-    const emailError = result.error.issues.find((issue) => {
-      return (
-        issue.path[0] === "email" &&
-        issue.validation === "email" &&
-        issue.code === "invalid_string"
-      );
-    });
-
-    if (emailError) {
-      return { email: "^ Please enter a valid email address" };
-    }
 
     if (!result.success) {
       return {
+        errors: result.error.flatten().fieldErrors,
         message:
           "Failed to register: make sure all required fields are completed and try again",
       };
     }
-  }
 
-  const {
-    firstName,
-    lastName,
-    preferredName,
-    phone,
-    pronouns,
-    email,
-    password,
-    confirmPassword,
-  } = result.data;
+    const { confirmPassword, ...patientData } = result.data;
 
-  if (password !== confirmPassword) {
-    return { confirmPassword: "^ Passwords do not match" };
-  }
-
-  try {
     const db = await getDatabase();
     const patientExists = await db
       .collection("users")
-      .findOne({ email: email });
+      .findOne({ email: patientData.email });
 
     if (patientExists) {
-      return { email: "^ This email is already registered" };
+      return { errors: { email: ["This email is already registered"] } };
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(patientData.password, 10);
 
     const newPatient = {
-      firstName,
-      lastName,
-      preferredName,
-      pronouns,
-      email,
-      phone,
+      ...patientData,
       userType: "patient",
       password: hashedPassword,
       rmtId: "615b37ba970196ca0d3122fe",
@@ -218,27 +142,177 @@ export async function registerNewPatient(prevState, formData) {
 
     await db.collection("users").insertOne(newPatient);
 
-    let resultObj = { ...newPatient };
-    delete resultObj.password;
+    const sessionData = {
+      resultObj: {
+        ...newPatient,
+        password: undefined,
+      },
+    };
 
     const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
-    const session = await encrypt({ resultObj, expires });
+    const session = await encrypt({ ...sessionData, expires });
 
     cookies().set("session", session, {
       expires,
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
     });
+
+    const transporter = getEmailTransporter();
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: "New Patient Registration",
+      text: `A new patient has registered: ${patientData.firstName} ${patientData.lastName} (${patientData.email})`,
+      html: `
+        <h1>New Patient Registration</h1>
+        <p>A new patient has registered with the following details:</p>
+        <ul>
+          <li>Name: ${patientData.firstName} ${patientData.lastName}</li>
+          <li>Email: ${patientData.email}</li>
+          <li>Phone: ${patientData.phone}</li>
+        </ul>
+      `,
+    });
+
+    revalidatePath("/");
   } catch (error) {
-    console.log(error);
+    console.error(error);
     return {
-      message:
-        "Failed to register: make sure all required fields are completed and try again",
+      message: "An unexpected error occurred. Please try again later.",
     };
   }
-  revalidatePath("/");
+
+  // Redirect outside of try-catch
   redirect("/");
 }
+
+// working version (production) - no email sending
+// export async function registerNewPatient(prevState, formData) {
+//   const formDataObj = Object.fromEntries(formData.entries());
+//   formDataObj.email = formDataObj.email.toLowerCase().trim();
+//   formDataObj.firstName =
+//     formDataObj.firstName.charAt(0).toUpperCase() +
+//     formDataObj.firstName.slice(1);
+//   formDataObj.preferredName =
+//     formDataObj.preferredName.charAt(0).toUpperCase() +
+//     formDataObj.preferredName.slice(1);
+//   formDataObj.phone = formDataObj.phone.replace(/\D/g, "");
+
+//   const result = registerPatientSchema.safeParse(formDataObj);
+
+//   if (result.error) {
+//     const passwordError = result.error.issues.find(
+//       (issue) =>
+//         issue.path[0] === "password" &&
+//         issue.type === "string" &&
+//         issue.minimum === 6
+//     );
+
+//     const confirmPasswordError = result.error.issues.find(
+//       (issue) =>
+//         issue.path[0] === "confirmPassword" &&
+//         issue.type === "string" &&
+//         issue.minimum === 6
+//     );
+
+//     if (passwordError) {
+//       return { password: "^ Password must be at least 8 characters long" };
+//     }
+
+//     if (confirmPasswordError) {
+//       return {
+//         confirmPassword:
+//           "^ Passwords must be at least 8 characters long and match",
+//       };
+//     }
+
+//     const emailError = result.error.issues.find((issue) => {
+//       return (
+//         issue.path[0] === "email" &&
+//         issue.validation === "email" &&
+//         issue.code === "invalid_string"
+//       );
+//     });
+
+//     if (emailError) {
+//       return { email: "^ Please enter a valid email address" };
+//     }
+
+//     if (!result.success) {
+//       return {
+//         message:
+//           "Failed to register: make sure all required fields are completed and try again",
+//       };
+//     }
+//   }
+
+//   const {
+//     firstName,
+//     lastName,
+//     preferredName,
+//     phone,
+//     pronouns,
+//     email,
+//     password,
+//     confirmPassword,
+//   } = result.data;
+
+//   if (password !== confirmPassword) {
+//     return { confirmPassword: "^ Passwords do not match" };
+//   }
+
+//   try {
+//     const db = await getDatabase();
+//     const patientExists = await db
+//       .collection("users")
+//       .findOne({ email: email });
+
+//     if (patientExists) {
+//       return { email: "^ This email is already registered" };
+//     }
+
+//     const salt = await bcrypt.genSalt(10);
+//     const hashedPassword = await bcrypt.hash(password, salt);
+
+//     const newPatient = {
+//       firstName,
+//       lastName,
+//       preferredName,
+//       pronouns,
+//       email,
+//       phone,
+//       userType: "patient",
+//       password: hashedPassword,
+//       rmtId: "615b37ba970196ca0d3122fe",
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection("users").insertOne(newPatient);
+
+//     let resultObj = { ...newPatient };
+//     delete resultObj.password;
+
+//     const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+//     const session = await encrypt({ resultObj, expires });
+
+//     cookies().set("session", session, {
+//       expires,
+//       httpOnly: true,
+//       secure: true,
+//     });
+//   } catch (error) {
+//     console.log(error);
+//     return {
+//       message:
+//         "Failed to register: make sure all required fields are completed and try again",
+//     };
+//   }
+//   revalidatePath("/");
+//   redirect("/");
+// }
 
 export async function login(prevState, formData) {
   const formDataObj = Object.fromEntries(formData.entries());
@@ -658,7 +732,6 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
   return sortedAvailableTimes;
 };
 
-//working version (production)
 export async function bookAppointment({
   location,
   duration,
@@ -668,7 +741,7 @@ export async function bookAppointment({
   RMTLocationId,
 }) {
   const session = await getSession();
-  if (!session) {
+  if (!session || !session.resultObj) {
     return {
       success: false,
       message: "You must be logged in to book an appointment.",
@@ -683,16 +756,14 @@ export async function bookAppointment({
   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
 
   // Convert appointmentTime to "HH:MM" (24-hour format)
-  const formattedStartTime = new Date(
-    `${appointmentDate} ${appointmentTime}`
-  ).toLocaleTimeString("en-US", {
+  const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
+  const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
   });
 
   // Calculate end time
-  const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
   const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
   const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
     hour12: false,
@@ -725,20 +796,10 @@ export async function bookAppointment({
       colorId: "2", // Sage color
     };
 
-    let createdEvent;
-    try {
-      createdEvent = await calendar.events.insert({
-        calendarId: GOOGLE_CALENDAR_ID,
-        resource: event,
-      });
-      console.log("Event created: %s", createdEvent.data.htmlLink);
-    } catch (error) {
-      console.error("Error creating Google Calendar event:", error);
-      return {
-        success: false,
-        message: "An error occurred while creating the Google Calendar event.",
-      };
-    }
+    const createdEvent = await calendar.events.insert({
+      calendarId: GOOGLE_CALENDAR_ID,
+      resource: event,
+    });
 
     const update = {
       $set: {
@@ -754,22 +815,15 @@ export async function bookAppointment({
       },
     };
 
-    const result = await db.collection("appointments").updateOne(query, update);
+    const result = await db
+      .collection("appointments")
+      .findOneAndUpdate(query, update, { returnDocument: "after" });
 
     if (result.matchedCount === 0) {
-      console.log("No matching appointment found.");
-      // If no matching appointment, delete the created Google Calendar event
-      try {
-        await calendar.events.delete({
-          calendarId: GOOGLE_CALENDAR_ID,
-          eventId: createdEvent.data.id,
-        });
-        console.log(
-          "Google Calendar event deleted due to no matching appointment."
-        );
-      } catch (deleteError) {
-        console.error("Error deleting Google Calendar event:", deleteError);
-      }
+      await calendar.events.delete({
+        calendarId: GOOGLE_CALENDAR_ID,
+        eventId: createdEvent.data.id,
+      });
       return {
         success: false,
         message:
@@ -777,18 +831,170 @@ export async function bookAppointment({
       };
     }
 
-    console.log("Appointment updated successfully.");
+    // Get the updated appointment document to retrieve its ID
+    const appointmentId = result?._id.toString();
+
+    // Send email notification
+    const transporter = getEmailTransporter();
+    const confirmationLink = `${BASE_URL}/dashboard/rmt/confirm-appointment/${appointmentId}`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: "New Appointment Scheduled",
+      text: `A new appointment has been scheduled for ${firstName} ${lastName} on ${formattedDate} at ${formattedStartTime}. Click here to confirm: ${confirmationLink}`,
+      html: `
+        <h1>New Appointment Scheduled</h1>
+        <p>A new appointment has been scheduled with the following details:</p>
+        <ul>
+          <li>Client: ${firstName} ${lastName}</li>
+          <li>Date: ${formattedDate}</li>
+          <li>Time: ${formattedStartTime}</li>
+          <li>Duration: ${duration} minutes</li>
+          <li>Location: ${location}</li>
+          <li>Google Calendar Event: <a href="${createdEvent.data.htmlLink}">View Event</a></li>
+        </ul>
+        <p><a href="${confirmationLink}">Click here to confirm the appointment</a></p>
+      `,
+    });
+
     revalidatePath("/dashboard/patient");
   } catch (error) {
-    console.error("An error occurred while updating the appointment:", error);
+    console.error("An error occurred while booking the appointment:", error);
     return {
       success: false,
       message: "An error occurred while booking the appointment.",
     };
   }
-
   redirect("/dashboard/patient");
 }
+
+//working version (production)
+// export async function bookAppointment({
+//   location,
+//   duration,
+//   appointmentTime,
+//   workplace,
+//   appointmentDate,
+//   RMTLocationId,
+// }) {
+//   const session = await getSession();
+//   if (!session) {
+//     return {
+//       success: false,
+//       message: "You must be logged in to book an appointment.",
+//     };
+//   }
+
+//   const { _id, firstName, lastName, email } = session.resultObj;
+
+//   const db = await getDatabase();
+
+//   // Ensure appointmentDate is in "YYYY-MM-DD" format
+//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
+
+//   // Convert appointmentTime to "HH:MM" (24-hour format)
+//   const formattedStartTime = new Date(
+//     `${appointmentDate} ${appointmentTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+
+//   // Calculate end time
+//   const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
+//   const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+//   const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+
+//   try {
+//     const query = {
+//       RMTLocationId: new ObjectId(RMTLocationId),
+//       appointmentDate: formattedDate,
+//       appointmentStartTime: { $lte: formattedStartTime },
+//       appointmentEndTime: { $gte: formattedEndTime },
+//       status: "available",
+//     };
+
+//     // Create Google Calendar event
+//     const event = {
+//       summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
+//       location: location,
+//       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
+//       start: {
+//         dateTime: `${formattedDate}T${formattedStartTime}:00`,
+//         timeZone: "America/Toronto",
+//       },
+//       end: {
+//         dateTime: `${formattedDate}T${formattedEndTime}:00`,
+//         timeZone: "America/Toronto",
+//       },
+//       colorId: "2", // Sage color
+//     };
+
+//     let createdEvent;
+//     try {
+//       createdEvent = await calendar.events.insert({
+//         calendarId: GOOGLE_CALENDAR_ID,
+//         resource: event,
+//       });
+//     } catch (error) {
+//       console.error("Error creating Google Calendar event:", error);
+//       return {
+//         success: false,
+//         message: "An error occurred while creating the Google Calendar event.",
+//       };
+//     }
+
+//     const update = {
+//       $set: {
+//         status: "booked",
+//         location: location,
+//         appointmentBeginsAt: formattedStartTime,
+//         appointmentEndsAt: formattedEndTime,
+//         userId: _id,
+//         duration: duration,
+//         workplace: workplace,
+//         googleCalendarEventId: createdEvent.data.id,
+//         googleCalendarEventLink: createdEvent.data.htmlLink,
+//       },
+//     };
+
+//     const result = await db.collection("appointments").updateOne(query, update);
+
+//     if (result.matchedCount === 0) {
+//       // If no matching appointment, delete the created Google Calendar event
+//       try {
+//         await calendar.events.delete({
+//           calendarId: GOOGLE_CALENDAR_ID,
+//           eventId: createdEvent.data.id,
+//         });
+//       } catch (deleteError) {
+//         console.error("Error deleting Google Calendar event:", deleteError);
+//       }
+//       return {
+//         success: false,
+//         message:
+//           "No matching appointment found. Please try again or contact support.",
+//       };
+//     }
+
+//     console.log("Appointment updated successfully.");
+//     revalidatePath("/dashboard/patient");
+//   } catch (error) {
+//     console.error("An error occurred while updating the appointment:", error);
+//     return {
+//       success: false,
+//       message: "An error occurred while booking the appointment.",
+//     };
+//   }
+
+//   redirect("/dashboard/patient");
+// }
 
 //working version (production)
 export const cancelAppointment = async (prevState, formData) => {
@@ -1515,7 +1721,7 @@ export async function sendMessageToCip(prevState, formData) {
       throw new Error("User not authenticated");
     }
 
-    const transporter = await createEmailTransporter();
+    const transporter = await getEmailTransporter();
 
     const userName = currentUser.resultObj.preferredName
       ? `${currentUser.resultObj.preferredName} ${currentUser.resultObj.lastName}`
@@ -1622,7 +1828,7 @@ export async function resetPassword(email) {
 
     await saveResetTokenToDatabase(email, token);
 
-    const transporter = createEmailTransporter();
+    const transporter = getEmailTransporter();
 
     // const transporter = createTransport({
     //   host: process.env.EMAIL_HOST,
