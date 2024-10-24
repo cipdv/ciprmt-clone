@@ -12,8 +12,13 @@ async function getUserDetails() {
 }
 
 async function getHealthHistory(userId) {
-  const histories = await getClientHealthHistories(userId);
-  return histories.length > 0 ? histories[0] : null;
+  try {
+    const histories = await getClientHealthHistories(userId);
+    return histories.length > 0 ? histories[0] : null;
+  } catch (error) {
+    console.error("Error fetching health history:", error);
+    return null;
+  }
 }
 
 function LoadingFallback() {

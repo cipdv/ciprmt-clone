@@ -1,19 +1,25 @@
 "use server";
 
 // External libraries
+import { z } from "zod";
 import { ObjectId } from "mongodb";
+import {
+  encryptData,
+  logAuditEvent,
+  decryptData,
+} from "@/app/lib/security/security";
+import { checkRateLimit } from "@/app/lib/security/rate-limit";
+import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
 import { google } from "googleapis";
 import { randomBytes } from "crypto";
 import he from "he";
 
 // Next.js specific imports
-import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 
 // Database connection
 import { getDatabase } from "./lib/database/mongoDbConnection";
@@ -27,7 +33,6 @@ import {
   loginSchema,
   healthHistorySchema,
 } from "./lib/zod/zodSchemas";
-
 // Set up JWT
 const secretKey = process.env.JWT_SECRET_KEY;
 const key = new TextEncoder().encode(secretKey);
@@ -1529,15 +1534,22 @@ async function checkAuth() {
 export async function addHealthHistory(data) {
   try {
     const userId = await checkAuth();
+
     const db = await getDatabase();
     const healthHistoryCollection = db.collection("healthhistories");
     const usersCollection = db.collection("users");
 
-    // Validate data against Zod schema
+    // Server-side validation
     const validatedData = healthHistorySchema.parse(data);
 
+    // Encrypt sensitive data
+    const encryptedData = encryptData(validatedData);
+    if (!encryptedData) {
+      throw new Error("Failed to encrypt health history data");
+    }
+
     const healthHistoryData = {
-      ...validatedData,
+      encryptedData,
       createdAt: new Date(),
       userId: new ObjectId(userId),
     };
@@ -1571,6 +1583,14 @@ export async function addHealthHistory(data) {
         expires,
         httpOnly: true,
         secure: true,
+        sameSite: "strict",
+      });
+
+      // Log the event for audit purposes
+      await logAuditEvent({
+        action: "add_health_history",
+        userId: userId,
+        timestamp: new Date(),
       });
 
       revalidatePath("/dashboard/patient");
@@ -1580,14 +1600,78 @@ export async function addHealthHistory(data) {
     }
   } catch (error) {
     console.error("Error adding health history:", error);
-    if (error instanceof z.ZodError) {
+    if (error.name === "ZodError") {
       throw new Error(
         `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
       );
     }
-    throw new Error("Failed to add health history");
+    throw new Error(error.message || "Failed to add health history");
   }
 }
+
+//working version (production)
+// export async function addHealthHistory(data) {
+//   try {
+//     const userId = await checkAuth();
+//     const db = await getDatabase();
+//     const healthHistoryCollection = db.collection("healthhistories");
+//     const usersCollection = db.collection("users");
+
+//     // Validate data against Zod schema
+//     const validatedData = healthHistorySchema.parse(data);
+
+//     const healthHistoryData = {
+//       ...validatedData,
+//       createdAt: new Date(),
+//       userId: new ObjectId(userId),
+//     };
+
+//     const result = await healthHistoryCollection.insertOne(healthHistoryData);
+
+//     if (result.acknowledged) {
+//       // Update the user's lastHealthHistoryUpdate field
+//       await usersCollection.updateOne(
+//         { _id: new ObjectId(userId) },
+//         { $set: { lastHealthHistoryUpdate: new Date() } }
+//       );
+
+//       // Regenerate the session with updated user data
+//       const updatedUser = await usersCollection.findOne({
+//         _id: new ObjectId(userId),
+//       });
+//       const session = await getSession();
+//       const newSession = {
+//         ...session,
+//         resultObj: {
+//           ...session.resultObj,
+//           lastHealthHistoryUpdate: updatedUser.lastHealthHistoryUpdate,
+//         },
+//       };
+
+//       const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+//       const encryptedSession = await encrypt({ ...newSession, expires });
+
+//       cookies().set("session", encryptedSession, {
+//         expires,
+//         httpOnly: true,
+//         secure: true,
+//       });
+
+//       revalidatePath("/dashboard/patient");
+//       return { success: true, id: result.insertedId };
+//     } else {
+//       throw new Error("Failed to insert health history");
+//     }
+//   } catch (error) {
+//     console.error("Error adding health history:", error);
+//     if (error instanceof z.ZodError) {
+//       throw new Error(
+//         `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
+//       );
+//     }
+//     throw new Error("Failed to add health history");
+//   }
+// }
 
 //working version (production)
 // export async function addHealthHistory(data) {
@@ -1626,14 +1710,9 @@ export async function addHealthHistory(data) {
 
 export async function getClientHealthHistories(id) {
   try {
-    // Validate the input id
-    const validatedId = z.string().nonempty().parse(id);
-
-    // Get the authenticated user's ID
     const authenticatedUserId = await checkAuth();
 
-    // Compare the input id with the authenticated user's ID
-    if (validatedId !== authenticatedUserId.toString()) {
+    if (id !== authenticatedUserId.toString()) {
       throw new Error("Unauthorized access: User ID mismatch");
     }
 
@@ -1645,24 +1724,80 @@ export async function getClientHealthHistories(id) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Serialize the health histories
-    const serializedHealthHistories = healthHistories.map(serializeDocument);
+    const decryptedHealthHistories = healthHistories.map((history) => {
+      let decryptedData = {};
+      if (history.encryptedData) {
+        const decrypted = decryptData(history.encryptedData);
+        if (decrypted) {
+          decryptedData = decrypted;
+        } else {
+          console.error(`Failed to decrypt health history ${history._id}`);
+        }
+      } else {
+        // Handle unencrypted data
+        const { _id, userId, createdAt, ...unencryptedData } = history;
+        decryptedData = unencryptedData;
+      }
 
-    return serializedHealthHistories;
+      // Serialize the data to avoid symbol properties
+      return JSON.parse(
+        JSON.stringify({
+          _id: history._id.toString(),
+          userId: history.userId.toString(),
+          createdAt: history.createdAt.toISOString(),
+          ...decryptedData,
+        })
+      );
+    });
+
+    return decryptedHealthHistories;
   } catch (error) {
     console.error("Error fetching client health histories:", error);
-    if (error instanceof z.ZodError) {
-      throw new Error(
-        `Invalid input: ${error.errors.map((e) => e.message).join(", ")}`
-      );
-    }
-    if (error.message === "Unauthorized access: User ID mismatch") {
-      throw new Error("Unauthorized access");
-    }
     throw new Error("Failed to fetch client health histories");
   }
 }
 
+//working version (production)
+// export async function getClientHealthHistories(id) {
+//   try {
+//     // Validate the input id
+//     const validatedId = z.string().nonempty().parse(id);
+
+//     // Get the authenticated user's ID
+//     const authenticatedUserId = await checkAuth();
+
+//     // Compare the input id with the authenticated user's ID
+//     if (validatedId !== authenticatedUserId.toString()) {
+//       throw new Error("Unauthorized access: User ID mismatch");
+//     }
+
+//     const db = await getDatabase();
+//     const healthHistoryCollection = db.collection("healthhistories");
+
+//     const healthHistories = await healthHistoryCollection
+//       .find({ userId: new ObjectId(authenticatedUserId) })
+//       .sort({ createdAt: -1 })
+//       .toArray();
+
+//     // Serialize the health histories
+//     const serializedHealthHistories = healthHistories.map(serializeDocument);
+
+//     return serializedHealthHistories;
+//   } catch (error) {
+//     console.error("Error fetching client health histories:", error);
+//     if (error instanceof z.ZodError) {
+//       throw new Error(
+//         `Invalid input: ${error.errors.map((e) => e.message).join(", ")}`
+//       );
+//     }
+//     if (error.message === "Unauthorized access: User ID mismatch") {
+//       throw new Error("Unauthorized access");
+//     }
+//     throw new Error("Failed to fetch client health histories");
+//   }
+// }
+
+//working version (production)
 export async function getLatestHealthHistory() {
   try {
     const userId = await checkAuth();
