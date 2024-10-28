@@ -25,29 +25,21 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
   });
 
   useEffect(() => {
-    console.log("current", currentAppointment);
     const fetchAppointments = async () => {
       if (formData.RMTLocationId && formData.duration) {
         setLoading(true);
         setError(null);
         try {
-          console.log(
-            `Fetching appointments for RMTLocationId: ${formData.RMTLocationId}, duration: ${formData.duration}`
-          );
           const times = await getAllAvailableAppointments(
             formData.RMTLocationId,
             parseInt(formData.duration),
             currentAppointment.googleCalendarEventId
           );
 
-          console.log("Fetched appointment times:", times);
-
           // Sort the times array by date
           const sortedTimes = times.sort(
             (a, b) => new Date(a.date) - new Date(b.date)
           );
-
-          console.log("Sorted appointment times:", sortedTimes);
 
           // Group appointments by date
           const groupedTimes = sortedTimes.reduce((acc, appointment) => {
@@ -58,8 +50,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
             acc[date].push({ startTime, endTime });
             return acc;
           }, {});
-
-          console.log("Grouped appointment times:", groupedTimes);
 
           // Convert grouped times back to array format and format the dates and times
           const groupedAppointments = Object.entries(groupedTimes).map(
@@ -95,8 +85,6 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
               };
             }
           );
-
-          console.log("Grouped appointments:", groupedAppointments);
 
           setAppointmentTimes(groupedAppointments);
         } catch (error) {
@@ -211,12 +199,7 @@ function RescheduleMassageForm({ rmtSetup, currentAppointment }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    console.log(
-      "jfkdsajkfdsa",
-      formData.appointmentTime,
-      formData.workplace,
-      formData.appointmentDate
-    );
+
     try {
       const result = await rescheduleAppointment(currentAppointment._id, {
         location: formData.location,

@@ -109,7 +109,6 @@ const SetupForm = () => {
       setError(""); // Clear error state
       setNewAppointment({ start: "", end: "" }); // Clear time pickers
     }
-    console.log(filteredDaysOfWeek);
   };
 
   const handlePreviousDay = (e) => {
@@ -148,7 +147,6 @@ const SetupForm = () => {
       const updatedWorkDays = prevWorkDays.map((day) =>
         day.day === currentDay ? { ...day, scheduleType } : day
       );
-      console.log(updatedWorkDays); // Log the updated workDays array
       return updatedWorkDays;
     });
   };
@@ -208,8 +206,6 @@ const SetupForm = () => {
           return day;
         });
 
-        console.log("Updated WorkDays:", updatedWorkDays); // Log the updated workDays
-
         setWorkDays(updatedWorkDays);
         setNewAppointment({ start: "", end: "" });
         setError("");
@@ -264,7 +260,6 @@ const SetupForm = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     // get the id of the current user from the session and set it as the owner of the location
-    console.log("Address:", address);
     // Clear the form
     setAddress({
       locationName: "",

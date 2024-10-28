@@ -33,8 +33,6 @@ const Receipts = ({ user, receipts }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const receiptsPerPage = 10;
 
-  console.log(receipts);
-
   // Filter receipts with valid prices and past dates
   const validReceipts = receipts.filter((receipt) => {
     const appointmentDate = new Date(receipt.appointmentDate);
@@ -50,8 +48,6 @@ const Receipts = ({ user, receipts }) => {
   validReceipts.sort(
     (a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate)
   );
-
-  console.log(validReceipts);
 
   const latestReceipt = validReceipts[0];
 

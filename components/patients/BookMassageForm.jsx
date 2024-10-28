@@ -44,16 +44,11 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
         setLoading(true);
         setError(null);
         try {
-          console.log(
-            `Fetching appointments for RMTLocationId: ${formData.RMTLocationId}, duration: ${formData.duration}`
-          );
           const times = await getAvailableAppointments(
             formData.RMTLocationId,
             parseInt(formData.duration),
             process.env.NEXT_PUBLIC_TIMEZONE
           );
-
-          console.log("Fetched appointment times:", times);
 
           // Sort the times array by date and time
           const sortedTimes = times.sort((a, b) => {
@@ -61,8 +56,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
             const dateB = new Date(`${b.date}T${b.startTime}`);
             return dateA - dateB;
           });
-
-          console.log("Sorted appointment times:", sortedTimes);
 
           // Group appointments by date
           const groupedTimes = sortedTimes.reduce((acc, appointment) => {
@@ -73,8 +66,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
             acc[date].push({ startTime, endTime });
             return acc;
           }, {});
-
-          console.log("Grouped appointment times:", groupedTimes);
 
           // Convert grouped times back to array format and format the dates and times
           const groupedAppointments = Object.entries(groupedTimes).map(
@@ -118,8 +109,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
               };
             }
           );
-
-          console.log("Grouped appointments:", groupedAppointments);
 
           setAppointmentTimes(groupedAppointments);
         } catch (error) {
@@ -213,7 +202,6 @@ function BookMassageForm({ rmtSetup, user, healthHistory }) {
   return (
     <form
       action={async () => {
-        console.log("Submitting appointment:", formData);
         await bookAppointment({
           location: formData.location,
           duration: formData.duration,

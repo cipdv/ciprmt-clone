@@ -56,7 +56,6 @@ function Modal({ isOpen, onClose, children }) {
 export function CancelAppointmentForm({ id, appointmentDetails }) {
   const [state, formAction] = useFormState(cancelAppointment, initialState);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  console.log(appointmentDetails);
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);

@@ -115,7 +115,7 @@ export default function HealthHistoryForm({ user, initialHealthHistory }) {
 
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Contact Information</h2>
-        {renderField("phoneNumber", "Phone Number", "tel")}
+
         <div className="space-y-2">
           <h3 className="text-xl font-semibold">Address</h3>
           <div className="grid grid-cols-2 gap-4">

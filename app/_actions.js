@@ -141,7 +141,7 @@ export async function registerNewPatient(prevState, formData) {
       ...patientData,
       userType: "patient",
       password: hashedPassword,
-      rmtId: "615b37ba970196ca0d3122fe",
+      rmtId: new ObjectId("615b37ba970196ca0d3122fe"),
       createdAt: new Date(),
     };
 
@@ -551,6 +551,7 @@ export async function RMTSetup({
             expiryDate.setDate(expiryDate.getDate() + 7);
 
             appointments.push({
+              RMTId: new ObjectId(session.resultObj._id),
               RMTLocationId: result.insertedId,
               appointmentDate: appointmentDate.toISOString().split("T")[0],
               appointmentStartTime: timeSlot.start,
@@ -753,7 +754,7 @@ export async function bookAppointment({
     };
   }
 
-  const { _id, firstName, lastName, email } = session.resultObj;
+  const { _id, firstName, lastName, email, phone } = session.resultObj;
 
   const db = await getDatabase();
 
@@ -787,9 +788,9 @@ export async function bookAppointment({
 
     // Create Google Calendar event
     const event = {
-      summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
+      summary: `[Requested] Mx ${firstName} ${lastName}`,
       location: location,
-      description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
+      description: `Email: ${email}\nPhone: ${phone}`,
       start: {
         dateTime: `${formattedDate}T${formattedStartTime}:00`,
         timeZone: "America/Toronto",
@@ -798,7 +799,7 @@ export async function bookAppointment({
         dateTime: `${formattedDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
-      colorId: "2", // Sage color
+      colorId: "6", // tangerine color
     };
 
     const createdEvent = await calendar.events.insert({
@@ -808,11 +809,15 @@ export async function bookAppointment({
 
     const update = {
       $set: {
-        status: "booked",
+        status: "requested",
         location: location,
         appointmentBeginsAt: formattedStartTime,
         appointmentEndsAt: formattedEndTime,
         userId: _id,
+        firstName: firstName,
+        lastName: lastName,
+        email: email,
+
         duration: duration,
         workplace: workplace,
         googleCalendarEventId: createdEvent.data.id,
@@ -1327,7 +1332,6 @@ export const getAllAvailableAppointments = async (
   return sortedAvailableTimes;
 };
 
-//working version (production)
 export async function rescheduleAppointment(
   currentAppointmentId,
   {
@@ -1347,7 +1351,7 @@ export async function rescheduleAppointment(
     });
   }
 
-  const { _id, firstName, lastName, email } = session.resultObj;
+  const { _id, firstName, lastName, email, phone } = session.resultObj;
 
   const db = await getDatabase();
 
@@ -1385,9 +1389,9 @@ export async function rescheduleAppointment(
 
     if (currentAppointment.googleCalendarEventId) {
       const updatedEvent = {
-        summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
+        summary: `[Requested] Mx ${firstName} ${lastName}`,
         location: location,
-        description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
+        description: `Email: ${email}\nPhone: ${phone}`,
         start: {
           dateTime: `${formattedDate}T${formattedStartTime}:00`,
           timeZone: "America/Toronto",
@@ -1396,7 +1400,7 @@ export async function rescheduleAppointment(
           dateTime: `${formattedDate}T${formattedEndTime}:00`,
           timeZone: "America/Toronto",
         },
-        colorId: "2", // Sage color
+        colorId: "6", // tangerine color
       };
 
       try {
@@ -1444,7 +1448,7 @@ export async function rescheduleAppointment(
 
     const update = {
       $set: {
-        status: "booked",
+        status: "requested",
         location: location,
         appointmentBeginsAt: formattedStartTime,
         appointmentEndsAt: formattedEndTime,
@@ -1460,6 +1464,18 @@ export async function rescheduleAppointment(
 
     if (result.matchedCount > 0) {
       console.log("Appointment rescheduled successfully.");
+
+      // Send email notification to EMAIL_USER
+      await sendRescheduleNotificationEmail(
+        currentAppointment,
+        { firstName, lastName, email, phone },
+        {
+          appointmentDate: formattedDate,
+          appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+          location,
+          duration,
+        }
+      );
 
       revalidatePath("/dashboard/patient");
       return serializeDocument({
@@ -1522,6 +1538,270 @@ export async function rescheduleAppointment(
     });
   }
 }
+
+async function sendRescheduleNotificationEmail(
+  currentAppointment,
+  user,
+  newAppointment
+) {
+  const transporter = getEmailTransporter();
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: process.env.EMAIL_USER, // Sending to the RMT
+    subject: "Appointment Reschedule Request",
+    text: `
+      A reschedule request has been made by ${user.firstName} ${user.lastName}.
+
+      Current Appointment:
+      Date: ${currentAppointment.appointmentDate}
+      Time: ${currentAppointment.appointmentBeginsAt} - ${currentAppointment.appointmentEndsAt}
+
+      Requested New Appointment:
+      Date: ${newAppointment.appointmentDate}
+      Time: ${newAppointment.appointmentTime}
+      Location: ${newAppointment.location}
+      Duration: ${newAppointment.duration} minutes
+
+      User Details:
+      Name: ${user.firstName} ${user.lastName}
+      Email: ${user.email}
+      Phone: ${user.phone}
+
+      Please log in to your dashboard to approve or deny this request.
+    `,
+    html: `
+      <h2>Appointment Reschedule Request</h2>
+      <p>A reschedule request has been made by ${user.firstName} ${user.lastName}.</p>
+
+      <h3>Current Appointment:</h3>
+      <p>
+        Date: ${currentAppointment.appointmentDate}<br>
+        Time: ${currentAppointment.appointmentBeginsAt} - ${currentAppointment.appointmentEndsAt}
+      </p>
+
+      <h3>Requested New Appointment:</h3>
+      <p>
+        Date: ${newAppointment.appointmentDate}<br>
+        Time: ${newAppointment.appointmentTime}<br>
+        Location: ${newAppointment.location}<br>
+        Duration: ${newAppointment.duration} minutes
+      </p>
+
+      <h3>User Details:</h3>
+      <p>
+        Name: ${user.firstName} ${user.lastName}<br>
+        Email: ${user.email}<br>
+        Phone: ${user.phone}
+      </p>
+
+      <p>Please <a href="https://www.ciprmt.com/auth/sign-in">log in to your dashboard</a> to approve or deny this request.</p>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log("Reschedule notification email sent successfully");
+  } catch (error) {
+    console.error("Error sending reschedule notification email:", error);
+  }
+}
+
+//working version (production)
+// export async function rescheduleAppointment(
+//   currentAppointmentId,
+//   {
+//     location,
+//     duration,
+//     appointmentTime,
+//     workplace,
+//     appointmentDate,
+//     RMTLocationId,
+//   }
+// ) {
+//   const session = await getSession();
+//   if (!session) {
+//     return serializeDocument({
+//       success: false,
+//       message: "You must be logged in to reschedule an appointment.",
+//     });
+//   }
+
+//   const { _id, firstName, lastName, email, phone } = session.resultObj;
+
+//   const db = await getDatabase();
+
+//   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
+//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
+
+//   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
+//   const [startTime, endTime] = appointmentTime.split(" - ");
+//   const formattedStartTime = new Date(
+//     `${appointmentDate} ${startTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+//   const formattedEndTime = new Date(
+//     `${appointmentDate} ${endTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+
+//   try {
+//     const currentAppointment = await db
+//       .collection("appointments")
+//       .findOne({ _id: new ObjectId(currentAppointmentId) });
+
+//     if (!currentAppointment) {
+//       return serializeDocument({
+//         success: false,
+//         message: "Current appointment not found.",
+//       });
+//     }
+
+//     if (currentAppointment.googleCalendarEventId) {
+//       const updatedEvent = {
+//         summary: `[Requested] Mx ${firstName} ${lastName}`,
+//         location: location,
+//         description: `Email: ${email}\nPhone: ${phone}`,
+//         start: {
+//           dateTime: `${formattedDate}T${formattedStartTime}:00`,
+//           timeZone: "America/Toronto",
+//         },
+//         end: {
+//           dateTime: `${formattedDate}T${formattedEndTime}:00`,
+//           timeZone: "America/Toronto",
+//         },
+//         colorId: "6", // Sage color
+//       };
+
+//       try {
+//         await calendar.events.update({
+//           calendarId: GOOGLE_CALENDAR_ID,
+//           eventId: currentAppointment.googleCalendarEventId,
+//           resource: updatedEvent,
+//         });
+//         console.log("Google Calendar event updated successfully.");
+//       } catch (calendarError) {
+//         console.error("Error updating Google Calendar event:", calendarError);
+//       }
+//     }
+
+//     const currentAppointmentUpdate = await db
+//       .collection("appointments")
+//       .updateOne(
+//         { _id: new ObjectId(currentAppointmentId) },
+//         {
+//           $set: {
+//             status: "available",
+//             userId: null,
+//             consentForm: null,
+//             consentFormSubmittedAt: null,
+//             googleCalendarEventId: null,
+//             googleCalendarEventLink: null,
+//           },
+//         }
+//       );
+
+//     if (currentAppointmentUpdate.matchedCount === 0) {
+//       return serializeDocument({
+//         success: false,
+//         message: "Current appointment not found.",
+//       });
+//     }
+
+//     const query = {
+//       RMTLocationId: new ObjectId(RMTLocationId),
+//       appointmentDate: formattedDate,
+//       appointmentStartTime: { $lte: formattedStartTime },
+//       appointmentEndTime: { $gte: formattedEndTime },
+//       status: { $in: ["available", "rescheduling"] },
+//     };
+
+//     const update = {
+//       $set: {
+//         status: "requested",
+//         location: location,
+//         appointmentBeginsAt: formattedStartTime,
+//         appointmentEndsAt: formattedEndTime,
+//         userId: _id,
+//         duration: duration,
+//         workplace: workplace,
+//         googleCalendarEventId: currentAppointment.googleCalendarEventId,
+//         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+//       },
+//     };
+
+//     const result = await db.collection("appointments").updateOne(query, update);
+
+//     if (result.matchedCount > 0) {
+//       console.log("Appointment rescheduled successfully.");
+
+//       revalidatePath("/dashboard/patient");
+//       return serializeDocument({
+//         success: true,
+//         message: "Appointment rescheduled successfully.",
+//       });
+//     } else {
+//       console.log("No matching appointment found for rescheduling.");
+
+//       if (currentAppointment.googleCalendarEventId) {
+//         try {
+//           await calendar.events.update({
+//             calendarId: GOOGLE_CALENDAR_ID,
+//             eventId: currentAppointment.googleCalendarEventId,
+//             resource: {
+//               start: {
+//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//               end: {
+//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//             },
+//           });
+//           console.log("Google Calendar event reverted successfully.");
+//         } catch (calendarError) {
+//           console.error(
+//             "Error reverting Google Calendar event:",
+//             calendarError
+//           );
+//         }
+//       }
+
+//       await db.collection("appointments").updateOne(
+//         { _id: new ObjectId(currentAppointmentId) },
+//         {
+//           $set: {
+//             status: "booked",
+//             userId: _id,
+//             googleCalendarEventId: currentAppointment.googleCalendarEventId,
+//             googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+//           },
+//         }
+//       );
+
+//       return serializeDocument({
+//         success: false,
+//         message: "No matching appointment found for rescheduling.",
+//       });
+//     }
+//   } catch (error) {
+//     console.error(
+//       "An error occurred while rescheduling the appointment:",
+//       error
+//     );
+//     return serializeDocument({
+//       success: false,
+//       message: "An error occurred while rescheduling the appointment.",
+//     });
+//   }
+// }
 
 async function checkAuth() {
   const session = await getSession();
@@ -1856,11 +2136,36 @@ export async function sendMessageToCip(prevState, formData) {
       throw new Error("User not authenticated");
     }
 
-    const transporter = await getEmailTransporter();
+    const db = await getDatabase();
+
+    // Create a new collection for messages if it doesn't exist
+    if (!(await db.listCollections({ name: "messages" }).hasNext())) {
+      await db.createCollection("messages");
+    }
 
     const userName = currentUser.resultObj.preferredName
       ? `${currentUser.resultObj.preferredName} ${currentUser.resultObj.lastName}`
       : `${currentUser.resultObj.firstName} ${currentUser.resultObj.lastName}`;
+
+    // Save the message to the database
+    const messageDoc = {
+      status: "sent",
+      email: currentUser.resultObj.email,
+      firstName: currentUser.resultObj.firstName,
+      lastName: currentUser.resultObj.lastName,
+      phone: currentUser.resultObj.phone,
+      message: formData.get("message"),
+      createdAt: new Date(),
+      rmtId: new ObjectId(currentUser.resultObj.rmtId),
+    };
+
+    const result = await db.collection("messages").insertOne(messageDoc);
+
+    if (!result.insertedId) {
+      throw new Error("Failed to save message to database");
+    }
+
+    const transporter = await getEmailTransporter();
 
     const message = `
     <!DOCTYPE html>
@@ -1918,7 +2223,7 @@ Reply by phone: ${currentUser.resultObj.phone}`,
       html: message,
     });
 
-    return { success: true };
+    return { success: true, message: "Message sent and saved successfully" };
   } catch (error) {
     console.error("Error sending message:", error);
     return {
@@ -1927,6 +2232,7 @@ Reply by phone: ${currentUser.resultObj.phone}`,
     };
   }
 }
+
 //////////////////////////////////////////////////
 //////////PASSWORD RESET//////////////////////////
 //////////////////////////////////////////////////
@@ -2032,5 +2338,228 @@ export async function resetPasswordWithToken(token, newPassword) {
   } catch (error) {
     console.error("Error resetting password:", error);
     throw new Error("Failed to reset password. Please try again.");
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////RMT SIDE/////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////
+//////////APPOINTMENTS////////////////////////////
+//////////////////////////////////////////////////
+
+export async function getAllAppointmentsByRMTId(rmtId) {
+  try {
+    const db = await getDatabase();
+    const appointmentsCollection = db.collection("appointments");
+
+    const appointments = await appointmentsCollection
+      .find({ RMTId: new ObjectId(rmtId) })
+      .toArray();
+
+    return appointments.map(serializeDocument);
+  } catch (error) {
+    console.error("Error fetching appointments:", error);
+    throw new Error("Failed to fetch appointments");
+  }
+}
+
+export async function updateAppointmentStatus(formData) {
+  const appointmentId = formData.get("appointmentId");
+  const status = formData.get("status");
+
+  const db = await getDatabase();
+
+  try {
+    const appointment = await db
+      .collection("appointments")
+      .findOne({ _id: new ObjectId(appointmentId) });
+
+    if (!appointment) {
+      return { success: false, message: "Appointment not found" };
+    }
+
+    let updateFields = { status: status };
+
+    if (status === "available") {
+      // Deny request
+      if (appointment.googleCalendarEventId) {
+        try {
+          await calendar.events.delete({
+            calendarId: GOOGLE_CALENDAR_ID,
+            eventId: appointment.googleCalendarEventId,
+          });
+          console.log("Google Calendar event deleted successfully.");
+        } catch (calendarError) {
+          console.error("Error deleting Google Calendar event:", calendarError);
+        }
+      }
+
+      updateFields = {
+        ...updateFields,
+        userId: null,
+        duration: null,
+        workplace: null,
+        consentForm: null,
+        consentFormSubmittedAt: null,
+        googleCalendarEventId: null,
+        googleCalendarEventLink: null,
+        appointmentBeginsAt: null,
+        appointmentEndsAt: null,
+        location: null,
+        email: null,
+        firstName: null,
+        lastName: null,
+      };
+
+      await sendDenialEmail(appointment);
+    } else if (status === "booked") {
+      // Accept request
+      if (appointment.googleCalendarEventId) {
+        try {
+          await calendar.events.patch({
+            calendarId: GOOGLE_CALENDAR_ID,
+            eventId: appointment.googleCalendarEventId,
+            resource: {
+              colorId: "2", // "2" corresponds to "sage" in Google Calendar
+              summary: `[Confirmed]: Mx ${appointment.firstName} ${appointment.lastName}`,
+            },
+          });
+          console.log("Google Calendar event updated successfully.");
+        } catch (calendarError) {
+          console.error("Error updating Google Calendar event:", calendarError);
+        }
+      }
+
+      await sendApprovalEmail(appointment);
+    }
+
+    const result = await db
+      .collection("appointments")
+      .updateOne({ _id: new ObjectId(appointmentId) }, { $set: updateFields });
+
+    if (result.modifiedCount === 1) {
+      revalidatePath("/dashboard/rmt");
+      return {
+        success: true,
+        message: `Appointment ${
+          status === "booked" ? "accepted" : "denied"
+        } successfully`,
+      };
+    } else {
+      return { success: false, message: "Failed to update appointment status" };
+    }
+  } catch (error) {
+    console.error("Error updating appointment status:", error);
+    return {
+      success: false,
+      message: "An error occurred while updating the appointment status",
+    };
+  }
+}
+
+async function sendDenialEmail(appointment) {
+  const transporter = getEmailTransporter();
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: appointment.email,
+    subject: "Massage Appointment Request Update",
+    text: `Hi ${appointment.firstName},\n\nI'm sorry, but I can't accommodate your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt}. If you would like to schedule a different appointment, please login and search for another appointment time.\n\nIf you don't see a time that works for you, contact me directly: ${process.env.EMAIL_USER}`,
+    html: `<p>Hi ${appointment.firstName},</p>
+           <p>I'm sorry, but I can't accommodate your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt}.</p>
+           <p>If you would like to schedule a different appointment, please <a href="https://www.ciprmt.com/auth/sign-in">login</a> and search for another appointment time.</p>
+           <p>If you don't see a time that works for you, contact me directly: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></p>`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log("Denial email sent successfully");
+  } catch (error) {
+    console.error("Error sending denial email:", error);
+  }
+}
+
+async function sendApprovalEmail(appointment) {
+  const transporter = getEmailTransporter();
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: appointment.email,
+    subject: "Massage Appointment Request Approved",
+    text: `Hi ${appointment.firstName},\n\nGreat news! Your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt} has been approved. We look forward to seeing you.\n\nIf you need to make any changes, please login to your account or contact us directly: ${process.env.EMAIL_USER}`,
+    html: `<p>Hi ${appointment.firstName},</p>
+           <p>Great news! Your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt} has been approved. We look forward to seeing you.</p>
+           <p>If you need to make any changes, please <a href="https://www.ciprmt.com/auth/sign-in">login to your account</a> or contact us directly: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></p>`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log("Approval email sent successfully");
+  } catch (error) {
+    console.error("Error sending approval email:", error);
+  }
+}
+
+export async function getAllMessagesByRMTId(rmtId) {
+  try {
+    const db = await getDatabase();
+    const messagesCollection = db.collection("messages");
+
+    const messages = await messagesCollection
+      .find({ rmtId: new ObjectId(rmtId) })
+      .sort({ createdAt: -1 }) // Sort by createdAt in descending order (newest first)
+      .toArray();
+
+    return messages.map(serializeDocument);
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    throw new Error("Failed to fetch messages");
+  }
+}
+
+export async function updateMessageStatus() {
+  console.log("hi");
+}
+
+export async function sendReply(messageId, replyText) {
+  const db = await getDatabase();
+
+  try {
+    const message = await db
+      .collection("messages")
+      .findOne({ _id: new ObjectId(messageId) });
+
+    if (!message) {
+      throw new Error("Message not found");
+    }
+
+    // Update message status
+    await db
+      .collection("messages")
+      .updateOne(
+        { _id: new ObjectId(messageId) },
+        { $set: { status: "replied" } }
+      );
+
+    // Send email reply
+    const transporter = await getEmailTransporter();
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: message.email,
+      subject: "Re: Your message to CipRMT.com",
+      text: replyText,
+      html: `<p>${replyText.replace(/\n/g, "<br>")}</p>`,
+    });
+
+    revalidatePath("/dashboard/rmt");
+    return { success: true, message: "Reply sent successfully" };
+  } catch (error) {
+    console.error("Error sending reply:", error);
+    return {
+      success: false,
+      message: "An error occurred while sending the reply",
+    };
   }
 }

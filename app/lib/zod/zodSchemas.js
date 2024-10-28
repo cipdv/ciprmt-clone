@@ -6,7 +6,7 @@ import * as z from "zod";
 
 export const loginSchema = z.object({
   email: z.string().email().min(1, "Email is required"),
-  password: z.string().min(6, "Password is required"),
+  password: z.string().min(1, "Password is required"),
 });
 
 // export const registerPatientSchema = z.object({
@@ -36,9 +36,6 @@ export const healthHistorySchema = z.object({
     errorMap: () => ({ message: "Please select your pronouns" }),
   }),
   dateOfBirth: z.string().min(1, { message: "Date of birth is required" }),
-  phoneNumber: z
-    .string()
-    .min(10, { message: "Please enter a valid phone number" }),
   address: z.object({
     streetNumber: z.string().min(1, { message: "Street number is required" }),
     streetName: z.string().min(1, { message: "Street name is required" }),

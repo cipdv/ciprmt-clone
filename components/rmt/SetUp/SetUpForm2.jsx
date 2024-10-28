@@ -230,7 +230,6 @@ const SetupForm = () => {
       massageServices,
       workDays,
     };
-    console.log(formData);
     // send the form data to the server
 
     // get the id of the current user from the session and set it as the owner of the location

@@ -3,7 +3,6 @@ import { getAllSurveys } from "@/app/_actions";
 
 const surveyPage = async () => {
   const surveys = await getAllSurveys();
-  console.log(surveys);
 
   const comments = surveys.map((survey) => ({
     email: survey.email,

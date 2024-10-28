@@ -38,8 +38,6 @@ export default async function PatientDashboardPage() {
   const currentUser = await getSession();
   const appointments = await getUsersAppointments(currentUser.resultObj._id);
 
-  console.log(currentUser);
-
   return (
     <Suspense fallback={<LoadingFallback />}>
       <UpcomingAppointments appointments={appointments} />
