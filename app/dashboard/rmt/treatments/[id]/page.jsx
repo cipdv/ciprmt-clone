@@ -1,30 +1,29 @@
-import TreatmentNotes from "@/components/rmt/TreatmentNotes";
-import { Suspense } from "react";
-import { getTreatmentById } from "@/app/_actions";
+// app/dashboard/rmt/treatments/[id]/page.jsx
+import { getTreatmentById, getTreatmentPlansForUser } from "@/app/_actions";
+import TreatmentDetails from "@/components/rmt/TreatmentDetails";
+import TreatmentPlanDetails from "@/components/rmt/TreatmentPlanDetails";
 
-const treatmentPage = async ({ params }) => {
+const TreatmentPage = async ({ params }) => {
   const { id } = params;
   const treatment = await getTreatmentById(id);
-  const { firstName, lastName, date, time } = treatment;
-
-  // Convert ObjectId to string
-  treatment._id = treatment._id.toString();
+  const { userId } = treatment;
+  const treatmentPlans = await getTreatmentPlansForUser(userId);
 
   return (
-    <section>
-      <Suspense fallback={<div>Loading...</div>}>
+    <section className="container mx-auto max-w-6xl px-4 py-8">
+      <div className="grid gap-6 md:grid-cols-2">
         <div>
-          <h3>Treatment notes for:</h3>
-          <h2>
-            {firstName} {lastName}
-          </h2>
-          <h4>Date: {date}</h4>
-          <h4>Time: {time}</h4>
+          <TreatmentDetails treatment={treatment} />
         </div>
-        <TreatmentNotes treatment={treatment} />
-      </Suspense>
+        <div>
+          <TreatmentPlanDetails
+            treatmentPlans={treatmentPlans}
+            clientId={userId}
+          />
+        </div>
+      </div>
     </section>
   );
 };
 
-export default treatmentPage;
+export default TreatmentPage;

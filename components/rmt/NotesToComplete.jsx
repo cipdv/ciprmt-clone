@@ -1,34 +1,50 @@
+"use client";
+
 import React from "react";
-import Link from "next/link";
-import { getAllTreatments } from "@/app/_actions";
+import { useRouter } from "next/navigation";
 
-const NotesToComplete = async () => {
-  const treatmentResults = await getAllTreatments();
+const NotesToComplete = ({ appointments }) => {
+  const router = useRouter();
+  const currentDate = new Date();
+  const notesToComplete = appointments.filter(
+    (appointment) =>
+      appointment.status === "booked" &&
+      new Date(
+        `${appointment.appointmentDate}T${appointment.appointmentBeginsAt}`
+      ) < currentDate &&
+      !appointment.treatmentNotes
+  );
 
-  const treatments = treatmentResults.map((todo) => ({
-    ...todo,
-    _id: todo._id.toString(),
-  }));
+  const handleAppointmentClick = (id) => {
+    router.push(`/dashboard/rmt/treatments/${id}`);
+  };
+
   return (
-    <div className="bg-blue-200 p-4 mb-4 space-y-4">
-      <h1>Notes to complete</h1>
-      <ul className="space-y-2">
-        {treatments.map(
-          (treatment) =>
-            !treatment.findings && (
-              <li key={treatment._id}>
-                <Link href={`/dashboard/rmt/treatments/${treatment._id}`}>
-                  <h2>{treatment.date}</h2>
-                  <p>{treatment.duration}</p>
-                  <p>
-                    {treatment?.firstName} {treatment?.preferredName}{" "}
-                    {treatment?.lastName}
-                  </p>
-                </Link>
-              </li>
-            )
-        )}
-      </ul>
+    <div>
+      <h2 className="text-xl font-semibold mb-4">Notes to Complete</h2>
+      {notesToComplete.length === 0 ? (
+        <div className="p-8 bg-gray-100 rounded-md">
+          <p className="text-gray-600">
+            There are currently no notes to complete.
+          </p>
+        </div>
+      ) : (
+        <div className="flex gap-4 mb-4 flex-wrap">
+          {notesToComplete.map((appointment) => (
+            <div
+              key={appointment._id}
+              className="w-56 bg-white shadow-md rounded-md p-2 text-sm cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => handleAppointmentClick(appointment._id)}
+            >
+              <div className="mb-2">
+                Patient: {appointment.firstName} {appointment.lastName}
+                <br />
+                Date: {appointment.appointmentDate}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

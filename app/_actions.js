@@ -422,7 +422,7 @@ export async function getAllTreatments() {
 export async function getTreatmentById(id) {
   const db = await getDatabase();
   const treatment = await db
-    .collection("treatments")
+    .collection("appointments")
     .findOne({ _id: new ObjectId(id) });
   return serializeDocument(treatment);
 }
@@ -817,7 +817,6 @@ export async function bookAppointment({
         firstName: firstName,
         lastName: lastName,
         email: email,
-
         duration: duration,
         workplace: workplace,
         googleCalendarEventId: createdEvent.data.id,
@@ -2560,6 +2559,261 @@ export async function sendReply(messageId, replyText) {
     return {
       success: false,
       message: "An error occurred while sending the reply",
+    };
+  }
+}
+
+export async function getTreatmentPlansForUser(userId) {
+  try {
+    const db = await getDatabase();
+    const treatmentPlansCollection = db.collection("treatmentplans");
+
+    // Convert userId to ObjectId and create a query that checks both clientId and createdBy
+    const userObjectId = new ObjectId(userId);
+    const query = {
+      $or: [{ clientId: userObjectId }, { createdBy: userObjectId }],
+    };
+
+    const plans = await treatmentPlansCollection.find(query).toArray();
+
+    // Serialize and decrypt sensitive data if necessary
+    const serializedPlans = plans.map((plan) => {
+      const serializedPlan = {
+        ...plan,
+        _id: plan._id.toString(),
+        clientId: plan.clientId ? plan.clientId.toString() : null,
+        createdBy: plan.createdBy ? plan.createdBy.toString() : null,
+        treatments: plan.treatments
+          ? plan.treatments.map((t) => t.toString())
+          : [],
+      };
+      if (plan.encryptedData) {
+        try {
+          serializedPlan.decryptedData = decryptData(plan.encryptedData);
+        } catch (decryptError) {
+          console.error(
+            "Error decrypting data for plan:",
+            plan._id,
+            decryptError
+          );
+          serializedPlan.decryptedData = null;
+        }
+      }
+      return serializedPlan;
+    });
+
+    return { success: true, data: serializedPlans };
+  } catch (error) {
+    console.error("Error fetching treatment plans:", error);
+    return { success: false, message: "Failed to fetch treatment plans" };
+  }
+}
+
+export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
+  console.log("Saving treatment notes...");
+  console.log("treatmentId:", treatmentId);
+  console.log("treatmentPlanId:", treatmentPlanId);
+  console.log("notes:", notes);
+
+  try {
+    const db = await getDatabase();
+    const appointmentsCollection = db.collection("appointments");
+    const treatmentPlansCollection = db.collection("treatmentplans");
+
+    // Encrypt the notes
+    const encryptedNotes = encryptData(JSON.stringify(notes));
+
+    // Update the appointment with the treatment notes and associated plan
+    const appointmentResult = await appointmentsCollection.updateOne(
+      { _id: new ObjectId(treatmentId) },
+      {
+        $set: {
+          treatmentNotes: encryptedNotes,
+          treatmentPlanId: new ObjectId(treatmentPlanId),
+        },
+      }
+    );
+
+    if (appointmentResult.modifiedCount === 0) {
+      throw new Error("Failed to update appointment with treatment notes");
+    }
+
+    // Add the treatment to the treatment plan's treatments array
+    const treatmentPlanResult = await treatmentPlansCollection.updateOne(
+      { _id: new ObjectId(treatmentPlanId) },
+      { $addToSet: { treatments: new ObjectId(treatmentId) } }
+    );
+
+    if (treatmentPlanResult.modifiedCount === 0) {
+      throw new Error("Failed to update treatment plan with new treatment");
+    }
+
+    revalidatePath("/dashboard/rmt");
+  } catch (error) {
+    console.error("Error saving treatment notes:", error);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return { success: false, message: error.message };
+  }
+
+  // Redirect outside of try/catch
+  redirect("/dashboard/rmt");
+}
+//working version (production)
+// export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
+//   try {
+//     const db = await getDatabase();
+//     const appointmentsCollection = db.collection("appointments");
+//     const treatmentPlansCollection = db.collection("treatmentplans");
+
+//     // Encrypt the notes
+//     const encryptedNotes = encryptData(JSON.stringify(notes));
+
+//     // Update the appointment with the treatment notes and associated plan
+//     const appointmentResult = await appointmentsCollection.updateOne(
+//       { _id: new ObjectId(treatmentId) },
+//       {
+//         $set: {
+//           treatmentNotes: encryptedNotes,
+//           treatmentPlanId: new ObjectId(treatmentPlanId),
+//         },
+//       }
+//     );
+
+//     if (appointmentResult.modifiedCount === 0) {
+//       throw new Error("Failed to update appointment with treatment notes");
+//     }
+
+//     // Add the treatment to the treatment plan's treatments array
+//     const treatmentPlanResult = await treatmentPlansCollection.updateOne(
+//       { _id: new ObjectId(treatmentPlanId) },
+//       { $addToSet: { treatments: new ObjectId(treatmentId) } }
+//     );
+
+//     if (treatmentPlanResult.modifiedCount === 0) {
+//       throw new Error("Failed to update treatment plan with new treatment");
+//     }
+
+//     revalidatePath("/dashboard/rmt");
+//     return { success: true, message: "Treatment notes saved successfully" };
+//   } catch (error) {
+//     console.error("Error saving treatment notes:", error);
+//     return { success: false, message: error.message };
+//   }
+// }
+
+export async function createTreatmentPlan(planData, clientId) {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const db = await getDatabase();
+    const treatmentPlansCollection = db.collection("treatmentplans");
+
+    // Encrypt sensitive data
+    const encryptedPlanData = encryptData({
+      objectivesOfTreatmentPlan: planData.objectivesOfTreatmentPlan,
+      clientGoals: planData.clientGoals,
+      areasToBeTreated: planData.areasToBeTreated,
+      durationAndFrequency: planData.durationAndFrequency,
+      typeAndFocusOfTreatments: planData.typeAndFocusOfTreatments,
+      recommendedSelfCare: planData.recommendedSelfCare,
+      scheduleForReassessment: planData.scheduleForReassessment,
+      anticipatedClientResponse: planData.anticipatedClientResponse,
+    });
+
+    if (!encryptedPlanData) {
+      throw new Error("Failed to encrypt treatment plan data");
+    }
+
+    const newPlan = {
+      encryptedData: encryptedPlanData,
+      startDate: new Date(planData.startDate),
+      createdAt: new Date(),
+      createdBy: new ObjectId(session.resultObj._id),
+      clientId: new ObjectId(clientId),
+      treatments: [],
+    };
+
+    const result = await treatmentPlansCollection.insertOne(newPlan);
+
+    if (!result.insertedId) {
+      throw new Error("Failed to create new treatment plan");
+    }
+
+    // Log the action for audit purposes
+    await logAuditEvent({
+      action: "create_treatment_plan",
+      userId: session.resultObj._id,
+      treatmentPlanId: result.insertedId,
+      timestamp: new Date(),
+    });
+
+    revalidatePath("/dashboard/rmt");
+
+    // Return a safe version of the plan (without encrypted data)
+    const safePlan = {
+      _id: result.insertedId,
+      startDate: newPlan.startDate,
+      createdAt: newPlan.createdAt,
+      clientId: newPlan.clientId.toString(),
+      treatments: [],
+    };
+
+    return {
+      success: true,
+      message: "Treatment plan created successfully",
+      plan: safePlan,
+    };
+  } catch (error) {
+    console.error("Error creating treatment plan:", error);
+    return { success: false, message: error.message };
+  }
+}
+
+export async function getTreatmentsForUser(userId) {
+  try {
+    const db = await getDatabase();
+    const appointmentsCollection = db.collection("appointments");
+
+    const appointments = await appointmentsCollection
+      .find({ userId: userId })
+      .toArray();
+
+    // Decrypt treatment notes and serialize ObjectIds
+    const decryptedAppointments = appointments.map((appointment) => {
+      const serializedAppointment = {
+        ...appointment,
+        _id: appointment._id.toString(),
+        RMTId: appointment.RMTId.toString(),
+        RMTLocationId: appointment.RMTLocationId.toString(),
+        userId: appointment.userId.toString(),
+        treatmentPlanId: appointment.treatmentPlanId
+          ? appointment.treatmentPlanId.toString()
+          : null,
+      };
+
+      if (appointment.treatmentNotes) {
+        serializedAppointment.treatmentNotes = decryptData(
+          appointment.treatmentNotes
+        );
+      }
+
+      return serializedAppointment;
+    });
+
+    return { success: true, data: decryptedAppointments };
+  } catch (error) {
+    console.error("Error fetching treatments for user:", error);
+    return {
+      success: false,
+      message: "Failed to fetch treatments",
+      error: error.message,
     };
   }
 }

@@ -11,11 +11,10 @@ import {
   getAllAppointmentsByRMTId,
   getAllMessagesByRMTId,
 } from "@/app/_actions";
+import AddExpense from "@/components/rmt/AddExpense";
 
 export default async function Dashboard() {
   const currentUser = await getSession();
-
-  console.log(currentUser);
 
   const appointments = await getAllAppointmentsByRMTId(
     currentUser.resultObj._id
@@ -28,68 +27,18 @@ export default async function Dashboard() {
       <section className="space-y-8">
         <AppointmentRequests appointments={appointments} />
         <Messages messages={messages} />
-        <DashboardSection title="Calendar" />
-        <NotesToComplete />
-        <DashboardSection title="Add an expense" />
-
+        <h2>Calendar</h2>
+        <NotesToComplete appointments={appointments} />
+        <AddExpense />
         <div className="pt-8">
           <SetUpForm2 />
         </div>
-
         {/* Uncomment these when ready to use
         <SearchBar />
         <NotesToComplete />
         <Calendar /> 
         */}
       </section>
-    </div>
-  );
-}
-
-function DashboardSection({ title }) {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">{title}</h2>
-      <div className="flex  gap-4 mb-4">
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-          <br />
-          Hi I want to book an appointment but I don't know how.
-        </div>
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-        </div>
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-        </div>
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-        </div>
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-        </div>
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-        </div>
-        <div className="w-36 h-36 bg-white shadow-md rounded-md p-2 text-sm">
-          From: Cip
-          <br />
-          Date: 2021-10-24
-        </div>
-      </div>
-      <div className="border-b border-gray-200"></div>
     </div>
   );
 }
