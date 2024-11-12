@@ -12,13 +12,14 @@ const ReceiptDownloadButton = dynamic(() => import("./ReceiptDownloadButton"), {
 const LatestReceipt = async () => {
   const currentUser = await getSession();
 
-  //   61fc079ee6e61eab24e86b07
   const allReceipts = await getReceipts(currentUser.resultObj._id);
   let latestReceipt = null;
   const currentDate = new Date();
 
   for (let i = allReceipts.length - 1; i >= 0; i--) {
-    const receiptDate = new Date(allReceipts[i].date);
+    const receiptDate = new Date(
+      allReceipts[i].appointmentDate || allReceipts[i].date
+    );
     if (receiptDate < currentDate) {
       latestReceipt = allReceipts[i];
       break;
@@ -30,8 +31,8 @@ const LatestReceipt = async () => {
   }
 
   const receiptData = {
-    date: latestReceipt.date,
-    time: latestReceipt.time,
+    date: latestReceipt.appointmentDate || latestReceipt.date,
+    time: latestReceipt.appointmentBeginsAt || latestReceipt.time,
     duration: latestReceipt.duration,
     price: latestReceipt.price,
     firstName: latestReceipt.firstName,
@@ -57,7 +58,10 @@ const LatestReceipt = async () => {
                 </h1>
                 {latestReceipt && (
                   <button className="btn mt-4">
-                    <ReceiptDownloadButton receipt={receiptData} />
+                    <ReceiptDownloadButton
+                      receipt={receiptData}
+                      user={currentUser.resultObj}
+                    />
                   </button>
                 )}
               </div>

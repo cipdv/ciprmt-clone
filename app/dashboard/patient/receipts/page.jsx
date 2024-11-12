@@ -1,20 +1,6 @@
 import { Suspense } from "react";
 import Receipts from "@/components/patients/Receipts";
 import { getSession, getReceipts } from "@/app/_actions";
-import { redirect } from "next/navigation";
-
-async function getUserDetails() {
-  const currentUser = await getSession();
-  if (!currentUser) {
-    redirect("/sign-in");
-  }
-  return currentUser.resultObj;
-}
-
-async function requestReceipts(userId) {
-  const receipts = await getReceipts(userId);
-  return receipts;
-}
 
 function LoadingFallback() {
   return (
@@ -24,14 +10,18 @@ function LoadingFallback() {
   );
 }
 
-export default async function HealthHistoryPage() {
-  const user = await getUserDetails();
-  const receipts = await requestReceipts(user._id);
+async function ReceiptsContent() {
+  const currentUser = await getSession();
+  const user = currentUser.resultObj;
+  const receipts = await getReceipts(user._id);
+  return <Receipts user={user} receipts={receipts} />;
+}
 
+export default function ReceiptsPage() {
   return (
     <section className="container mx-auto px-4 py-8">
       <Suspense fallback={<LoadingFallback />}>
-        <Receipts user={user} receipts={receipts} />
+        <ReceiptsContent />
       </Suspense>
     </section>
   );

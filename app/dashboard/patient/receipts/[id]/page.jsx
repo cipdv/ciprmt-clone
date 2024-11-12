@@ -50,23 +50,27 @@ async function ReceiptDetails({ params }) {
     notFound();
   }
 
+  const isAppointment = receipt.type === "appointment";
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
-      <h1 className="text-3xl  mb-6">Receipt Details</h1>
+      <h1 className="text-3xl mb-6">Receipt Details</h1>
       <div className="bg-white shadow-md rounded-lg p-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="text-gray-600">Date:</p>
             <p className="font-semibold">
-              {formatDate(receipt.appointmentDate)}
+              {formatDate(
+                isAppointment ? receipt.appointmentDate : receipt.date
+              )}
             </p>
           </div>
           <div>
             <p className="text-gray-600">Time:</p>
             <p className="font-semibold">
-              <p className="font-semibold">
-                {formatTime(receipt.appointmentBeginsAt)}
-              </p>
+              {formatTime(
+                isAppointment ? receipt.appointmentBeginsAt : receipt.time
+              )}
             </p>
           </div>
           <div>
@@ -79,6 +83,12 @@ async function ReceiptDetails({ params }) {
             <p className="text-gray-600">Price:</p>
             <p className="font-semibold">${formatPrice(receipt.price)}</p>
           </div>
+          {!isAppointment && (
+            <div>
+              <p className="text-gray-600">Payment Type:</p>
+              <p className="font-semibold">{receipt.paymentType || "N/A"}</p>
+            </div>
+          )}
         </div>
         <div className="mt-6">
           <ReceiptDownloadButton receipt={receipt} user={user} />

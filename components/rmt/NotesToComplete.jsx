@@ -21,25 +21,31 @@ const NotesToComplete = ({ appointments }) => {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-4">Notes to Complete</h2>
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">
+        Notes to Complete
+      </h2>
       {notesToComplete.length === 0 ? (
-        <div className="p-8 bg-gray-100 rounded-md">
-          <p className="text-gray-600">
+        <div className="p-8 bg-white rounded-md shadow-sm">
+          <p className="text-gray-600 text-center text-lg">
             There are currently no notes to complete.
           </p>
         </div>
       ) : (
-        <div className="flex gap-4 mb-4 flex-wrap">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {notesToComplete.map((appointment) => (
             <div
               key={appointment._id}
-              className="w-56 bg-white shadow-md rounded-md p-2 text-sm cursor-pointer hover:bg-gray-50 transition-colors"
+              className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
               onClick={() => handleAppointmentClick(appointment._id)}
             >
-              <div className="mb-2">
-                Patient: {appointment.firstName} {appointment.lastName}
-                <br />
-                Date: {appointment.appointmentDate}
+              <div>
+                <h3 className="font-semibold text-lg mb-2 text-gray-800">
+                  {appointment.firstName} {appointment.lastName}
+                </h3>
+                <div className="space-y-1 text-sm text-gray-600">
+                  <p>{appointment.appointmentDate}</p>
+                  <p>{appointment.appointmentBeginsAt}</p>
+                </div>
               </div>
             </div>
           ))}

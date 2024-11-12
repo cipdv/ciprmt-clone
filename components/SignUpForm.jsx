@@ -10,7 +10,7 @@ const initialState = {
   firstName: "",
   lastName: "",
   email: "",
-  phone: "",
+  phoneNumber: "",
   pronouns: "",
   password: "",
   confirmPassword: "",
@@ -89,11 +89,11 @@ const SignupForm = () => {
           <option value="he/him">He/him</option>
           <option value="other">Other</option>
         </select>
-        <label htmlFor="phone">Phone</label>
+        <label htmlFor="phoneNumber">Phone Number</label>
         <input
           type="tel"
-          id="phone"
-          name="phone"
+          id="phoneNumber"
+          name="phoneNumber"
           placeholder="123-456-7890"
           required
           className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"

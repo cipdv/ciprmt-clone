@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 
-const TreatmentDetails = ({ treatment }) => {
+const TreatmentDetails = ({ treatment, onSelectTreatment }) => {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragStart = (e) => {
@@ -15,6 +15,11 @@ const TreatmentDetails = ({ treatment }) => {
     setIsDragging(false);
   };
 
+  const handleTouchStart = (e) => {
+    e.preventDefault();
+    onSelectTreatment(treatment);
+  };
+
   return (
     <div
       className={`bg-white shadow-md rounded-lg p-6 cursor-move ${
@@ -23,6 +28,7 @@ const TreatmentDetails = ({ treatment }) => {
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onTouchStart={handleTouchStart}
     >
       <h2 className="text-2xl font-bold mb-4">Appointment Details</h2>
       <div className="space-y-2">
@@ -38,6 +44,9 @@ const TreatmentDetails = ({ treatment }) => {
           {new Date(treatment.appointmentDate).toLocaleDateString()}
         </p>
       </div>
+      <p className="mt-4 text-sm text-gray-500">
+        Tap or drag this card to add treatment notes
+      </p>
     </div>
   );
 };

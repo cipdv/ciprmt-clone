@@ -177,7 +177,7 @@ export async function registerNewPatient(prevState, formData) {
         <ul>
           <li>Name: ${patientData.firstName} ${patientData.lastName}</li>
           <li>Email: ${patientData.email}</li>
-          <li>Phone: ${patientData.phone}</li>
+          <li>Phone: ${patientData?.phoneNumber || "N/A"}</li>
         </ul>
       `,
     });
@@ -441,19 +441,87 @@ export async function getAllSurveys() {
 
 export async function getReceipts(id) {
   const db = await getDatabase();
-  const receipts = await db
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Set to start of day
+
+  // Helper function to convert date string to Date object
+  const convertToDate = (dateString) => {
+    const [year, month, day] = dateString.split("-").map(Number);
+    return new Date(year, month - 1, day); // month is 0-indexed in JavaScript Date
+  };
+
+  // Fetch from appointments collection
+  const appointments = await db
     .collection("appointments")
-    .find({ userId: id })
+    .find({
+      userId: id,
+      status: "completed",
+    })
     .toArray();
-  return serializeDocument(receipts);
+
+  // Fetch from treatments collection
+  const treatments = await db
+    .collection("treatments")
+    .find({
+      clientId: id,
+      paymentType: { $exists: true, $ne: null },
+      price: { $exists: true, $ne: null },
+    })
+    .toArray();
+
+  // Combine, filter, and normalize the results
+  const combinedReceipts = [
+    ...appointments
+      .filter(
+        (appointment) => convertToDate(appointment.appointmentDate) <= today
+      )
+      .map((appointment) => ({
+        ...appointment,
+        type: "appointment",
+      })),
+    ...treatments
+      .filter((treatment) => convertToDate(treatment.date) <= today)
+      .map((treatment) => ({
+        ...treatment,
+        userId: treatment.clientId, // Normalize the id field
+        type: "treatment",
+      })),
+  ];
+
+  // Sort the combined results by date, most recent first
+  combinedReceipts.sort((a, b) => {
+    const dateA = convertToDate(a.appointmentDate || a.date);
+    const dateB = convertToDate(b.appointmentDate || b.date);
+    return dateB - dateA;
+  });
+
+  return serializeDocument(combinedReceipts);
 }
 
 export async function getReceiptById(id) {
   const db = await getDatabase();
-  const receipt = await db
+
+  // Check appointments collection
+  let receipt = await db
     .collection("appointments")
     .findOne({ _id: new ObjectId(id) });
-  return serializeDocument(receipt);
+
+  if (receipt) {
+    return serializeDocument({ ...receipt, type: "appointment" });
+  }
+
+  // If not found in appointments, check treatments collection
+  receipt = await db
+    .collection("treatments")
+    .findOne({ _id: new ObjectId(id) });
+
+  if (receipt) {
+    return serializeDocument({ ...receipt, type: "treatment" });
+  }
+
+  // If not found in either collection, return null
+  return null;
 }
 
 export async function RMTSetup({
@@ -754,7 +822,7 @@ export async function bookAppointment({
     };
   }
 
-  const { _id, firstName, lastName, email, phone } = session.resultObj;
+  const { _id, firstName, lastName, email, phoneNumber } = session.resultObj;
 
   const db = await getDatabase();
 
@@ -790,7 +858,7 @@ export async function bookAppointment({
     const event = {
       summary: `[Requested] Mx ${firstName} ${lastName}`,
       location: location,
-      description: `Email: ${email}\nPhone: ${phone}`,
+      description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
       start: {
         dateTime: `${formattedDate}T${formattedStartTime}:00`,
         timeZone: "America/Toronto",
@@ -1350,7 +1418,7 @@ export async function rescheduleAppointment(
     });
   }
 
-  const { _id, firstName, lastName, email, phone } = session.resultObj;
+  const { _id, firstName, lastName, email, phoneNumber } = session.resultObj;
 
   const db = await getDatabase();
 
@@ -1390,7 +1458,7 @@ export async function rescheduleAppointment(
       const updatedEvent = {
         summary: `[Requested] Mx ${firstName} ${lastName}`,
         location: location,
-        description: `Email: ${email}\nPhone: ${phone}`,
+        description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
         start: {
           dateTime: `${formattedDate}T${formattedStartTime}:00`,
           timeZone: "America/Toronto",
@@ -1467,7 +1535,7 @@ export async function rescheduleAppointment(
       // Send email notification to EMAIL_USER
       await sendRescheduleNotificationEmail(
         currentAppointment,
-        { firstName, lastName, email, phone },
+        { firstName, lastName, email, phoneNumber },
         {
           appointmentDate: formattedDate,
           appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
@@ -1554,7 +1622,9 @@ async function sendRescheduleNotificationEmail(
 
       Current Appointment:
       Date: ${currentAppointment.appointmentDate}
-      Time: ${currentAppointment.appointmentBeginsAt} - ${currentAppointment.appointmentEndsAt}
+      Time: ${currentAppointment.appointmentBeginsAt} - ${
+      currentAppointment.appointmentEndsAt
+    }
 
       Requested New Appointment:
       Date: ${newAppointment.appointmentDate}
@@ -1565,18 +1635,22 @@ async function sendRescheduleNotificationEmail(
       User Details:
       Name: ${user.firstName} ${user.lastName}
       Email: ${user.email}
-      Phone: ${user.phone}
+      Phone: ${user?.phoneNumber || "N/A"}
 
       Please log in to your dashboard to approve or deny this request.
     `,
     html: `
       <h2>Appointment Reschedule Request</h2>
-      <p>A reschedule request has been made by ${user.firstName} ${user.lastName}.</p>
+      <p>A reschedule request has been made by ${user.firstName} ${
+      user.lastName
+    }.</p>
 
       <h3>Current Appointment:</h3>
       <p>
         Date: ${currentAppointment.appointmentDate}<br>
-        Time: ${currentAppointment.appointmentBeginsAt} - ${currentAppointment.appointmentEndsAt}
+        Time: ${currentAppointment.appointmentBeginsAt} - ${
+      currentAppointment.appointmentEndsAt
+    }
       </p>
 
       <h3>Requested New Appointment:</h3>
@@ -1591,7 +1665,7 @@ async function sendRescheduleNotificationEmail(
       <p>
         Name: ${user.firstName} ${user.lastName}<br>
         Email: ${user.email}<br>
-        Phone: ${user.phone}
+        Phone: ${user?.phoneNumber || "N/A"}
       </p>
 
       <p>Please <a href="https://www.ciprmt.com/auth/sign-in">log in to your dashboard</a> to approve or deny this request.</p>
@@ -2152,7 +2226,7 @@ export async function sendMessageToCip(prevState, formData) {
       email: currentUser.resultObj.email,
       firstName: currentUser.resultObj.firstName,
       lastName: currentUser.resultObj.lastName,
-      phone: currentUser.resultObj.phone,
+      phone: currentUser.resultObj.phoneNumber || "N/A",
       message: formData.get("message"),
       createdAt: new Date(),
       rmtId: new ObjectId(currentUser.resultObj.rmtId),
@@ -2195,9 +2269,9 @@ export async function sendMessageToCip(prevState, formData) {
           <p style="margin: 5px 0;">
             <strong>Reply by phone:</strong> 
             <a href="tel:${he.encode(
-              currentUser.resultObj.phone
+              currentUser.resultObj.phoneNumber || "N/A"
             )}" style="color: #3498db; text-decoration: none;">${he.encode(
-      currentUser.resultObj.phone
+      currentUser.resultObj.phoneNumber || "N/A"
     )}</a>
           </p>
         </div>
@@ -2218,7 +2292,7 @@ export async function sendMessageToCip(prevState, formData) {
 ${formData.get("message")}
 
 Reply by email: ${currentUser.resultObj.email}
-Reply by phone: ${currentUser.resultObj.phone}`,
+Reply by phone: ${currentUser.resultObj.phoneNumber || "N/A"}`,
       html: message,
     });
 
@@ -2486,11 +2560,11 @@ async function sendApprovalEmail(appointment) {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: appointment.email,
-    subject: "Massage Appointment Request Approved",
-    text: `Hi ${appointment.firstName},\n\nGreat news! Your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt} has been approved. We look forward to seeing you.\n\nIf you need to make any changes, please login to your account or contact us directly: ${process.env.EMAIL_USER}`,
+    subject: "Massage Appointment Request Confirmed",
+    text: `Hi ${appointment.firstName},\n\nYour massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt} has been confirmed. See you then!\n\nIf you need to make any changes, please login to your account or contact me directly: ${process.env.EMAIL_USER}`,
     html: `<p>Hi ${appointment.firstName},</p>
-           <p>Great news! Your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt} has been approved. We look forward to seeing you.</p>
-           <p>If you need to make any changes, please <a href="https://www.ciprmt.com/auth/sign-in">login to your account</a> or contact us directly: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></p>`,
+           <p>Your massage appointment request for ${appointment.appointmentDate} at ${appointment.appointmentBeginsAt} has been confirmed. See you then!</p>
+           <p>If you need to make any changes, please <a href="https://www.ciprmt.com/auth/sign-in">login to your account</a> or contact me directly: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></p>`,
   };
 
   try {
@@ -2610,33 +2684,35 @@ export async function getTreatmentPlansForUser(userId) {
 }
 
 export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
-  console.log("Saving treatment notes...");
-  console.log("treatmentId:", treatmentId);
-  console.log("treatmentPlanId:", treatmentPlanId);
-  console.log("notes:", notes);
-
   try {
     const db = await getDatabase();
     const appointmentsCollection = db.collection("appointments");
     const treatmentPlansCollection = db.collection("treatmentplans");
+    const incomesCollection = db.collection("incomes");
 
     // Encrypt the notes
     const encryptedNotes = encryptData(JSON.stringify(notes));
 
     // Update the appointment with the treatment notes and associated plan
-    const appointmentResult = await appointmentsCollection.updateOne(
+    const appointmentResult = await appointmentsCollection.findOneAndUpdate(
       { _id: new ObjectId(treatmentId) },
       {
         $set: {
           treatmentNotes: encryptedNotes,
+          status: "completed",
+          price: notes?.price,
+          paymentType: notes?.paymentType,
           treatmentPlanId: new ObjectId(treatmentPlanId),
         },
-      }
+      },
+      { returnDocument: "after" }
     );
 
-    if (appointmentResult.modifiedCount === 0) {
+    if (!appointmentResult) {
       throw new Error("Failed to update appointment with treatment notes");
     }
+
+    const updatedAppointment = appointmentResult.value || appointmentResult;
 
     // Add the treatment to the treatment plan's treatments array
     const treatmentPlanResult = await treatmentPlansCollection.updateOne(
@@ -2644,13 +2720,57 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       { $addToSet: { treatments: new ObjectId(treatmentId) } }
     );
 
-    if (treatmentPlanResult.modifiedCount === 0) {
-      throw new Error("Failed to update treatment plan with new treatment");
+    // Calculate revenue excluding HST
+    const totalPrice = parseFloat(notes.price);
+    const hstRate = 0.13;
+    const revenueExcludingHST = totalPrice / (1 + hstRate);
+    const hstAmount = totalPrice - revenueExcludingHST;
+
+    // Create a new income document
+    const appointmentDate = new Date(updatedAppointment.appointmentDate);
+    const incomeDocument = {
+      RMTid: updatedAppointment.RMTId.toString(),
+      treatmentId: updatedAppointment._id.toString(),
+      date: appointmentDate,
+      year: appointmentDate.getFullYear().toString(),
+      category: "revenue",
+      amount: parseFloat(revenueExcludingHST.toFixed(2)),
+      totalPrice: totalPrice,
+      hstAmount: parseFloat(hstAmount.toFixed(2)),
+      details: `${updatedAppointment.firstName} ${updatedAppointment.lastName}`,
+    };
+
+    const incomeResult = await incomesCollection.insertOne(incomeDocument);
+
+    if (!incomeResult.insertedId) {
+      throw new Error("Failed to insert income document");
     }
+
+    // Send email to the client
+    const transporter = getEmailTransporter();
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: updatedAppointment.email,
+      subject: "Your Receipt is Ready to Download",
+      text: `Hi ${updatedAppointment.firstName},
+
+Your receipt from ${updatedAppointment.appointmentDate} is now ready to download. You can access it by logging into your account at www.ciprmt.com.
+
+Thank you for your visit!
+
+Stay healthy,
+Cip`,
+      html: `
+        <h2>Your Receipt is Ready to Download</h2>
+        <p>Dear ${updatedAppointment.firstName},</p>
+        <p>Your receipt from ${updatedAppointment.appointmentDate} is now ready to download. You can access it by logging into your account at <a href="https://www.ciprmt.com">www.ciprmt.com</a>.</p>
+        <p>Thank you for your visit!</p>
+        <p>Stay healthy,<br>Cip</p>
+      `,
+    });
 
     revalidatePath("/dashboard/rmt");
   } catch (error) {
-    console.error("Error saving treatment notes:", error);
     console.error("Error details:", {
       name: error.name,
       message: error.message,
@@ -2659,11 +2779,16 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     return { success: false, message: error.message };
   }
 
-  // Redirect outside of try/catch
   redirect("/dashboard/rmt");
 }
+
 //working version (production)
 // export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
+//   console.log("Saving treatment notes...");
+//   console.log("treatmentId:", treatmentId);
+//   console.log("treatmentPlanId:", treatmentPlanId);
+//   console.log("notes:", notes);
+
 //   try {
 //     const db = await getDatabase();
 //     const appointmentsCollection = db.collection("appointments");
@@ -2678,6 +2803,9 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
 //       {
 //         $set: {
 //           treatmentNotes: encryptedNotes,
+//           status: "completed",
+//           price: notes?.price,
+//           paymentType: notes?.paymentType,
 //           treatmentPlanId: new ObjectId(treatmentPlanId),
 //         },
 //       }
@@ -2698,11 +2826,18 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
 //     }
 
 //     revalidatePath("/dashboard/rmt");
-//     return { success: true, message: "Treatment notes saved successfully" };
 //   } catch (error) {
 //     console.error("Error saving treatment notes:", error);
+//     console.error("Error details:", {
+//       name: error.name,
+//       message: error.message,
+//       stack: error.stack,
+//     });
 //     return { success: false, message: error.message };
 //   }
+
+//   // Redirect outside of try/catch
+//   redirect("/dashboard/rmt");
 // }
 
 export async function createTreatmentPlan(planData, clientId) {

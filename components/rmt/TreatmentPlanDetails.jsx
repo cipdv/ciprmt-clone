@@ -6,11 +6,14 @@ import { createTreatmentPlan } from "@/app/_actions";
 import NewTreatmentPlanForm from "./NewTreatmentPlanForm";
 import TreatmentNotesForm from "./TreatmentNotesForm";
 
-const TreatmentPlanDetails = ({ treatmentPlans, clientId }) => {
+const TreatmentPlanDetails = ({
+  treatmentPlans,
+  clientId,
+  selectedTreatment,
+}) => {
   const [showNewPlanModal, setShowNewPlanModal] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [selectedTreatment, setSelectedTreatment] = useState(null);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -19,9 +22,7 @@ const TreatmentPlanDetails = ({ treatmentPlans, clientId }) => {
   const handleDrop = (e, plan) => {
     e.preventDefault();
     const treatmentData = JSON.parse(e.dataTransfer.getData("text/plain"));
-    setSelectedTreatment(treatmentData);
-    setSelectedPlan(plan);
-    setShowNotesModal(true);
+    openTreatmentNotesModal(treatmentData, plan);
   };
 
   const handleCreatePlan = async (planData) => {
@@ -40,6 +41,11 @@ const TreatmentPlanDetails = ({ treatmentPlans, clientId }) => {
     console.log("Treatment Plan ID:", selectedPlan._id);
     setShowNotesModal(false);
     // You might want to refresh the treatment plans list here
+  };
+
+  const openTreatmentNotesModal = (treatment, plan) => {
+    setSelectedPlan(plan);
+    setShowNotesModal(true);
   };
 
   return (
@@ -62,6 +68,10 @@ const TreatmentPlanDetails = ({ treatmentPlans, clientId }) => {
               className="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-sm"
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, plan)}
+              onClick={() =>
+                selectedTreatment &&
+                openTreatmentNotesModal(selectedTreatment, plan)
+              }
             >
               <h3 className="text-xl font-semibold mb-2 text-blue-600">
                 {plan.decryptedData.clientGoals}
@@ -74,6 +84,11 @@ const TreatmentPlanDetails = ({ treatmentPlans, clientId }) => {
                 <span className="font-medium">Areas to be Treated:</span>{" "}
                 {plan.decryptedData.areasToBeTreated}
               </p>
+              {selectedTreatment && (
+                <p className="mt-2 text-sm text-blue-500">
+                  Tap to add treatment notes
+                </p>
+              )}
             </div>
           ))}
         </div>

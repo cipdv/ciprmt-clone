@@ -119,7 +119,9 @@ export const registerPatientSchema = z
     preferredName: z
       .string()
       .transform((s) => s.charAt(0).toUpperCase() + s.slice(1)),
-    phone: z.string().regex(/^\d+$/, "Phone number must only contain digits"),
+    phoneNumber: z
+      .string()
+      .regex(/^\d+$/, "Phone number must only contain digits"),
     pronouns: z.string().optional(),
     email: z.string().email().toLowerCase().trim(),
     password: z.string().min(8, "Password must be at least 8 characters long"),

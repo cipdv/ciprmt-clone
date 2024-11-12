@@ -1,5 +1,5 @@
 import AppointmentRequests from "@/components/rmt/AppointmentRequests";
-import Calendar from "@/components/rmt/Calendar/Calendar";
+import Calendar from "@/components/rmt/Calendar";
 import NotesToComplete from "@/components/rmt/NotesToComplete";
 import SearchBar from "@/components/rmt/SearchBar";
 import SetUpForm2 from "@/components/rmt/SetUp/SetUpForm2";
@@ -27,7 +27,7 @@ export default async function Dashboard() {
       <section className="space-y-8">
         <AppointmentRequests appointments={appointments} />
         <Messages messages={messages} />
-        <h2>Calendar</h2>
+        <Calendar appointments={appointments} />
         <NotesToComplete appointments={appointments} />
         <AddExpense />
         <div className="pt-8">

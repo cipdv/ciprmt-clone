@@ -19,6 +19,7 @@ export async function middleware(request) {
   if (
     !currentUser &&
     ![
+      "/test-page",
       "/",
       "/auth/sign-in",
       "/auth/sign-up",

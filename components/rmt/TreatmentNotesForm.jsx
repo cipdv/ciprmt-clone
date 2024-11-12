@@ -1,4 +1,3 @@
-// components/rmt/TreatmentNotesForm.jsx
 "use client";
 
 import { useState } from "react";
@@ -6,21 +5,22 @@ import { saveTreatmentNotes } from "@/app/_actions";
 
 const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
-    reasonForMassage: "",
+    reasonForMassage: treatment?.consentForm?.reasonForMassage,
     findings: "",
-    notes: "",
-    paymentType: "",
-    price: "",
-    referToHCP: "",
-    remex: "",
+    treatment: {
+      specificTreatment: "",
+      generalTreatment: "",
+    },
     results: {
       subjectiveResults: "",
       objectiveResults: "",
     },
-    treatment: {
-      generalTreatment: "",
-      specificTreatment: "",
-    },
+    remex: "",
+    referToHCP: "",
+    notes: "",
+    paymentType: "",
+    price: "",
+    otherPrice: "",
   });
 
   const handleChange = (e) => {
@@ -87,7 +87,95 @@ const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
           onChange={handleChange}
           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
           rows="3"
+          required
         ></textarea>
+      </div>
+
+      <div>
+        <h4 className="font-medium text-gray-700">Treatment</h4>
+        <div className="mt-2 space-y-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Specific Treatment
+            </label>
+            <textarea
+              name="specificTreatment"
+              value={formData.treatment.specificTreatment}
+              onChange={(e) => handleNestedChange(e, "treatment")}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+              rows="3"
+              required
+            ></textarea>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              General Treatment
+            </label>
+            <textarea
+              name="generalTreatment"
+              value={formData.treatment.generalTreatment}
+              onChange={(e) => handleNestedChange(e, "treatment")}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+              rows="3"
+            ></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 className="font-medium text-gray-700">Results</h4>
+        <div className="mt-2 space-y-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Subjective Results
+            </label>
+            <textarea
+              name="subjectiveResults"
+              value={formData.results.subjectiveResults}
+              onChange={(e) => handleNestedChange(e, "results")}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+              rows="3"
+              required
+            ></textarea>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Objective Results
+            </label>
+            <textarea
+              name="objectiveResults"
+              value={formData.results.objectiveResults}
+              onChange={(e) => handleNestedChange(e, "results")}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+              rows="3"
+              required
+            ></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Remex</label>
+        <input
+          type="text"
+          name="remex"
+          value={formData.remex}
+          onChange={handleChange}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">
+          Refer to HCP
+        </label>
+        <input
+          type="text"
+          name="referToHCP"
+          value={formData.referToHCP}
+          onChange={handleChange}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+        />
       </div>
 
       <div>
@@ -106,109 +194,47 @@ const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
           <label className="block text-sm font-medium text-gray-700">
             Payment Type
           </label>
-          <input
-            type="text"
+          <select
             name="paymentType"
             value={formData.paymentType}
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-          />
+            required
+          >
+            <option value="">Select payment type</option>
+            <option value="credit">Credit</option>
+            <option value="debit">Debit</option>
+            <option value="cash/e-transfer">Cash/E-transfer</option>
+            <option value="unpaid">Unpaid</option>
+          </select>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">
             Price
           </label>
-          <input
-            type="text"
+          <select
             name="price"
             value={formData.price}
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700">
-          Refer to HCP
-        </label>
-        <input
-          type="text"
-          name="referToHCP"
-          value={formData.referToHCP}
-          onChange={handleChange}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Remex</label>
-        <input
-          type="text"
-          name="remex"
-          value={formData.remex}
-          onChange={handleChange}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-        />
-      </div>
-
-      <div>
-        <h4 className="font-medium text-gray-700">Results</h4>
-        <div className="mt-2 space-y-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Subjective Results
-            </label>
-            <textarea
-              name="subjectiveResults"
-              value={formData.results.subjectiveResults}
-              onChange={(e) => handleNestedChange(e, "results")}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-              rows="2"
-            ></textarea>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Objective Results
-            </label>
-            <textarea
-              name="objectiveResults"
-              value={formData.results.objectiveResults}
-              onChange={(e) => handleNestedChange(e, "results")}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-              rows="2"
-            ></textarea>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h4 className="font-medium text-gray-700">Treatment</h4>
-        <div className="mt-2 space-y-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              General Treatment
-            </label>
-            <textarea
-              name="generalTreatment"
-              value={formData.treatment.generalTreatment}
-              onChange={(e) => handleNestedChange(e, "treatment")}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-              rows="2"
-            ></textarea>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Specific Treatment
-            </label>
-            <textarea
-              name="specificTreatment"
-              value={formData.treatment.specificTreatment}
-              onChange={(e) => handleNestedChange(e, "treatment")}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-              rows="2"
-            ></textarea>
-          </div>
+            required
+          >
+            <option value="">Select price</option>
+            <option value="129.95">$129.95 (60 min)</option>
+            <option value="152.55">$152.55 (75 min)</option>
+            <option value="175.15">$175.15 (90 min)</option>
+            <option value="other">Other</option>
+          </select>
+          {formData.price === "other" && (
+            <input
+              type="number"
+              name="otherPrice"
+              value={formData.otherPrice}
+              onChange={handleChange}
+              placeholder="Enter custom price"
+              className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            />
+          )}
         </div>
       </div>
 

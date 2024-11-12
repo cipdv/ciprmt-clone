@@ -53,7 +53,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
       "center"
     );
     doc.text(
-      `Date of treatment: ${receipt.appointmentDate}`,
+      `Date of treatment: ${receipt.appointmentDate || receipt.date}`,
       pageCenter,
       80,
       null,
@@ -61,7 +61,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
       "center"
     );
     doc.text(
-      `Time of treatment: ${receipt.appointmentBeginsAt}`,
+      `Time of treatment: ${receipt.appointmentBeginsAt || receipt.time}`,
       pageCenter,
       85,
       null,

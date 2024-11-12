@@ -2,163 +2,106 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import ReceiptDownloadButton from "./ReceiptDownloadButton";
 
-// Helper function to format date consistently
 const formatDate = (dateString) => {
   const date = new Date(dateString);
-  // Use UTC methods to prevent timezone issues
-  const options = {
+  return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
     timeZone: "UTC",
-  };
-  return date.toLocaleDateString("en-US", options);
-};
-
-const formatTime = (timeString) => {
-  if (!timeString) return "N/A";
-
-  const [hours, minutes] = timeString.split(":");
-  const date = new Date(2000, 0, 1, hours, minutes); // Year, month, and day are arbitrary
-  return date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
   });
 };
 
-const Receipts = ({ user, receipts }) => {
+const formatPrice = (price) => {
+  if (typeof price === "number") {
+    return price.toFixed(2);
+  }
+  return price || "N/A";
+};
+
+export default function Receipts({ receipts }) {
   const [currentPage, setCurrentPage] = useState(1);
-  const receiptsPerPage = 10;
+  const receiptsPerPage = 8;
 
-  // Filter receipts with valid prices and past dates
-  const validReceipts = receipts.filter((receipt) => {
-    const appointmentDate = new Date(receipt.appointmentDate);
-    const today = new Date();
-    return (
-      receipt.price != null &&
-      receipt.price !== undefined &&
-      appointmentDate < today
-    );
-  });
-
-  // Sort receipts by date, most recent first
-  validReceipts.sort(
-    (a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate)
-  );
-
-  const latestReceipt = validReceipts[0];
+  // Calculate total pages
+  const totalPages = Math.ceil(receipts.length / receiptsPerPage);
 
   // Get current receipts
   const indexOfLastReceipt = currentPage * receiptsPerPage;
   const indexOfFirstReceipt = indexOfLastReceipt - receiptsPerPage;
-  const currentReceipts = validReceipts.slice(
+  const currentReceipts = receipts.slice(
     indexOfFirstReceipt,
     indexOfLastReceipt
   );
 
   // Change page
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  const paginate = (direction) => {
+    if (direction === "next" && currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    } else if (direction === "prev" && currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 mb-28">
-      <div className="flex flex-col space-y-8">
-        <div>
-          <h1 className="text-3xl mb-4">
-            Here are your massage appointment receipts:
-          </h1>
-          {latestReceipt && (
-            <div className="bg-white shadow-md rounded-lg p-6">
-              <h2 className="text-2xl mb-4">Latest Receipt</h2>
-              <p>Date: {formatDate(latestReceipt.appointmentDate)}</p>
-              <p>Time: {formatTime(latestReceipt.appointmentBeginsAt)}</p>
-              <p>Duration: {latestReceipt.duration} minutes</p>
-              <p>
-                Price: $
-                {typeof latestReceipt.price === "number"
-                  ? latestReceipt.price.toFixed(2)
-                  : latestReceipt.price}
+    <div className="w-full max-w-4xl mx-auto">
+      <h2 className="text-3xl mb-6">Receipts</h2>
+      {receipts.length === 0 ? (
+        <p className="text-gray-500 italic">No receipts available.</p>
+      ) : (
+        <>
+          <ul className="space-y-2 mb-4">
+            {currentReceipts.map((receipt) => (
+              <li
+                key={receipt._id}
+                className="bg-white shadow hover:bg-gray-200 rounded-lg p-4"
+              >
+                <Link href={`/dashboard/patient/receipts/${receipt._id}`}>
+                  <div className="flex justify-between items-center transition-colors duration-150 ease-in-out">
+                    <div>
+                      <p className="font-semibold">
+                        {formatDate(
+                          receipt.type === "appointment"
+                            ? receipt.appointmentDate
+                            : receipt.date
+                        )}
+                      </p>
+                    </div>
+                    <p className="text-lg font-bold">
+                      ${formatPrice(receipt.price)}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {totalPages > 1 && (
+            <nav
+              className="flex justify-between items-center mt-4"
+              aria-label="Receipts pagination"
+            >
+              <button
+                onClick={() => paginate("prev")}
+                disabled={currentPage === 1}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <p className="text-sm text-gray-700">
+                Page {currentPage} of {totalPages}
               </p>
-              <div className="mt-4">
-                <ReceiptDownloadButton receipt={latestReceipt} user={user} />
-              </div>
-            </div>
+              <button
+                onClick={() => paginate("next")}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </nav>
           )}
-        </div>
-        <div>
-          <h2 className="text-2xl mb-4">All Receipts</h2>
-          {validReceipts.length === 0 ? (
-            <p className="text-gray-500 italic">No receipts available.</p>
-          ) : (
-            <>
-              <ul className="space-y-2">
-                {currentReceipts.map((receipt) => (
-                  <li
-                    key={receipt._id}
-                    className="bg-white shadow rounded-lg p-4"
-                  >
-                    <Link href={`/dashboard/patient/receipts/${receipt._id}`}>
-                      <h2 className="hover:underline">
-                        {formatDate(receipt.appointmentDate)} - $
-                        {typeof receipt.price === "number"
-                          ? receipt.price.toFixed(2)
-                          : receipt.price}
-                      </h2>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              {validReceipts.length > receiptsPerPage && (
-                <div className="flex justify-center mt-4">
-                  <nav className="inline-flex rounded-md shadow">
-                    <button
-                      onClick={() => paginate(currentPage - 1)}
-                      disabled={currentPage === 1}
-                      className="px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Previous
-                    </button>
-                    {Array.from(
-                      {
-                        length: Math.ceil(
-                          validReceipts.length / receiptsPerPage
-                        ),
-                      },
-                      (_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => paginate(i + 1)}
-                          className={`px-3 py-2 border border-gray-300 bg-white text-sm font-medium ${
-                            currentPage === i + 1
-                              ? "text-blue-600 bg-blue-50"
-                              : "text-gray-500 hover:bg-gray-50"
-                          }`}
-                        >
-                          {i + 1}
-                        </button>
-                      )
-                    )}
-                    <button
-                      onClick={() => paginate(currentPage + 1)}
-                      disabled={
-                        currentPage ===
-                        Math.ceil(validReceipts.length / receiptsPerPage)
-                      }
-                      className="px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </nav>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
-};
-
-export default Receipts;
+}
