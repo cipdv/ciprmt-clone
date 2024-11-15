@@ -1569,8 +1569,8 @@ export async function resetStaleReschedulingAppointments() {
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
 
-  // Calculate the cutoff time (20 minutes ago to account for potential delays)
-  const cutoffTime = new Date(Date.now() - 20 * 60 * 1000);
+  // Calculate the cutoff time (24 hours ago)
+  const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const staleAppointments = await appointmentsCollection
     .find({
