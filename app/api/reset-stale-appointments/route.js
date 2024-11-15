@@ -1,18 +1,29 @@
 import { resetStaleReschedulingAppointments } from "@/app/_actions";
+import { NextResponse } from "next/server";
 
-export default async function handler(req, res) {
-  if (req.method === "POST") {
-    try {
-      await resetStaleReschedulingAppointments();
-      res
-        .status(200)
-        .json({ message: "Stale appointments reset successfully" });
-    } catch (error) {
-      console.error("Error resetting stale appointments:", error);
-      res.status(500).json({ message: "Error resetting stale appointments" });
-    }
-  } else {
-    res.setHeader("Allow", ["POST"]);
-    res.status(405).end(`Method ${req.method} Not Allowed`);
+export async function POST() {
+  try {
+    await resetStaleReschedulingAppointments();
+    return NextResponse.json({
+      message: "Stale appointments reset successfully",
+      executionTime: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error resetting stale appointments:", error);
+    return NextResponse.json(
+      {
+        message: "Error resetting stale appointments",
+        error: error.message,
+      },
+      { status: 500 }
+    );
   }
+}
+
+// Optional: Handle GET requests
+export async function GET() {
+  return NextResponse.json(
+    { message: "This endpoint only accepts POST requests" },
+    { status: 405 }
+  );
 }

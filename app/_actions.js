@@ -1569,12 +1569,13 @@ export async function resetStaleReschedulingAppointments() {
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
 
-  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  // Calculate the cutoff time (20 minutes ago to account for potential delays)
+  const cutoffTime = new Date(Date.now() - 20 * 60 * 1000);
 
   const staleAppointments = await appointmentsCollection
     .find({
       status: "rescheduling",
-      reschedulingStartedAt: { $lt: fifteenMinutesAgo },
+      reschedulingStartedAt: { $lt: cutoffTime },
     })
     .toArray();
 
@@ -1590,6 +1591,10 @@ export async function resetStaleReschedulingAppointments() {
     );
     console.log(`Reset stale appointment: ${appointment._id}`);
   }
+
+  console.log(
+    `Stale appointment check executed at ${new Date().toISOString()}`
+  );
 }
 
 //working, but no solution to "rescheduling" status issue
