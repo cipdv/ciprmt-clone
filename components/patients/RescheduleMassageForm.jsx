@@ -234,7 +234,9 @@ export default function RescheduleMassageForm({
       onSubmit={handleSubmit}
       className="max-w-4xl mx-auto px-4 py-8 space-y-8"
     >
-      <h1 className="text-2xl sm:text-3xl mb-4">Reschedule Your Appointment</h1>
+      <h1 className="text-2xl sm:text-3xl mb-4">
+        Reschedule Your Appointment:
+      </h1>
 
       <div className="bg-gray-100 p-4 rounded-lg mb-8">
         <h2 className="text-xl font-semibold mb-2">
