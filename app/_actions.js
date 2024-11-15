@@ -3,11 +3,8 @@
 // External libraries
 import { z } from "zod";
 import { ObjectId } from "mongodb";
-import {
-  encryptData,
-  logAuditEvent,
-  decryptData,
-} from "@/app/lib/security/security";
+import { encryptData, decryptData } from "@/app/lib/security/security";
+import { logAuditEvent } from "@/app/lib/auditLog/auditLog";
 import { checkRateLimit } from "@/app/lib/security/rate-limit";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
@@ -194,131 +191,6 @@ export async function registerNewPatient(prevState, formData) {
   redirect("/");
 }
 
-// working version (production) - no email sending
-// export async function registerNewPatient(prevState, formData) {
-//   const formDataObj = Object.fromEntries(formData.entries());
-//   formDataObj.email = formDataObj.email.toLowerCase().trim();
-//   formDataObj.firstName =
-//     formDataObj.firstName.charAt(0).toUpperCase() +
-//     formDataObj.firstName.slice(1);
-//   formDataObj.preferredName =
-//     formDataObj.preferredName.charAt(0).toUpperCase() +
-//     formDataObj.preferredName.slice(1);
-//   formDataObj.phone = formDataObj.phone.replace(/\D/g, "");
-
-//   const result = registerPatientSchema.safeParse(formDataObj);
-
-//   if (result.error) {
-//     const passwordError = result.error.issues.find(
-//       (issue) =>
-//         issue.path[0] === "password" &&
-//         issue.type === "string" &&
-//         issue.minimum === 6
-//     );
-
-//     const confirmPasswordError = result.error.issues.find(
-//       (issue) =>
-//         issue.path[0] === "confirmPassword" &&
-//         issue.type === "string" &&
-//         issue.minimum === 6
-//     );
-
-//     if (passwordError) {
-//       return { password: "^ Password must be at least 8 characters long" };
-//     }
-
-//     if (confirmPasswordError) {
-//       return {
-//         confirmPassword:
-//           "^ Passwords must be at least 8 characters long and match",
-//       };
-//     }
-
-//     const emailError = result.error.issues.find((issue) => {
-//       return (
-//         issue.path[0] === "email" &&
-//         issue.validation === "email" &&
-//         issue.code === "invalid_string"
-//       );
-//     });
-
-//     if (emailError) {
-//       return { email: "^ Please enter a valid email address" };
-//     }
-
-//     if (!result.success) {
-//       return {
-//         message:
-//           "Failed to register: make sure all required fields are completed and try again",
-//       };
-//     }
-//   }
-
-//   const {
-//     firstName,
-//     lastName,
-//     preferredName,
-//     phone,
-//     pronouns,
-//     email,
-//     password,
-//     confirmPassword,
-//   } = result.data;
-
-//   if (password !== confirmPassword) {
-//     return { confirmPassword: "^ Passwords do not match" };
-//   }
-
-//   try {
-//     const db = await getDatabase();
-//     const patientExists = await db
-//       .collection("users")
-//       .findOne({ email: email });
-
-//     if (patientExists) {
-//       return { email: "^ This email is already registered" };
-//     }
-
-//     const salt = await bcrypt.genSalt(10);
-//     const hashedPassword = await bcrypt.hash(password, salt);
-
-//     const newPatient = {
-//       firstName,
-//       lastName,
-//       preferredName,
-//       pronouns,
-//       email,
-//       phone,
-//       userType: "patient",
-//       password: hashedPassword,
-//       rmtId: "615b37ba970196ca0d3122fe",
-//       createdAt: new Date(),
-//     };
-
-//     await db.collection("users").insertOne(newPatient);
-
-//     let resultObj = { ...newPatient };
-//     delete resultObj.password;
-
-//     const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
-//     const session = await encrypt({ resultObj, expires });
-
-//     cookies().set("session", session, {
-//       expires,
-//       httpOnly: true,
-//       secure: true,
-//     });
-//   } catch (error) {
-//     console.log(error);
-//     return {
-//       message:
-//         "Failed to register: make sure all required fields are completed and try again",
-//     };
-//   }
-//   revalidatePath("/");
-//   redirect("/");
-// }
-
 export async function login(prevState, formData) {
   const formDataObj = Object.fromEntries(formData.entries());
   formDataObj.rememberMe = formDataObj.rememberMe === "on";
@@ -420,11 +292,56 @@ export async function getAllTreatments() {
 }
 
 export async function getTreatmentById(id) {
-  const db = await getDatabase();
-  const treatment = await db
-    .collection("appointments")
-    .findOne({ _id: new ObjectId(id) });
-  return serializeDocument(treatment);
+  try {
+    // Get the current user session
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const db = await getDatabase();
+    const treatment = await db
+      .collection("appointments")
+      .findOne({ _id: new ObjectId(id) });
+
+    if (!treatment) {
+      throw new Error("Treatment not found");
+    }
+
+    // Determine if the user has the right to access this treatment
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      treatment.userId.toString() === session.resultObj._id.toString();
+
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access this treatment"
+      );
+    }
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "treatment details",
+      actionPerformed: "viewed",
+      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+      whoseInfo: `${treatment.firstName} ${treatment.lastName}`,
+      additionalDetails: {
+        treatmentId: id,
+        accessedByUserId: session.resultObj._id.toString(),
+        accessedByUserType: session.resultObj.userType,
+      },
+    });
+
+    // If the treatment has encrypted notes, decrypt them
+    if (treatment.treatmentNotes) {
+      treatment.treatmentNotes = decryptData(treatment.treatmentNotes);
+    }
+
+    return serializeDocument(treatment);
+  } catch (error) {
+    console.error("Error fetching treatment:", error);
+    throw new Error("Failed to fetch treatment");
+  }
 }
 
 export async function getAllUsers() {
@@ -440,64 +357,160 @@ export async function getAllSurveys() {
 }
 
 export async function getReceipts(id) {
-  const db = await getDatabase();
+  try {
+    // Get the current user session
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Set to start of day
+    // Check if the user has permission to access these receipts
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      session.resultObj._id.toString() === id;
 
-  // Helper function to convert date string to Date object
-  const convertToDate = (dateString) => {
-    const [year, month, day] = dateString.split("-").map(Number);
-    return new Date(year, month - 1, day); // month is 0-indexed in JavaScript Date
-  };
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access these receipts"
+      );
+    }
 
-  // Fetch from appointments collection
-  const appointments = await db
-    .collection("appointments")
-    .find({
-      userId: id,
-      status: "completed",
-    })
-    .toArray();
+    const db = await getDatabase();
 
-  // Fetch from treatments collection
-  const treatments = await db
-    .collection("treatments")
-    .find({
-      clientId: id,
-      paymentType: { $exists: true, $ne: null },
-      price: { $exists: true, $ne: null },
-    })
-    .toArray();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of day
 
-  // Combine, filter, and normalize the results
-  const combinedReceipts = [
-    ...appointments
-      .filter(
-        (appointment) => convertToDate(appointment.appointmentDate) <= today
-      )
-      .map((appointment) => ({
-        ...appointment,
-        type: "appointment",
-      })),
-    ...treatments
-      .filter((treatment) => convertToDate(treatment.date) <= today)
-      .map((treatment) => ({
-        ...treatment,
-        userId: treatment.clientId, // Normalize the id field
-        type: "treatment",
-      })),
-  ];
+    // Helper function to convert date string to Date object
+    const convertToDate = (dateString) => {
+      const [year, month, day] = dateString.split("-").map(Number);
+      return new Date(year, month - 1, day); // month is 0-indexed in JavaScript Date
+    };
 
-  // Sort the combined results by date, most recent first
-  combinedReceipts.sort((a, b) => {
-    const dateA = convertToDate(a.appointmentDate || a.date);
-    const dateB = convertToDate(b.appointmentDate || b.date);
-    return dateB - dateA;
-  });
+    // Fetch from appointments collection
+    const appointments = await db
+      .collection("appointments")
+      .find({
+        userId: id,
+        status: "completed",
+      })
+      .toArray();
 
-  return serializeDocument(combinedReceipts);
+    // Fetch from treatments collection
+    const treatments = await db
+      .collection("treatments")
+      .find({
+        clientId: id,
+        paymentType: { $exists: true, $ne: null },
+        price: { $exists: true, $ne: null },
+      })
+      .toArray();
+
+    // Combine, filter, and normalize the results
+    const combinedReceipts = [
+      ...appointments
+        .filter(
+          (appointment) => convertToDate(appointment.appointmentDate) <= today
+        )
+        .map((appointment) => ({
+          ...appointment,
+          type: "appointment",
+        })),
+      ...treatments
+        .filter((treatment) => convertToDate(treatment.date) <= today)
+        .map((treatment) => ({
+          ...treatment,
+          userId: treatment.clientId, // Normalize the id field
+          type: "treatment",
+        })),
+    ];
+
+    // Sort the combined results by date, most recent first
+    combinedReceipts.sort((a, b) => {
+      const dateA = convertToDate(a.appointmentDate || a.date);
+      const dateB = convertToDate(b.appointmentDate || b.date);
+      return dateB - dateA;
+    });
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "receipts",
+      actionPerformed: "viewed",
+      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+      whoseInfo: id, // This is the user ID whose receipts were accessed
+      additionalDetails: {
+        accessedByUserId: session.resultObj._id.toString(),
+        accessedByUserType: session.resultObj.userType,
+        numberOfReceipts: combinedReceipts.length,
+      },
+    });
+
+    return serializeDocument(combinedReceipts);
+  } catch (error) {
+    console.error("Error fetching receipts:", error);
+    throw new Error("Failed to fetch receipts");
+  }
 }
+
+//working in production, no logging
+// export async function getReceipts(id) {
+//   const db = await getDatabase();
+
+//   const today = new Date();
+//   today.setHours(0, 0, 0, 0); // Set to start of day
+
+//   // Helper function to convert date string to Date object
+//   const convertToDate = (dateString) => {
+//     const [year, month, day] = dateString.split("-").map(Number);
+//     return new Date(year, month - 1, day); // month is 0-indexed in JavaScript Date
+//   };
+
+//   // Fetch from appointments collection
+//   const appointments = await db
+//     .collection("appointments")
+//     .find({
+//       userId: id,
+//       status: "completed",
+//     })
+//     .toArray();
+
+//   // Fetch from treatments collection
+//   const treatments = await db
+//     .collection("treatments")
+//     .find({
+//       clientId: id,
+//       paymentType: { $exists: true, $ne: null },
+//       price: { $exists: true, $ne: null },
+//     })
+//     .toArray();
+
+//   // Combine, filter, and normalize the results
+//   const combinedReceipts = [
+//     ...appointments
+//       .filter(
+//         (appointment) => convertToDate(appointment.appointmentDate) <= today
+//       )
+//       .map((appointment) => ({
+//         ...appointment,
+//         type: "appointment",
+//       })),
+//     ...treatments
+//       .filter((treatment) => convertToDate(treatment.date) <= today)
+//       .map((treatment) => ({
+//         ...treatment,
+//         userId: treatment.clientId, // Normalize the id field
+//         type: "treatment",
+//       })),
+//   ];
+
+//   // Sort the combined results by date, most recent first
+//   combinedReceipts.sort((a, b) => {
+//     const dateA = convertToDate(a.appointmentDate || a.date);
+//     const dateB = convertToDate(b.appointmentDate || b.date);
+//     return dateB - dateA;
+//   });
+
+//   return serializeDocument(combinedReceipts);
+// }
 
 export async function getReceiptById(id) {
   const db = await getDatabase();
@@ -672,15 +685,49 @@ export const getRMTSetup = async () => {
 };
 
 export async function getUsersAppointments(id) {
-  const db = await getDatabase();
-  const appointments = await db
-    .collection("appointments")
-    .find({ userId: id })
-    .toArray();
-  return serializeDocument(appointments);
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    // Check if the user has permission to access these appointments
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      session.resultObj._id.toString() === id;
+
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access these appointments"
+      );
+    }
+
+    const db = await getDatabase();
+    const appointments = await db
+      .collection("appointments")
+      .find({ userId: id })
+      .toArray();
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "user appointments",
+      actionPerformed: "viewed",
+      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+      whoseInfo: id, // This is the user ID whose appointments were accessed
+      additionalDetails: {
+        accessedByUserId: session.resultObj._id.toString(),
+        accessedByUserType: session.resultObj.userType,
+        numberOfAppointments: appointments.length,
+      },
+    });
+
+    return serializeDocument(appointments);
+  } catch (error) {
+    console.error("Error fetching user appointments:", error);
+    throw new Error("Failed to fetch user appointments");
+  }
 }
 
-//working version (production)
 export const getAvailableAppointments = async (rmtLocationId, duration) => {
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
@@ -911,6 +958,23 @@ export async function bookAppointment({
     // Get the updated appointment document to retrieve its ID
     const appointmentId = result?._id.toString();
 
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "appointment booking",
+      actionPerformed: "appointment booked",
+      accessedBy: `${firstName} ${lastName}`,
+      whoseInfo: `${firstName} ${lastName}`,
+      additionalDetails: {
+        userId: _id.toString(),
+        appointmentId: appointmentId,
+        appointmentDate: formattedDate,
+        appointmentTime: formattedStartTime,
+        duration: duration,
+        location: location,
+        workplace: workplace,
+      },
+    });
+
     // Send email notification
     const transporter = getEmailTransporter();
     const confirmationLink = `${BASE_URL}/dashboard/rmt/confirm-appointment/${appointmentId}`;
@@ -946,134 +1010,6 @@ export async function bookAppointment({
   redirect("/dashboard/patient");
 }
 
-//working version (production)
-// export async function bookAppointment({
-//   location,
-//   duration,
-//   appointmentTime,
-//   workplace,
-//   appointmentDate,
-//   RMTLocationId,
-// }) {
-//   const session = await getSession();
-//   if (!session) {
-//     return {
-//       success: false,
-//       message: "You must be logged in to book an appointment.",
-//     };
-//   }
-
-//   const { _id, firstName, lastName, email } = session.resultObj;
-
-//   const db = await getDatabase();
-
-//   // Ensure appointmentDate is in "YYYY-MM-DD" format
-//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
-
-//   // Convert appointmentTime to "HH:MM" (24-hour format)
-//   const formattedStartTime = new Date(
-//     `${appointmentDate} ${appointmentTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-
-//   // Calculate end time
-//   const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
-//   const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
-//   const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-
-//   try {
-//     const query = {
-//       RMTLocationId: new ObjectId(RMTLocationId),
-//       appointmentDate: formattedDate,
-//       appointmentStartTime: { $lte: formattedStartTime },
-//       appointmentEndTime: { $gte: formattedEndTime },
-//       status: "available",
-//     };
-
-//     // Create Google Calendar event
-//     const event = {
-//       summary: `[Pending Confirmation] Massage Appointment for ${firstName} ${lastName}`,
-//       location: location,
-//       description: `${duration} minute massage at ${workplace}\n\nStatus: Pending Confirmation\nClient Email: ${email}\n\nPlease confirm this appointment.`,
-//       start: {
-//         dateTime: `${formattedDate}T${formattedStartTime}:00`,
-//         timeZone: "America/Toronto",
-//       },
-//       end: {
-//         dateTime: `${formattedDate}T${formattedEndTime}:00`,
-//         timeZone: "America/Toronto",
-//       },
-//       colorId: "2", // Sage color
-//     };
-
-//     let createdEvent;
-//     try {
-//       createdEvent = await calendar.events.insert({
-//         calendarId: GOOGLE_CALENDAR_ID,
-//         resource: event,
-//       });
-//     } catch (error) {
-//       console.error("Error creating Google Calendar event:", error);
-//       return {
-//         success: false,
-//         message: "An error occurred while creating the Google Calendar event.",
-//       };
-//     }
-
-//     const update = {
-//       $set: {
-//         status: "booked",
-//         location: location,
-//         appointmentBeginsAt: formattedStartTime,
-//         appointmentEndsAt: formattedEndTime,
-//         userId: _id,
-//         duration: duration,
-//         workplace: workplace,
-//         googleCalendarEventId: createdEvent.data.id,
-//         googleCalendarEventLink: createdEvent.data.htmlLink,
-//       },
-//     };
-
-//     const result = await db.collection("appointments").updateOne(query, update);
-
-//     if (result.matchedCount === 0) {
-//       // If no matching appointment, delete the created Google Calendar event
-//       try {
-//         await calendar.events.delete({
-//           calendarId: GOOGLE_CALENDAR_ID,
-//           eventId: createdEvent.data.id,
-//         });
-//       } catch (deleteError) {
-//         console.error("Error deleting Google Calendar event:", deleteError);
-//       }
-//       return {
-//         success: false,
-//         message:
-//           "No matching appointment found. Please try again or contact support.",
-//       };
-//     }
-
-//     console.log("Appointment updated successfully.");
-//     revalidatePath("/dashboard/patient");
-//   } catch (error) {
-//     console.error("An error occurred while updating the appointment:", error);
-//     return {
-//       success: false,
-//       message: "An error occurred while booking the appointment.",
-//     };
-//   }
-
-//   redirect("/dashboard/patient");
-// }
-
-//working version (production)
 export const cancelAppointment = async (prevState, formData) => {
   const session = await getSession();
   if (!session) {
@@ -1083,7 +1019,7 @@ export const cancelAppointment = async (prevState, formData) => {
     };
   }
 
-  const { _id } = session.resultObj;
+  const { _id, firstName, lastName } = session.resultObj;
 
   const db = await getDatabase();
 
@@ -1138,6 +1074,21 @@ export const cancelAppointment = async (prevState, formData) => {
 
     if (result.matchedCount > 0) {
       console.log("Appointment cancelled successfully.");
+
+      // Log the audit event
+      await logAuditEvent({
+        typeOfInfo: "appointment cancellation",
+        actionPerformed: "cancelled",
+        accessedBy: `${firstName} ${lastName}`,
+        whoseInfo: `${firstName} ${lastName}`,
+        additionalDetails: {
+          userId: _id.toString(),
+          appointmentId: formData.get("id"),
+          appointmentDate: appointment.appointmentDate,
+          appointmentTime: appointment.appointmentBeginsAt,
+        },
+      });
+
       revalidatePath("/dashboard/patient");
       return {
         status: "success",
@@ -1180,10 +1131,25 @@ export async function getAppointmentById(id) {
 
 export async function submitConsentForm(data) {
   try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const { _id, firstName, lastName } = session.resultObj;
+
     const db = await getDatabase();
     const appointments = db.collection("appointments");
 
     const { id, ...consentData } = data;
+
+    // Check if the user has permission to submit this consent form
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) });
+    if (!appointment || appointment.userId.toString() !== _id.toString()) {
+      throw new Error(
+        "Unauthorized: User does not have permission to submit this consent form"
+      );
+    }
 
     const result = await appointments.updateOne(
       { _id: new ObjectId(id) },
@@ -1196,6 +1162,20 @@ export async function submitConsentForm(data) {
     );
 
     if (result.modifiedCount === 1) {
+      // Log the audit event
+      await logAuditEvent({
+        typeOfInfo: "consent form",
+        actionPerformed: "submitted",
+        accessedBy: `${firstName} ${lastName}`,
+        whoseInfo: `${firstName} ${lastName}`,
+        additionalDetails: {
+          userId: _id.toString(),
+          appointmentId: id,
+          appointmentDate: appointment.appointmentDate,
+          appointmentTime: appointment.appointmentBeginsAt,
+        },
+      });
+
       revalidatePath("/dashboard/patient");
       return { success: true };
     } else {
@@ -1250,7 +1230,6 @@ export async function setAppointmentStatus(appointmentId, status) {
   }
 }
 
-//this function works in both development and production
 export const getAllAvailableAppointments = async (
   rmtLocationId,
   duration,
@@ -1454,46 +1433,15 @@ export async function rescheduleAppointment(
       });
     }
 
-    if (currentAppointment.googleCalendarEventId) {
-      const updatedEvent = {
-        summary: `[Requested] Mx ${firstName} ${lastName}`,
-        location: location,
-        description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
-        start: {
-          dateTime: `${formattedDate}T${formattedStartTime}:00`,
-          timeZone: "America/Toronto",
-        },
-        end: {
-          dateTime: `${formattedDate}T${formattedEndTime}:00`,
-          timeZone: "America/Toronto",
-        },
-        colorId: "6", // tangerine color
-      };
-
-      try {
-        await calendar.events.update({
-          calendarId: GOOGLE_CALENDAR_ID,
-          eventId: currentAppointment.googleCalendarEventId,
-          resource: updatedEvent,
-        });
-        console.log("Google Calendar event updated successfully.");
-      } catch (calendarError) {
-        console.error("Error updating Google Calendar event:", calendarError);
-      }
-    }
-
+    // Update the current appointment to "rescheduling" status with a timestamp
     const currentAppointmentUpdate = await db
       .collection("appointments")
       .updateOne(
         { _id: new ObjectId(currentAppointmentId) },
         {
           $set: {
-            status: "available",
-            userId: null,
-            consentForm: null,
-            consentFormSubmittedAt: null,
-            googleCalendarEventId: null,
-            googleCalendarEventLink: null,
+            status: "rescheduling",
+            reschedulingStartedAt: new Date(),
           },
         }
       );
@@ -1524,6 +1472,7 @@ export async function rescheduleAppointment(
         workplace: workplace,
         googleCalendarEventId: currentAppointment.googleCalendarEventId,
         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+        reschedulingStartedAt: null, // Clear the rescheduling timestamp
       },
     };
 
@@ -1532,15 +1481,51 @@ export async function rescheduleAppointment(
     if (result.matchedCount > 0) {
       console.log("Appointment rescheduled successfully.");
 
-      // Send email notification to EMAIL_USER
-      await sendRescheduleNotificationEmail(
-        currentAppointment,
-        { firstName, lastName, email, phoneNumber },
+      // Update the Google Calendar event
+      if (currentAppointment.googleCalendarEventId) {
+        try {
+          await calendar.events.update({
+            calendarId: GOOGLE_CALENDAR_ID,
+            eventId: currentAppointment.googleCalendarEventId,
+            resource: {
+              summary: `[Requested] Mx ${firstName} ${lastName}`,
+              location: location,
+              description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
+              start: {
+                dateTime: `${formattedDate}T${formattedStartTime}:00`,
+                timeZone: "America/Toronto",
+              },
+              end: {
+                dateTime: `${formattedDate}T${formattedEndTime}:00`,
+                timeZone: "America/Toronto",
+              },
+              colorId: "6", // tangerine color
+            },
+          });
+          console.log("Google Calendar event updated successfully.");
+        } catch (calendarError) {
+          console.error("Error updating Google Calendar event:", calendarError);
+        }
+      }
+
+      // Reset the original appointment to "available"
+      await db.collection("appointments").updateOne(
+        { _id: new ObjectId(currentAppointmentId) },
         {
-          appointmentDate: formattedDate,
-          appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
-          location,
-          duration,
+          $set: {
+            status: "available",
+            userId: null,
+            duration: null,
+            workplace: null,
+            consentForm: null,
+            consentFormSubmittedAt: null,
+            googleCalendarEventId: null,
+            googleCalendarEventLink: null,
+            appointmentBeginsAt: null,
+            appointmentEndsAt: null,
+            location: null,
+            reschedulingStartedAt: null, // Clear the rescheduling timestamp
+          },
         }
       );
 
@@ -1552,39 +1537,13 @@ export async function rescheduleAppointment(
     } else {
       console.log("No matching appointment found for rescheduling.");
 
-      if (currentAppointment.googleCalendarEventId) {
-        try {
-          await calendar.events.update({
-            calendarId: GOOGLE_CALENDAR_ID,
-            eventId: currentAppointment.googleCalendarEventId,
-            resource: {
-              start: {
-                dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
-                timeZone: "America/Toronto",
-              },
-              end: {
-                dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
-                timeZone: "America/Toronto",
-              },
-            },
-          });
-          console.log("Google Calendar event reverted successfully.");
-        } catch (calendarError) {
-          console.error(
-            "Error reverting Google Calendar event:",
-            calendarError
-          );
-        }
-      }
-
+      // Revert the current appointment to its original status
       await db.collection("appointments").updateOne(
         { _id: new ObjectId(currentAppointmentId) },
         {
           $set: {
             status: "booked",
-            userId: _id,
-            googleCalendarEventId: currentAppointment.googleCalendarEventId,
-            googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+            reschedulingStartedAt: null, // Clear the rescheduling timestamp
           },
         }
       );
@@ -1605,6 +1564,258 @@ export async function rescheduleAppointment(
     });
   }
 }
+
+export async function resetStaleReschedulingAppointments() {
+  const db = await getDatabase();
+  const appointmentsCollection = db.collection("appointments");
+
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  const staleAppointments = await appointmentsCollection
+    .find({
+      status: "rescheduling",
+      reschedulingStartedAt: { $lt: fifteenMinutesAgo },
+    })
+    .toArray();
+
+  for (const appointment of staleAppointments) {
+    await appointmentsCollection.updateOne(
+      { _id: appointment._id },
+      {
+        $set: {
+          status: "booked", // or the previous status
+          reschedulingStartedAt: null,
+        },
+      }
+    );
+    console.log(`Reset stale appointment: ${appointment._id}`);
+  }
+}
+
+//working, but no solution to "rescheduling" status issue
+// export async function rescheduleAppointment(
+//   currentAppointmentId,
+//   {
+//     location,
+//     duration,
+//     appointmentTime,
+//     workplace,
+//     appointmentDate,
+//     RMTLocationId,
+//   }
+// ) {
+//   const session = await getSession();
+//   if (!session) {
+//     return serializeDocument({
+//       success: false,
+//       message: "You must be logged in to reschedule an appointment.",
+//     });
+//   }
+
+//   const { _id, firstName, lastName, email, phoneNumber } = session.resultObj;
+
+//   const db = await getDatabase();
+
+//   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
+//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
+
+//   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
+//   const [startTime, endTime] = appointmentTime.split(" - ");
+//   const formattedStartTime = new Date(
+//     `${appointmentDate} ${startTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+//   const formattedEndTime = new Date(
+//     `${appointmentDate} ${endTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+
+//   try {
+//     const currentAppointment = await db
+//       .collection("appointments")
+//       .findOne({ _id: new ObjectId(currentAppointmentId) });
+
+//     if (!currentAppointment) {
+//       return serializeDocument({
+//         success: false,
+//         message: "Current appointment not found.",
+//       });
+//     }
+
+//     if (currentAppointment.googleCalendarEventId) {
+//       const updatedEvent = {
+//         summary: `[Requested] Mx ${firstName} ${lastName}`,
+//         location: location,
+//         description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
+//         start: {
+//           dateTime: `${formattedDate}T${formattedStartTime}:00`,
+//           timeZone: "America/Toronto",
+//         },
+//         end: {
+//           dateTime: `${formattedDate}T${formattedEndTime}:00`,
+//           timeZone: "America/Toronto",
+//         },
+//         colorId: "6", // tangerine color
+//       };
+
+//       try {
+//         await calendar.events.update({
+//           calendarId: GOOGLE_CALENDAR_ID,
+//           eventId: currentAppointment.googleCalendarEventId,
+//           resource: updatedEvent,
+//         });
+//         console.log("Google Calendar event updated successfully.");
+//       } catch (calendarError) {
+//         console.error("Error updating Google Calendar event:", calendarError);
+//       }
+//     }
+
+//     const currentAppointmentUpdate = await db
+//       .collection("appointments")
+//       .updateOne(
+//         { _id: new ObjectId(currentAppointmentId) },
+//         {
+//           $set: {
+//             status: "available",
+//             userId: null,
+//             consentForm: null,
+//             consentFormSubmittedAt: null,
+//             googleCalendarEventId: null,
+//             googleCalendarEventLink: null,
+//           },
+//         }
+//       );
+
+//     if (currentAppointmentUpdate.matchedCount === 0) {
+//       return serializeDocument({
+//         success: false,
+//         message: "Current appointment not found.",
+//       });
+//     }
+
+//     const query = {
+//       RMTLocationId: new ObjectId(RMTLocationId),
+//       appointmentDate: formattedDate,
+//       appointmentStartTime: { $lte: formattedStartTime },
+//       appointmentEndTime: { $gte: formattedEndTime },
+//       status: { $in: ["available", "rescheduling"] },
+//     };
+
+//     const update = {
+//       $set: {
+//         status: "requested",
+//         location: location,
+//         appointmentBeginsAt: formattedStartTime,
+//         appointmentEndsAt: formattedEndTime,
+//         userId: _id,
+//         duration: duration,
+//         workplace: workplace,
+//         googleCalendarEventId: currentAppointment.googleCalendarEventId,
+//         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+//       },
+//     };
+
+//     const result = await db.collection("appointments").updateOne(query, update);
+
+//     if (result.matchedCount > 0) {
+//       console.log("Appointment rescheduled successfully.");
+
+//       // Log the audit event
+//       await logAuditEvent({
+//         typeOfInfo: "appointment rescheduling",
+//         actionPerformed: "rescheduled",
+//         accessedBy: `${firstName} ${lastName}`,
+//         whoseInfo: `${firstName} ${lastName}`,
+//         additionalDetails: {
+//           userId: _id.toString(),
+//           oldAppointmentId: currentAppointmentId,
+//           newAppointmentDate: formattedDate,
+//           newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+//           location,
+//           duration,
+//           workplace,
+//         },
+//       });
+
+//       // Send email notification to EMAIL_USER
+//       await sendRescheduleNotificationEmail(
+//         currentAppointment,
+//         { firstName, lastName, email, phoneNumber },
+//         {
+//           appointmentDate: formattedDate,
+//           appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+//           location,
+//           duration,
+//         }
+//       );
+
+//       revalidatePath("/dashboard/patient");
+//       return serializeDocument({
+//         success: true,
+//         message: "Appointment rescheduled successfully.",
+//       });
+//     } else {
+//       console.log("No matching appointment found for rescheduling.");
+
+//       if (currentAppointment.googleCalendarEventId) {
+//         try {
+//           await calendar.events.update({
+//             calendarId: GOOGLE_CALENDAR_ID,
+//             eventId: currentAppointment.googleCalendarEventId,
+//             resource: {
+//               start: {
+//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//               end: {
+//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//             },
+//           });
+//           console.log("Google Calendar event reverted successfully.");
+//         } catch (calendarError) {
+//           console.error(
+//             "Error reverting Google Calendar event:",
+//             calendarError
+//           );
+//         }
+//       }
+
+//       await db.collection("appointments").updateOne(
+//         { _id: new ObjectId(currentAppointmentId) },
+//         {
+//           $set: {
+//             status: "booked",
+//             userId: _id,
+//             googleCalendarEventId: currentAppointment.googleCalendarEventId,
+//             googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
+//           },
+//         }
+//       );
+
+//       return serializeDocument({
+//         success: false,
+//         message: "No matching appointment found for rescheduling.",
+//       });
+//     }
+//   } catch (error) {
+//     console.error(
+//       "An error occurred while rescheduling the appointment:",
+//       error
+//     );
+//     return serializeDocument({
+//       success: false,
+//       message: "An error occurred while rescheduling the appointment.",
+//     });
+//   }
+// }
 
 async function sendRescheduleNotificationEmail(
   currentAppointment,
@@ -1680,202 +1891,6 @@ async function sendRescheduleNotificationEmail(
   }
 }
 
-//working version (production)
-// export async function rescheduleAppointment(
-//   currentAppointmentId,
-//   {
-//     location,
-//     duration,
-//     appointmentTime,
-//     workplace,
-//     appointmentDate,
-//     RMTLocationId,
-//   }
-// ) {
-//   const session = await getSession();
-//   if (!session) {
-//     return serializeDocument({
-//       success: false,
-//       message: "You must be logged in to reschedule an appointment.",
-//     });
-//   }
-
-//   const { _id, firstName, lastName, email, phone } = session.resultObj;
-
-//   const db = await getDatabase();
-
-//   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
-//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
-
-//   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
-//   const [startTime, endTime] = appointmentTime.split(" - ");
-//   const formattedStartTime = new Date(
-//     `${appointmentDate} ${startTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-//   const formattedEndTime = new Date(
-//     `${appointmentDate} ${endTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-
-//   try {
-//     const currentAppointment = await db
-//       .collection("appointments")
-//       .findOne({ _id: new ObjectId(currentAppointmentId) });
-
-//     if (!currentAppointment) {
-//       return serializeDocument({
-//         success: false,
-//         message: "Current appointment not found.",
-//       });
-//     }
-
-//     if (currentAppointment.googleCalendarEventId) {
-//       const updatedEvent = {
-//         summary: `[Requested] Mx ${firstName} ${lastName}`,
-//         location: location,
-//         description: `Email: ${email}\nPhone: ${phone}`,
-//         start: {
-//           dateTime: `${formattedDate}T${formattedStartTime}:00`,
-//           timeZone: "America/Toronto",
-//         },
-//         end: {
-//           dateTime: `${formattedDate}T${formattedEndTime}:00`,
-//           timeZone: "America/Toronto",
-//         },
-//         colorId: "6", // Sage color
-//       };
-
-//       try {
-//         await calendar.events.update({
-//           calendarId: GOOGLE_CALENDAR_ID,
-//           eventId: currentAppointment.googleCalendarEventId,
-//           resource: updatedEvent,
-//         });
-//         console.log("Google Calendar event updated successfully.");
-//       } catch (calendarError) {
-//         console.error("Error updating Google Calendar event:", calendarError);
-//       }
-//     }
-
-//     const currentAppointmentUpdate = await db
-//       .collection("appointments")
-//       .updateOne(
-//         { _id: new ObjectId(currentAppointmentId) },
-//         {
-//           $set: {
-//             status: "available",
-//             userId: null,
-//             consentForm: null,
-//             consentFormSubmittedAt: null,
-//             googleCalendarEventId: null,
-//             googleCalendarEventLink: null,
-//           },
-//         }
-//       );
-
-//     if (currentAppointmentUpdate.matchedCount === 0) {
-//       return serializeDocument({
-//         success: false,
-//         message: "Current appointment not found.",
-//       });
-//     }
-
-//     const query = {
-//       RMTLocationId: new ObjectId(RMTLocationId),
-//       appointmentDate: formattedDate,
-//       appointmentStartTime: { $lte: formattedStartTime },
-//       appointmentEndTime: { $gte: formattedEndTime },
-//       status: { $in: ["available", "rescheduling"] },
-//     };
-
-//     const update = {
-//       $set: {
-//         status: "requested",
-//         location: location,
-//         appointmentBeginsAt: formattedStartTime,
-//         appointmentEndsAt: formattedEndTime,
-//         userId: _id,
-//         duration: duration,
-//         workplace: workplace,
-//         googleCalendarEventId: currentAppointment.googleCalendarEventId,
-//         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-//       },
-//     };
-
-//     const result = await db.collection("appointments").updateOne(query, update);
-
-//     if (result.matchedCount > 0) {
-//       console.log("Appointment rescheduled successfully.");
-
-//       revalidatePath("/dashboard/patient");
-//       return serializeDocument({
-//         success: true,
-//         message: "Appointment rescheduled successfully.",
-//       });
-//     } else {
-//       console.log("No matching appointment found for rescheduling.");
-
-//       if (currentAppointment.googleCalendarEventId) {
-//         try {
-//           await calendar.events.update({
-//             calendarId: GOOGLE_CALENDAR_ID,
-//             eventId: currentAppointment.googleCalendarEventId,
-//             resource: {
-//               start: {
-//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
-//                 timeZone: "America/Toronto",
-//               },
-//               end: {
-//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
-//                 timeZone: "America/Toronto",
-//               },
-//             },
-//           });
-//           console.log("Google Calendar event reverted successfully.");
-//         } catch (calendarError) {
-//           console.error(
-//             "Error reverting Google Calendar event:",
-//             calendarError
-//           );
-//         }
-//       }
-
-//       await db.collection("appointments").updateOne(
-//         { _id: new ObjectId(currentAppointmentId) },
-//         {
-//           $set: {
-//             status: "booked",
-//             userId: _id,
-//             googleCalendarEventId: currentAppointment.googleCalendarEventId,
-//             googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-//           },
-//         }
-//       );
-
-//       return serializeDocument({
-//         success: false,
-//         message: "No matching appointment found for rescheduling.",
-//       });
-//     }
-//   } catch (error) {
-//     console.error(
-//       "An error occurred while rescheduling the appointment:",
-//       error
-//     );
-//     return serializeDocument({
-//       success: false,
-//       message: "An error occurred while rescheduling the appointment.",
-//     });
-//   }
-// }
-
 async function checkAuth() {
   const session = await getSession();
   if (!session || !session.resultObj?._id) {
@@ -1939,11 +1954,17 @@ export async function addHealthHistory(data) {
         sameSite: "strict",
       });
 
-      // Log the event for audit purposes
+      // Log the audit event
       await logAuditEvent({
-        action: "add_health_history",
-        userId: userId,
-        timestamp: new Date(),
+        typeOfInfo: "health history",
+        actionPerformed: "added",
+        accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+        whoseInfo: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+        additionalDetails: {
+          userId: userId.toString(),
+          healthHistoryId: result.insertedId.toString(),
+          createdAt: healthHistoryData.createdAt,
+        },
       });
 
       revalidatePath("/dashboard/patient");
@@ -1962,105 +1983,6 @@ export async function addHealthHistory(data) {
   }
 }
 
-//working version (production)
-// export async function addHealthHistory(data) {
-//   try {
-//     const userId = await checkAuth();
-//     const db = await getDatabase();
-//     const healthHistoryCollection = db.collection("healthhistories");
-//     const usersCollection = db.collection("users");
-
-//     // Validate data against Zod schema
-//     const validatedData = healthHistorySchema.parse(data);
-
-//     const healthHistoryData = {
-//       ...validatedData,
-//       createdAt: new Date(),
-//       userId: new ObjectId(userId),
-//     };
-
-//     const result = await healthHistoryCollection.insertOne(healthHistoryData);
-
-//     if (result.acknowledged) {
-//       // Update the user's lastHealthHistoryUpdate field
-//       await usersCollection.updateOne(
-//         { _id: new ObjectId(userId) },
-//         { $set: { lastHealthHistoryUpdate: new Date() } }
-//       );
-
-//       // Regenerate the session with updated user data
-//       const updatedUser = await usersCollection.findOne({
-//         _id: new ObjectId(userId),
-//       });
-//       const session = await getSession();
-//       const newSession = {
-//         ...session,
-//         resultObj: {
-//           ...session.resultObj,
-//           lastHealthHistoryUpdate: updatedUser.lastHealthHistoryUpdate,
-//         },
-//       };
-
-//       const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
-//       const encryptedSession = await encrypt({ ...newSession, expires });
-
-//       cookies().set("session", encryptedSession, {
-//         expires,
-//         httpOnly: true,
-//         secure: true,
-//       });
-
-//       revalidatePath("/dashboard/patient");
-//       return { success: true, id: result.insertedId };
-//     } else {
-//       throw new Error("Failed to insert health history");
-//     }
-//   } catch (error) {
-//     console.error("Error adding health history:", error);
-//     if (error instanceof z.ZodError) {
-//       throw new Error(
-//         `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
-//       );
-//     }
-//     throw new Error("Failed to add health history");
-//   }
-// }
-
-//working version (production)
-// export async function addHealthHistory(data) {
-//   try {
-//     const userId = await checkAuth();
-//     const db = await getDatabase();
-//     const healthHistoryCollection = db.collection("healthhistories");
-
-//     // Validate data against Zod schema
-//     const validatedData = healthHistorySchema.parse(data);
-
-//     const healthHistoryData = {
-//       ...validatedData,
-//       createdAt: new Date(),
-//       userId: new ObjectId(userId),
-//     };
-
-//     const result = await healthHistoryCollection.insertOne(healthHistoryData);
-
-//     if (result.acknowledged) {
-//       revalidatePath("/dashboard/patient");
-//       return { success: true, id: result.insertedId };
-//     } else {
-//       throw new Error("Failed to insert health history");
-//     }
-//   } catch (error) {
-//     console.error("Error adding health history:", error);
-//     if (error instanceof z.ZodError) {
-//       throw new Error(
-//         `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
-//       );
-//     }
-//     throw new Error("Failed to add health history");
-//   }
-// }
-
 export async function getClientHealthHistories(id) {
   try {
     const authenticatedUserId = await checkAuth();
@@ -2071,6 +1993,7 @@ export async function getClientHealthHistories(id) {
 
     const db = await getDatabase();
     const healthHistoryCollection = db.collection("healthhistories");
+    const usersCollection = db.collection("users");
 
     const healthHistories = await healthHistoryCollection
       .find({ userId: new ObjectId(authenticatedUserId) })
@@ -2103,6 +2026,27 @@ export async function getClientHealthHistories(id) {
       );
     });
 
+    // Fetch user details for audit log
+    const user = await usersCollection.findOne({
+      _id: new ObjectId(authenticatedUserId),
+    });
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "health histories",
+      actionPerformed: "viewed",
+      accessedBy: `${user.firstName} ${user.lastName}`,
+      whoseInfo: `${user.firstName} ${user.lastName}`,
+      additionalDetails: {
+        userId: authenticatedUserId,
+        numberOfHistories: decryptedHealthHistories.length,
+        oldestHistoryDate:
+          decryptedHealthHistories[decryptedHealthHistories.length - 1]
+            ?.createdAt,
+        newestHistoryDate: decryptedHealthHistories[0]?.createdAt,
+      },
+    });
+
     return decryptedHealthHistories;
   } catch (error) {
     console.error("Error fetching client health histories:", error);
@@ -2110,47 +2054,6 @@ export async function getClientHealthHistories(id) {
   }
 }
 
-//working version (production)
-// export async function getClientHealthHistories(id) {
-//   try {
-//     // Validate the input id
-//     const validatedId = z.string().nonempty().parse(id);
-
-//     // Get the authenticated user's ID
-//     const authenticatedUserId = await checkAuth();
-
-//     // Compare the input id with the authenticated user's ID
-//     if (validatedId !== authenticatedUserId.toString()) {
-//       throw new Error("Unauthorized access: User ID mismatch");
-//     }
-
-//     const db = await getDatabase();
-//     const healthHistoryCollection = db.collection("healthhistories");
-
-//     const healthHistories = await healthHistoryCollection
-//       .find({ userId: new ObjectId(authenticatedUserId) })
-//       .sort({ createdAt: -1 })
-//       .toArray();
-
-//     // Serialize the health histories
-//     const serializedHealthHistories = healthHistories.map(serializeDocument);
-
-//     return serializedHealthHistories;
-//   } catch (error) {
-//     console.error("Error fetching client health histories:", error);
-//     if (error instanceof z.ZodError) {
-//       throw new Error(
-//         `Invalid input: ${error.errors.map((e) => e.message).join(", ")}`
-//       );
-//     }
-//     if (error.message === "Unauthorized access: User ID mismatch") {
-//       throw new Error("Unauthorized access");
-//     }
-//     throw new Error("Failed to fetch client health histories");
-//   }
-// }
-
-//working version (production)
 export async function getLatestHealthHistory() {
   try {
     const userId = await checkAuth();
@@ -2639,8 +2542,25 @@ export async function sendReply(messageId, replyText) {
 
 export async function getTreatmentPlansForUser(userId) {
   try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
     const db = await getDatabase();
     const treatmentPlansCollection = db.collection("treatmentplans");
+    const usersCollection = db.collection("users");
+
+    // Check if the user has permission to access these treatment plans
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      session.resultObj._id.toString() === userId;
+
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access these treatment plans"
+      );
+    }
 
     // Convert userId to ObjectId and create a query that checks both clientId and createdBy
     const userObjectId = new ObjectId(userId);
@@ -2676,6 +2596,25 @@ export async function getTreatmentPlansForUser(userId) {
       return serializedPlan;
     });
 
+    // Fetch user details for audit log
+    const user = await usersCollection.findOne({
+      _id: new ObjectId(session.resultObj._id),
+    });
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "treatment plans",
+      actionPerformed: "viewed",
+      accessedBy: `${user.firstName} ${user.lastName}`,
+      whoseInfo: userId,
+      additionalDetails: {
+        accessedByUserId: session.resultObj._id.toString(),
+        accessedByUserType: session.resultObj.userType,
+        numberOfPlans: serializedPlans.length,
+        planIds: serializedPlans.map((plan) => plan._id),
+      },
+    });
+
     return { success: true, data: serializedPlans };
   } catch (error) {
     console.error("Error fetching treatment plans:", error);
@@ -2685,10 +2624,16 @@ export async function getTreatmentPlansForUser(userId) {
 
 export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
   try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
     const db = await getDatabase();
     const appointmentsCollection = db.collection("appointments");
     const treatmentPlansCollection = db.collection("treatmentplans");
     const incomesCollection = db.collection("incomes");
+    const usersCollection = db.collection("users");
 
     // Encrypt the notes
     const encryptedNotes = encryptData(JSON.stringify(notes));
@@ -2746,6 +2691,28 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       throw new Error("Failed to insert income document");
     }
 
+    // Fetch RMT details for audit log
+    const rmt = await usersCollection.findOne({
+      _id: new ObjectId(session.resultObj._id),
+    });
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "treatment notes",
+      actionPerformed: "saved",
+      accessedBy: `${rmt.firstName} ${rmt.lastName}`,
+      whoseInfo: `${updatedAppointment.firstName} ${updatedAppointment.lastName}`,
+      additionalDetails: {
+        rmtId: rmt._id.toString(),
+        patientId: updatedAppointment.userId.toString(),
+        treatmentId: treatmentId,
+        treatmentPlanId: treatmentPlanId,
+        appointmentDate: updatedAppointment.appointmentDate,
+        price: notes.price,
+        paymentType: notes.paymentType,
+      },
+    });
+
     // Send email to the client
     const transporter = getEmailTransporter();
     await transporter.sendMail({
@@ -2782,64 +2749,6 @@ Cip`,
   redirect("/dashboard/rmt");
 }
 
-//working version (production)
-// export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
-//   console.log("Saving treatment notes...");
-//   console.log("treatmentId:", treatmentId);
-//   console.log("treatmentPlanId:", treatmentPlanId);
-//   console.log("notes:", notes);
-
-//   try {
-//     const db = await getDatabase();
-//     const appointmentsCollection = db.collection("appointments");
-//     const treatmentPlansCollection = db.collection("treatmentplans");
-
-//     // Encrypt the notes
-//     const encryptedNotes = encryptData(JSON.stringify(notes));
-
-//     // Update the appointment with the treatment notes and associated plan
-//     const appointmentResult = await appointmentsCollection.updateOne(
-//       { _id: new ObjectId(treatmentId) },
-//       {
-//         $set: {
-//           treatmentNotes: encryptedNotes,
-//           status: "completed",
-//           price: notes?.price,
-//           paymentType: notes?.paymentType,
-//           treatmentPlanId: new ObjectId(treatmentPlanId),
-//         },
-//       }
-//     );
-
-//     if (appointmentResult.modifiedCount === 0) {
-//       throw new Error("Failed to update appointment with treatment notes");
-//     }
-
-//     // Add the treatment to the treatment plan's treatments array
-//     const treatmentPlanResult = await treatmentPlansCollection.updateOne(
-//       { _id: new ObjectId(treatmentPlanId) },
-//       { $addToSet: { treatments: new ObjectId(treatmentId) } }
-//     );
-
-//     if (treatmentPlanResult.modifiedCount === 0) {
-//       throw new Error("Failed to update treatment plan with new treatment");
-//     }
-
-//     revalidatePath("/dashboard/rmt");
-//   } catch (error) {
-//     console.error("Error saving treatment notes:", error);
-//     console.error("Error details:", {
-//       name: error.name,
-//       message: error.message,
-//       stack: error.stack,
-//     });
-//     return { success: false, message: error.message };
-//   }
-
-//   // Redirect outside of try/catch
-//   redirect("/dashboard/rmt");
-// }
-
 export async function createTreatmentPlan(planData, clientId) {
   try {
     const session = await getSession();
@@ -2849,6 +2758,7 @@ export async function createTreatmentPlan(planData, clientId) {
 
     const db = await getDatabase();
     const treatmentPlansCollection = db.collection("treatmentplans");
+    const usersCollection = db.collection("users");
 
     // Encrypt sensitive data
     const encryptedPlanData = encryptData({
@@ -2881,12 +2791,27 @@ export async function createTreatmentPlan(planData, clientId) {
       throw new Error("Failed to create new treatment plan");
     }
 
-    // Log the action for audit purposes
+    // Fetch RMT and client details for audit log
+    const rmt = await usersCollection.findOne({
+      _id: new ObjectId(session.resultObj._id),
+    });
+    const client = await usersCollection.findOne({
+      _id: new ObjectId(clientId),
+    });
+
+    // Log the audit event
     await logAuditEvent({
-      action: "create_treatment_plan",
-      userId: session.resultObj._id,
-      treatmentPlanId: result.insertedId,
-      timestamp: new Date(),
+      typeOfInfo: "treatment plan",
+      actionPerformed: "created",
+      accessedBy: `${rmt.firstName} ${rmt.lastName}`,
+      whoseInfo: `${client.firstName} ${client.lastName}`,
+      additionalDetails: {
+        rmtId: rmt._id.toString(),
+        clientId: clientId,
+        treatmentPlanId: result.insertedId.toString(),
+        startDate: newPlan.startDate,
+        createdAt: newPlan.createdAt,
+      },
     });
 
     revalidatePath("/dashboard/rmt");
@@ -2913,8 +2838,25 @@ export async function createTreatmentPlan(planData, clientId) {
 
 export async function getTreatmentsForUser(userId) {
   try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    // Check if the user has permission to access these treatments
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      session.resultObj._id.toString() === userId;
+
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access these treatments"
+      );
+    }
+
     const db = await getDatabase();
     const appointmentsCollection = db.collection("appointments");
+    const usersCollection = db.collection("users");
 
     const appointments = await appointmentsCollection
       .find({ userId: userId })
@@ -2940,6 +2882,29 @@ export async function getTreatmentsForUser(userId) {
       }
 
       return serializedAppointment;
+    });
+
+    // Fetch user details for audit log
+    const accessingUser = await usersCollection.findOne({
+      _id: new ObjectId(session.resultObj._id),
+    });
+    const targetUser = await usersCollection.findOne({
+      _id: new ObjectId(userId),
+    });
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "user treatments",
+      actionPerformed: "viewed",
+      accessedBy: `${accessingUser.firstName} ${accessingUser.lastName}`,
+      whoseInfo: `${targetUser.firstName} ${targetUser.lastName}`,
+      additionalDetails: {
+        accessedByUserId: session.resultObj._id.toString(),
+        accessedByUserType: session.resultObj.userType,
+        targetUserId: userId,
+        numberOfTreatments: decryptedAppointments.length,
+        treatmentIds: decryptedAppointments.map((apt) => apt._id),
+      },
     });
 
     return { success: true, data: decryptedAppointments };
