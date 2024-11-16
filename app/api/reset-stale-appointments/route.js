@@ -1,9 +1,8 @@
 import { resetStaleReschedulingAppointments } from "@/app/_actions";
 import { NextResponse } from "next/server";
 
-export const config = {
-  runtime: "edge",
-};
+export const runtime = "edge";
+
 export default async function handler(req) {
   console.log(`Handler invoked at ${new Date().toISOString()}`);
   console.log(`Request method: ${req.method}`);
