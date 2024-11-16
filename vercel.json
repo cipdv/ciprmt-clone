@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/reset-stale-appointments",
-      "schedule": "55 13 * * *"
+      "schedule": "23 14 * * *"
     }
   ]
 }
