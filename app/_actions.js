@@ -1393,12 +1393,12 @@ export async function resetStaleReschedulingAppointments() {
   const appointmentsCollection = db.collection("appointments");
 
   // Calculate the cutoff time (2 hours ago)
-  const cutoffTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  // const cutoffTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
   const staleAppointments = await appointmentsCollection
     .find({
       status: "rescheduling",
-      reschedulingStartedAt: { $lt: cutoffTime },
+      // reschedulingStartedAt: { $lt: cutoffTime },
     })
     .toArray();
 

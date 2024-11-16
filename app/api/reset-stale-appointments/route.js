@@ -15,6 +15,7 @@ async function handleRequest(request) {
 
   try {
     await resetStaleReschedulingAppointments();
+    console.log("Stale appointments reset successfully");
     return NextResponse.json({
       message: "Stale appointments reset successfully",
       executionTime: new Date().toISOString(),
