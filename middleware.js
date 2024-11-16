@@ -7,6 +7,10 @@ import { NextResponse } from "next/server";
 export async function middleware(request) {
   console.log("middleware ran successfully");
 
+  if (request.nextUrl.pathname === "/api/reset-stale-appointments") {
+    return NextResponse.next();
+  }
+
   const currentUser = request.cookies.get("session")?.value;
 
   let currentUserObj = null;
