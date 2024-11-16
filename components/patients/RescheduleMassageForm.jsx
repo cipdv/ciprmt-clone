@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   getAllAvailableAppointments,
   rescheduleAppointment,
 } from "@/app/_actions";
-import { useRouter } from "next/navigation";
 
 export default function RescheduleMassageForm({
   rmtSetup,
@@ -200,9 +200,10 @@ export default function RescheduleMassageForm({
   const handleSubmit = async (event) => {
     event.preventDefault();
     setIsSubmitting(true);
+    setError(null);
 
     try {
-      await rescheduleAppointment(currentAppointment._id, {
+      const result = await rescheduleAppointment(currentAppointment._id, {
         location: formData.location,
         duration: formData.duration,
         appointmentTime: formData.appointmentTime,
@@ -210,6 +211,12 @@ export default function RescheduleMassageForm({
         appointmentDate: formData.appointmentDate,
         RMTLocationId: formData.RMTLocationId,
       });
+
+      if (result.success) {
+        router.push("/dashboard/patient");
+      } else {
+        setError(result.message || "Failed to reschedule appointment");
+      }
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
       setError(
@@ -221,6 +228,7 @@ export default function RescheduleMassageForm({
   };
 
   const formatTime = (timeString) => {
+    if (!timeString) return "";
     const [hours, minutes] = timeString.split(":");
     return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString("en-US", {
       hour: "numeric",

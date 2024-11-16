@@ -1209,12 +1209,22 @@ export async function setAppointmentStatus(appointmentId, status) {
       });
     }
 
+    const updateData = {
+      status: status,
+    };
+
+    if (status === "rescheduling") {
+      updateData.reschedulingStartedAt = new Date();
+      updateData.previousStatus = appointment.status;
+    } else {
+      // If we're changing to any other status, clear the rescheduling fields
+      updateData.reschedulingStartedAt = null;
+      updateData.previousStatus = null;
+    }
+
     const result = await db
       .collection("appointments")
-      .updateOne(
-        { _id: new ObjectId(appointmentId) },
-        { $set: { status: status } }
-      );
+      .updateOne({ _id: new ObjectId(appointmentId) }, { $set: updateData });
 
     if (result.modifiedCount === 1) {
       return serializeDocument({
@@ -1378,6 +1388,88 @@ export const getAllAvailableAppointments = async (
   return sortedAvailableTimes;
 };
 
+export async function resetStaleReschedulingAppointments() {
+  const db = await getDatabase();
+  const appointmentsCollection = db.collection("appointments");
+
+  // Calculate the cutoff time (2 hours ago)
+  const cutoffTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+  const staleAppointments = await appointmentsCollection
+    .find({
+      status: "rescheduling",
+      reschedulingStartedAt: { $lt: cutoffTime },
+    })
+    .toArray();
+
+  for (const appointment of staleAppointments) {
+    await appointmentsCollection.updateOne(
+      { _id: appointment._id },
+      {
+        $set: {
+          status: appointment.previousStatus || "booked",
+          reschedulingStartedAt: null,
+          previousStatus: null,
+        },
+      }
+    );
+    console.log(
+      `Reset stale appointment: ${appointment._id} to status: ${
+        appointment.previousStatus || "booked"
+      }`
+    );
+  }
+
+  console.log(
+    `Stale appointment check executed at ${new Date().toISOString()}`
+  );
+}
+
+export async function keepAppointment(appointmentId) {
+  const db = await getDatabase();
+
+  try {
+    const appointment = await db
+      .collection("appointments")
+      .findOne({ _id: new ObjectId(appointmentId) });
+
+    if (!appointment) {
+      return { success: false, message: "Appointment not found" };
+    }
+
+    if (appointment.status !== "rescheduling") {
+      return {
+        success: true,
+        message: "Appointment is not in rescheduling status",
+      };
+    }
+
+    const result = await db.collection("appointments").updateOne(
+      { _id: new ObjectId(appointmentId) },
+      {
+        $set: { status: appointment.previousStatus || "booked" },
+        $unset: { previousStatus: "" },
+      }
+    );
+
+    if (result.modifiedCount === 1) {
+      revalidatePath("/dashboard/patient");
+      return {
+        success: true,
+        message: "Appointment status reverted successfully",
+      };
+    } else {
+      return { success: false, message: "Failed to revert appointment status" };
+    }
+  } catch (error) {
+    console.error("Error reverting appointment status:", error);
+    return {
+      success: false,
+      message: "An error occurred while reverting appointment status",
+    };
+  }
+}
+
 export async function rescheduleAppointment(
   currentAppointmentId,
   {
@@ -1433,15 +1525,46 @@ export async function rescheduleAppointment(
       });
     }
 
-    // Update the current appointment to "rescheduling" status with a timestamp
+    if (currentAppointment.googleCalendarEventId) {
+      const updatedEvent = {
+        summary: `[Requested] Mx ${firstName} ${lastName}`,
+        location: location,
+        description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
+        start: {
+          dateTime: `${formattedDate}T${formattedStartTime}:00`,
+          timeZone: "America/Toronto",
+        },
+        end: {
+          dateTime: `${formattedDate}T${formattedEndTime}:00`,
+          timeZone: "America/Toronto",
+        },
+        colorId: "6", // tangerine color
+      };
+
+      try {
+        await calendar.events.update({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: currentAppointment.googleCalendarEventId,
+          resource: updatedEvent,
+        });
+        console.log("Google Calendar event updated successfully.");
+      } catch (calendarError) {
+        console.error("Error updating Google Calendar event:", calendarError);
+      }
+    }
+
     const currentAppointmentUpdate = await db
       .collection("appointments")
       .updateOne(
         { _id: new ObjectId(currentAppointmentId) },
         {
           $set: {
-            status: "rescheduling",
-            reschedulingStartedAt: new Date(),
+            status: "available",
+            userId: null,
+            consentForm: null,
+            consentFormSubmittedAt: null,
+            googleCalendarEventId: null,
+            googleCalendarEventLink: null,
           },
         }
       );
@@ -1472,7 +1595,6 @@ export async function rescheduleAppointment(
         workplace: workplace,
         googleCalendarEventId: currentAppointment.googleCalendarEventId,
         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-        reschedulingStartedAt: null, // Clear the rescheduling timestamp
       },
     };
 
@@ -1481,51 +1603,32 @@ export async function rescheduleAppointment(
     if (result.matchedCount > 0) {
       console.log("Appointment rescheduled successfully.");
 
-      // Update the Google Calendar event
-      if (currentAppointment.googleCalendarEventId) {
-        try {
-          await calendar.events.update({
-            calendarId: GOOGLE_CALENDAR_ID,
-            eventId: currentAppointment.googleCalendarEventId,
-            resource: {
-              summary: `[Requested] Mx ${firstName} ${lastName}`,
-              location: location,
-              description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
-              start: {
-                dateTime: `${formattedDate}T${formattedStartTime}:00`,
-                timeZone: "America/Toronto",
-              },
-              end: {
-                dateTime: `${formattedDate}T${formattedEndTime}:00`,
-                timeZone: "America/Toronto",
-              },
-              colorId: "6", // tangerine color
-            },
-          });
-          console.log("Google Calendar event updated successfully.");
-        } catch (calendarError) {
-          console.error("Error updating Google Calendar event:", calendarError);
-        }
-      }
+      // Log the audit event
+      await logAuditEvent({
+        typeOfInfo: "appointment rescheduling",
+        actionPerformed: "rescheduled",
+        accessedBy: `${firstName} ${lastName}`,
+        whoseInfo: `${firstName} ${lastName}`,
+        additionalDetails: {
+          userId: _id.toString(),
+          oldAppointmentId: currentAppointmentId,
+          newAppointmentDate: formattedDate,
+          newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+          location,
+          duration,
+          workplace,
+        },
+      });
 
-      // Reset the original appointment to "available"
-      await db.collection("appointments").updateOne(
-        { _id: new ObjectId(currentAppointmentId) },
+      // Send email notification to EMAIL_USER
+      await sendRescheduleNotificationEmail(
+        currentAppointment,
+        { firstName, lastName, email, phoneNumber },
         {
-          $set: {
-            status: "available",
-            userId: null,
-            duration: null,
-            workplace: null,
-            consentForm: null,
-            consentFormSubmittedAt: null,
-            googleCalendarEventId: null,
-            googleCalendarEventLink: null,
-            appointmentBeginsAt: null,
-            appointmentEndsAt: null,
-            location: null,
-            reschedulingStartedAt: null, // Clear the rescheduling timestamp
-          },
+          appointmentDate: formattedDate,
+          appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+          location,
+          duration,
         }
       );
 
@@ -1537,13 +1640,39 @@ export async function rescheduleAppointment(
     } else {
       console.log("No matching appointment found for rescheduling.");
 
-      // Revert the current appointment to its original status
+      if (currentAppointment.googleCalendarEventId) {
+        try {
+          await calendar.events.update({
+            calendarId: GOOGLE_CALENDAR_ID,
+            eventId: currentAppointment.googleCalendarEventId,
+            resource: {
+              start: {
+                dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
+                timeZone: "America/Toronto",
+              },
+              end: {
+                dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
+                timeZone: "America/Toronto",
+              },
+            },
+          });
+          console.log("Google Calendar event reverted successfully.");
+        } catch (calendarError) {
+          console.error(
+            "Error reverting Google Calendar event:",
+            calendarError
+          );
+        }
+      }
+
       await db.collection("appointments").updateOne(
         { _id: new ObjectId(currentAppointmentId) },
         {
           $set: {
             status: "booked",
-            reschedulingStartedAt: null, // Clear the rescheduling timestamp
+            userId: _id,
+            googleCalendarEventId: currentAppointment.googleCalendarEventId,
+            googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
           },
         }
       );
@@ -1564,263 +1693,6 @@ export async function rescheduleAppointment(
     });
   }
 }
-
-export async function resetStaleReschedulingAppointments() {
-  const db = await getDatabase();
-  const appointmentsCollection = db.collection("appointments");
-
-  // Calculate the cutoff time (24 hours ago)
-  const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-  const staleAppointments = await appointmentsCollection
-    .find({
-      status: "rescheduling",
-      reschedulingStartedAt: { $lt: cutoffTime },
-    })
-    .toArray();
-
-  for (const appointment of staleAppointments) {
-    await appointmentsCollection.updateOne(
-      { _id: appointment._id },
-      {
-        $set: {
-          status: "booked", // or the previous status
-          reschedulingStartedAt: null,
-        },
-      }
-    );
-    console.log(`Reset stale appointment: ${appointment._id}`);
-  }
-
-  console.log(
-    `Stale appointment check executed at ${new Date().toISOString()}`
-  );
-}
-
-//working, but no solution to "rescheduling" status issue
-// export async function rescheduleAppointment(
-//   currentAppointmentId,
-//   {
-//     location,
-//     duration,
-//     appointmentTime,
-//     workplace,
-//     appointmentDate,
-//     RMTLocationId,
-//   }
-// ) {
-//   const session = await getSession();
-//   if (!session) {
-//     return serializeDocument({
-//       success: false,
-//       message: "You must be logged in to reschedule an appointment.",
-//     });
-//   }
-
-//   const { _id, firstName, lastName, email, phoneNumber } = session.resultObj;
-
-//   const db = await getDatabase();
-
-//   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
-//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
-
-//   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
-//   const [startTime, endTime] = appointmentTime.split(" - ");
-//   const formattedStartTime = new Date(
-//     `${appointmentDate} ${startTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-//   const formattedEndTime = new Date(
-//     `${appointmentDate} ${endTime}`
-//   ).toLocaleTimeString("en-US", {
-//     hour12: false,
-//     hour: "2-digit",
-//     minute: "2-digit",
-//   });
-
-//   try {
-//     const currentAppointment = await db
-//       .collection("appointments")
-//       .findOne({ _id: new ObjectId(currentAppointmentId) });
-
-//     if (!currentAppointment) {
-//       return serializeDocument({
-//         success: false,
-//         message: "Current appointment not found.",
-//       });
-//     }
-
-//     if (currentAppointment.googleCalendarEventId) {
-//       const updatedEvent = {
-//         summary: `[Requested] Mx ${firstName} ${lastName}`,
-//         location: location,
-//         description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
-//         start: {
-//           dateTime: `${formattedDate}T${formattedStartTime}:00`,
-//           timeZone: "America/Toronto",
-//         },
-//         end: {
-//           dateTime: `${formattedDate}T${formattedEndTime}:00`,
-//           timeZone: "America/Toronto",
-//         },
-//         colorId: "6", // tangerine color
-//       };
-
-//       try {
-//         await calendar.events.update({
-//           calendarId: GOOGLE_CALENDAR_ID,
-//           eventId: currentAppointment.googleCalendarEventId,
-//           resource: updatedEvent,
-//         });
-//         console.log("Google Calendar event updated successfully.");
-//       } catch (calendarError) {
-//         console.error("Error updating Google Calendar event:", calendarError);
-//       }
-//     }
-
-//     const currentAppointmentUpdate = await db
-//       .collection("appointments")
-//       .updateOne(
-//         { _id: new ObjectId(currentAppointmentId) },
-//         {
-//           $set: {
-//             status: "available",
-//             userId: null,
-//             consentForm: null,
-//             consentFormSubmittedAt: null,
-//             googleCalendarEventId: null,
-//             googleCalendarEventLink: null,
-//           },
-//         }
-//       );
-
-//     if (currentAppointmentUpdate.matchedCount === 0) {
-//       return serializeDocument({
-//         success: false,
-//         message: "Current appointment not found.",
-//       });
-//     }
-
-//     const query = {
-//       RMTLocationId: new ObjectId(RMTLocationId),
-//       appointmentDate: formattedDate,
-//       appointmentStartTime: { $lte: formattedStartTime },
-//       appointmentEndTime: { $gte: formattedEndTime },
-//       status: { $in: ["available", "rescheduling"] },
-//     };
-
-//     const update = {
-//       $set: {
-//         status: "requested",
-//         location: location,
-//         appointmentBeginsAt: formattedStartTime,
-//         appointmentEndsAt: formattedEndTime,
-//         userId: _id,
-//         duration: duration,
-//         workplace: workplace,
-//         googleCalendarEventId: currentAppointment.googleCalendarEventId,
-//         googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-//       },
-//     };
-
-//     const result = await db.collection("appointments").updateOne(query, update);
-
-//     if (result.matchedCount > 0) {
-//       console.log("Appointment rescheduled successfully.");
-
-//       // Log the audit event
-//       await logAuditEvent({
-//         typeOfInfo: "appointment rescheduling",
-//         actionPerformed: "rescheduled",
-//         accessedBy: `${firstName} ${lastName}`,
-//         whoseInfo: `${firstName} ${lastName}`,
-//         additionalDetails: {
-//           userId: _id.toString(),
-//           oldAppointmentId: currentAppointmentId,
-//           newAppointmentDate: formattedDate,
-//           newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
-//           location,
-//           duration,
-//           workplace,
-//         },
-//       });
-
-//       // Send email notification to EMAIL_USER
-//       await sendRescheduleNotificationEmail(
-//         currentAppointment,
-//         { firstName, lastName, email, phoneNumber },
-//         {
-//           appointmentDate: formattedDate,
-//           appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
-//           location,
-//           duration,
-//         }
-//       );
-
-//       revalidatePath("/dashboard/patient");
-//       return serializeDocument({
-//         success: true,
-//         message: "Appointment rescheduled successfully.",
-//       });
-//     } else {
-//       console.log("No matching appointment found for rescheduling.");
-
-//       if (currentAppointment.googleCalendarEventId) {
-//         try {
-//           await calendar.events.update({
-//             calendarId: GOOGLE_CALENDAR_ID,
-//             eventId: currentAppointment.googleCalendarEventId,
-//             resource: {
-//               start: {
-//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentBeginsAt}:00`,
-//                 timeZone: "America/Toronto",
-//               },
-//               end: {
-//                 dateTime: `${currentAppointment.appointmentDate}T${currentAppointment.appointmentEndsAt}:00`,
-//                 timeZone: "America/Toronto",
-//               },
-//             },
-//           });
-//           console.log("Google Calendar event reverted successfully.");
-//         } catch (calendarError) {
-//           console.error(
-//             "Error reverting Google Calendar event:",
-//             calendarError
-//           );
-//         }
-//       }
-
-//       await db.collection("appointments").updateOne(
-//         { _id: new ObjectId(currentAppointmentId) },
-//         {
-//           $set: {
-//             status: "booked",
-//             userId: _id,
-//             googleCalendarEventId: currentAppointment.googleCalendarEventId,
-//             googleCalendarEventLink: currentAppointment.googleCalendarEventLink,
-//           },
-//         }
-//       );
-
-//       return serializeDocument({
-//         success: false,
-//         message: "No matching appointment found for rescheduling.",
-//       });
-//     }
-//   } catch (error) {
-//     console.error(
-//       "An error occurred while rescheduling the appointment:",
-//       error
-//     );
-//     return serializeDocument({
-//       success: false,
-//       message: "An error occurred while rescheduling the appointment.",
-//     });
-//   }
-// }
 
 async function sendRescheduleNotificationEmail(
   currentAppointment,
