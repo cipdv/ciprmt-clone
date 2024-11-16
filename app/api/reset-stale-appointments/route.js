@@ -1,33 +1,32 @@
-import { resetStaleReschedulingAppointments } from "@/app/_actions";
 import { NextResponse } from "next/server";
+import { resetStaleReschedulingAppointments } from "@/app/_actions";
 
-export const runtime = "edge";
+export async function GET(request) {
+  return handleRequest(request);
+}
 
-export default async function handler(req) {
+export async function POST(request) {
+  return handleRequest(request);
+}
+
+async function handleRequest(request) {
   console.log(`Handler invoked at ${new Date().toISOString()}`);
-  console.log(`Request method: ${req.method}`);
+  console.log(`Request method: ${request.method}`);
 
-  if (req.method === "POST" || req.method === "GET") {
-    try {
-      await resetStaleReschedulingAppointments();
-      return NextResponse.json({
-        message: "Stale appointments reset successfully",
-        executionTime: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error("Error resetting stale appointments:", error);
-      return NextResponse.json(
-        {
-          message: "Error resetting stale appointments",
-          error: error.message,
-        },
-        { status: 500 }
-      );
-    }
-  } else {
+  try {
+    await resetStaleReschedulingAppointments();
+    return NextResponse.json({
+      message: "Stale appointments reset successfully",
+      executionTime: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error resetting stale appointments:", error);
     return NextResponse.json(
-      { message: "This endpoint only accepts POST and GET requests" },
-      { status: 405 }
+      {
+        message: "Error resetting stale appointments",
+        error: error.message,
+      },
+      { status: 500 }
     );
   }
 }
