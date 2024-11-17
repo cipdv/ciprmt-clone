@@ -116,8 +116,6 @@ export async function registerNewPatient(prevState, formData) {
     if (!result.success) {
       return {
         errors: result.error.flatten().fieldErrors,
-        message:
-          "Failed to register: make sure all required fields are completed and try again",
       };
     }
 
