@@ -2794,3 +2794,346 @@ export async function getTreatmentsForUser(userId) {
     };
   }
 }
+
+export async function searchUsers(query) {
+  try {
+    // Check if the user is logged in
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    // Check if the user is an RMT
+    if (session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can search users");
+    }
+
+    // Apply rate limiting
+    await checkRateLimit(session.resultObj._id, "searchUsers", 10, 60); // 10 requests per minute
+
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    const searchRegex = new RegExp(query, "i");
+
+    const users = await usersCollection
+      .find({
+        $or: [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { email: searchRegex },
+          { phoneNumber: searchRegex },
+        ],
+      })
+      .toArray();
+
+    return users.map((user) =>
+      serializeDocument({
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        phoneNumber: user.phoneNumber || "N/A",
+      })
+    );
+  } catch (error) {
+    console.error("Error in searchUsers:", error);
+    throw new Error("Failed to search users. Please try again.");
+  }
+}
+
+export async function getClientProfile(clientId) {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    // Check if the user is an RMT
+    if (session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can access client profiles");
+    }
+
+    // Apply rate limiting
+    await checkRateLimit(session.resultObj._id, "getClientProfile", 10, 60); // 10 requests per minute
+
+    const db = await getDatabase();
+    const user = await db
+      .collection("users")
+      .findOne({ _id: new ObjectId(clientId) });
+
+    if (!user) {
+      throw new Error("Client not found");
+    }
+
+    // // Log the audit event
+    // await logAuditEvent({
+    //   typeOfInfo: "client profile",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: `${user.firstName} ${user.lastName}`,
+    //   additionalDetails: {
+    //     clientId: clientId,
+    //     rmtId: session.resultObj._id.toString()
+    //   }
+    // })
+
+    // Return only necessary information
+    return serializeDocument({
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phoneNumber: user.phoneNumber || "N/A",
+    });
+  } catch (error) {
+    console.error("Error in getClientProfile:", error);
+    throw new Error("Failed to fetch client profile. Please try again.");
+  }
+}
+
+export async function bookAppointmentForClient(clientId, appointmentData) {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    if (session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can book appointments");
+    }
+
+    await checkRateLimit(
+      session.resultObj._id,
+      "bookAppointmentForClient",
+      5,
+      60
+    ); // 5 requests per minute
+
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+    const appointmentsCollection = db.collection("appointments");
+
+    const rmt = await usersCollection.findOne({
+      _id: new ObjectId(session.resultObj._id),
+    });
+    const client = await usersCollection.findOne({
+      _id: new ObjectId(clientId),
+    });
+
+    if (!client) {
+      throw new Error("Client not found");
+    }
+
+    const { date, time, duration } = appointmentData;
+
+    const appointmentDate = new Date(`${date}T${time}`);
+    const appointmentEndDate = new Date(
+      appointmentDate.getTime() + duration * 60000
+    );
+
+    const appointmentDoc = {
+      RMTId: new ObjectId(rmt._id),
+      RMTLocationId: new ObjectId(rmt.RMTLocationId), // Assuming RMT has a location ID
+      appointmentDate: date,
+      appointmentStartTime: time,
+      appointmentEndTime: appointmentEndDate.toTimeString().slice(0, 5),
+      status: "booked",
+      expiryDate: new Date(appointmentDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from appointment
+      appointmentBeginsAt: time,
+      appointmentEndsAt: appointmentEndDate.toTimeString().slice(0, 5),
+      duration: duration.toString(),
+      email: client.email,
+      firstName: client.firstName,
+      lastName: client.lastName,
+      userId: new ObjectId(client._id),
+      location: rmt.location, // Assuming RMT has a location field
+      workplace: "",
+      consentForm: null,
+      consentFormSubmittedAt: null,
+    };
+
+    // Create Google Calendar event
+    const calendar = google.calendar({ version: "v3", auth: jwtClient });
+    const event = {
+      summary: `Massage Appointment: ${client.firstName} ${client.lastName}`,
+      location: rmt.location,
+      description: `${duration} minute massage appointment`,
+      start: {
+        dateTime: appointmentDate.toISOString(),
+        timeZone: "America/Toronto",
+      },
+      end: {
+        dateTime: appointmentEndDate.toISOString(),
+        timeZone: "America/Toronto",
+      },
+    };
+
+    const calendarEvent = await calendar.events.insert({
+      calendarId: GOOGLE_CALENDAR_ID,
+      resource: event,
+    });
+
+    appointmentDoc.googleCalendarEventId = calendarEvent.data.id;
+    appointmentDoc.googleCalendarEventLink = calendarEvent.data.htmlLink;
+
+    const result = await appointmentsCollection.insertOne(appointmentDoc);
+
+    await logAuditEvent({
+      typeOfInfo: "appointment booking",
+      actionPerformed: "booked",
+      accessedBy: `${rmt.firstName} ${rmt.lastName}`,
+      whoseInfo: `${client.firstName} ${client.lastName}`,
+      additionalDetails: {
+        appointmentId: result.insertedId.toString(),
+        appointmentDate: date,
+        appointmentTime: time,
+        duration: duration,
+        rmtId: rmt._id.toString(),
+        clientId: client._id.toString(),
+      },
+    });
+
+    return { success: true, appointmentId: result.insertedId };
+  } catch (error) {
+    console.error("Error in bookAppointmentForClient:", error);
+    throw new Error("Failed to book appointment. Please try again.");
+  }
+}
+
+export async function deleteAppointment(appointmentId) {
+  try {
+    const session = await getSession();
+    if (
+      !session ||
+      !session.resultObj ||
+      session.resultObj.userType !== "rmt"
+    ) {
+      throw new Error("Unauthorized: Only RMTs can delete appointments");
+    }
+
+    await checkRateLimit(session.resultObj._id, "deleteAppointment", 10, 60);
+
+    const db = await getDatabase();
+    const appointmentsCollection = db.collection("appointments");
+
+    const appointment = await appointmentsCollection.findOne({
+      _id: new ObjectId(appointmentId),
+    });
+    if (!appointment) {
+      throw new Error("Appointment not found");
+    }
+
+    if (appointment.googleCalendarEventId) {
+      try {
+        await calendar.events.delete({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: appointment.googleCalendarEventId,
+        });
+      } catch (error) {
+        console.error("Error deleting Google Calendar event:", error);
+      }
+    }
+
+    const result = await appointmentsCollection.deleteOne({
+      _id: new ObjectId(appointmentId),
+    });
+
+    if (result.deletedCount === 1) {
+      await logAuditEvent({
+        typeOfInfo: "appointment",
+        actionPerformed: "deleted",
+        accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+        whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
+        additionalDetails: {
+          appointmentId: appointmentId,
+          appointmentDate: appointment.appointmentDate,
+          rmtId: session.resultObj._id.toString(),
+        },
+      });
+    } else {
+      throw new Error("Failed to delete appointment");
+    }
+  } catch (error) {
+    console.error("Error in deleteAppointment:", error);
+    throw new Error("Failed to delete appointment. Please try again.");
+  }
+
+  revalidatePath("/dashboard/rmt");
+}
+
+export async function clearAppointment(appointmentId) {
+  try {
+    const session = await getSession();
+    if (
+      !session ||
+      !session.resultObj ||
+      session.resultObj.userType !== "rmt"
+    ) {
+      throw new Error("Unauthorized: Only RMTs can clear appointments");
+    }
+
+    await checkRateLimit(session.resultObj._id, "clearAppointment", 10, 60);
+
+    const db = await getDatabase();
+    const appointmentsCollection = db.collection("appointments");
+
+    const appointment = await appointmentsCollection.findOne({
+      _id: new ObjectId(appointmentId),
+    });
+    if (!appointment) {
+      throw new Error("Appointment not found");
+    }
+
+    if (appointment.googleCalendarEventId) {
+      try {
+        await calendar.events.delete({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: appointment.googleCalendarEventId,
+        });
+      } catch (error) {
+        console.error("Error deleting Google Calendar event:", error);
+      }
+    }
+
+    const result = await appointmentsCollection.updateOne(
+      { _id: new ObjectId(appointmentId) },
+      {
+        $set: {
+          status: "available",
+          appointmentBeginsAt: null,
+          appointmentEndsAt: null,
+          duration: null,
+          email: null,
+          firstName: null,
+          lastName: null,
+          googleCalendarEventId: null,
+          googleCalendarEventLink: null,
+          location: null,
+          userId: null,
+          consentForm: null,
+          consentFormSubmittedAt: null,
+        },
+      }
+    );
+
+    if (result.modifiedCount === 1) {
+      await logAuditEvent({
+        typeOfInfo: "appointment",
+        actionPerformed: "cleared",
+        accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+        whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
+        additionalDetails: {
+          appointmentId: appointmentId,
+          appointmentDate: appointment.appointmentDate,
+          rmtId: session.resultObj._id.toString(),
+        },
+      });
+    } else {
+      throw new Error("Failed to clear appointment");
+    }
+  } catch (error) {
+    console.error("Error in clearAppointment:", error);
+    throw new Error("Failed to clear appointment. Please try again.");
+  }
+  revalidatePath("/dashboard/rmt");
+}

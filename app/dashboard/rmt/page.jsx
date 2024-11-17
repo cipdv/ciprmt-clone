@@ -30,6 +30,7 @@ export default async function Dashboard() {
         <Calendar appointments={appointments} />
         <NotesToComplete appointments={appointments} />
         <AddExpense />
+        <SearchBar />
         <div className="pt-8">
           <SetUpForm2 />
         </div>
