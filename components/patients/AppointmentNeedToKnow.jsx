@@ -7,6 +7,10 @@ const AppointmentNeedToKnow = () => {
           <h3 className="text-xl font-semibold">Location:</h3>
           <p>268 Shuter Street, Toronto ON.</p>
           <p>
+            The entrance is at the rear of the buildling. Open the wooden gate,
+            and ring the doorbell at the first door on your right.
+          </p>
+          <p>
             Please plan to arrive no earlier than 10 minutes before your
             appointment as I may still need time to clean and disinfect after
             the previous appointment.

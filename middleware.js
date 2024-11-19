@@ -11,7 +11,7 @@ export async function middleware(request) {
     return NextResponse.next();
   }
 
-  const currentUser = request.cookies.get("session")?.value;
+  const currentUser = request?.cookies?.get("session")?.value;
 
   let currentUserObj = null;
   if (currentUser) {
