@@ -37,8 +37,8 @@ const AppointmentNeedToKnow = () => {
           <ul className="list-disc ml-4">
             <li>
               Strong scents.{" "}
-              <strong>Please do not wear perfume or cologne</strong> - this may
-              lead to the massage being cancelled.
+              <strong>Please do not wear perfume or cologne</strong> - strong
+              scents can linger and be uncomfortable for some people.
             </li>
             <li>Clothing with zippers.</li>
             <li>Slippery fabrics like polyester, lycra, spandex.</li>
