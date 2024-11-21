@@ -6,6 +6,8 @@ import SetUpForm2 from "@/components/rmt/SetUp/SetUpForm2";
 import Messages from "@/components/rmt/Messages";
 import React from "react";
 
+import TemporaryNotes from "@/components/rmt/TemporaryNotes";
+
 import {
   getSession,
   getAllAppointmentsByRMTId,
@@ -16,9 +18,9 @@ import AddExpense from "@/components/rmt/AddExpense";
 export default async function Dashboard() {
   const currentUser = await getSession();
 
-  const appointments = await getAllAppointmentsByRMTId(
-    currentUser.resultObj._id
-  );
+  const results = await getAllAppointmentsByRMTId(currentUser.resultObj._id);
+
+  const appointments = results.appointments;
 
   const messages = await getAllMessagesByRMTId(currentUser.resultObj._id);
 
@@ -31,6 +33,7 @@ export default async function Dashboard() {
         <NotesToComplete appointments={appointments} />
         <AddExpense />
         <SearchBar />
+        <TemporaryNotes treatments={results.treatmentsWithoutPrice} />
         <div className="pt-8">
           <SetUpForm2 />
         </div>

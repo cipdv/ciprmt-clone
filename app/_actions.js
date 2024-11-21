@@ -2200,21 +2200,51 @@ export async function resetPasswordWithToken(token, newPassword) {
 //////////APPOINTMENTS////////////////////////////
 //////////////////////////////////////////////////
 
+//temporary
 export async function getAllAppointmentsByRMTId(rmtId) {
   try {
     const db = await getDatabase();
     const appointmentsCollection = db.collection("appointments");
+    const treatmentsCollection = db.collection("treatments");
 
+    // Fetch appointments
     const appointments = await appointmentsCollection
       .find({ RMTId: new ObjectId(rmtId) })
       .toArray();
 
-    return appointments.map(serializeDocument);
+    // Fetch treatments without a price
+    const treatmentsWithoutPrice = await treatmentsCollection
+      .find({ price: { $exists: false } })
+      .toArray();
+
+    // Combine the results
+    const result = {
+      appointments: appointments.map(serializeDocument),
+      treatmentsWithoutPrice: treatmentsWithoutPrice.map(serializeDocument),
+    };
+
+    return result;
   } catch (error) {
-    console.error("Error fetching appointments:", error);
-    throw new Error("Failed to fetch appointments");
+    console.error("Error fetching data:", error);
+    throw new Error("Failed to fetch appointments and treatments");
   }
 }
+
+// export async function getAllAppointmentsByRMTId(rmtId) {
+//   try {
+//     const db = await getDatabase();
+//     const appointmentsCollection = db.collection("appointments");
+
+//     const appointments = await appointmentsCollection
+//       .find({ RMTId: new ObjectId(rmtId) })
+//       .toArray();
+
+//     return appointments.map(serializeDocument);
+//   } catch (error) {
+//     console.error("Error fetching appointments:", error);
+//     throw new Error("Failed to fetch appointments");
+//   }
+// }
 
 export async function updateAppointmentStatus(formData) {
   const appointmentId = formData.get("appointmentId");
@@ -2943,7 +2973,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       email: client.email,
       firstName: client.firstName,
       lastName: client.lastName,
-      userId: new ObjectId(client._id),
+      userId: client._id.toString(),
       location: rmt.location, // Assuming RMT has a location field
       workplace: "",
       consentForm: null,
@@ -2989,6 +3019,41 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
         rmtId: rmt._id.toString(),
         clientId: client._id.toString(),
       },
+    });
+
+    // Send email notification
+    const transporter = getEmailTransporter();
+    const confirmationLink = `${BASE_URL}/dashboard/patient`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: client.email,
+      subject: "Massage Appointment Confirmation",
+      text: `Hi ${client.firstName},
+
+Your massage appointment has been booked for ${date} at ${time}. 
+
+Appointment Details:
+- Date: ${date}
+- Time: ${time}
+- Duration: ${duration} minutes
+
+Please login at ${confirmationLink} to complete the consent form and view your appointment details.
+
+If you need to make any changes or have any questions, please use the website to make any changes, or reach out by text: 416-258-1230.
+`,
+      html: `
+        <p>Hi ${client.firstName},</p>
+        <p>Your massage appointment has been booked for ${date} at ${time}.</p>
+        <h2>Appointment Details:</h2>
+        <ul>
+          <li>Date: ${date}</li>
+          <li>Time: ${time}</li>
+          <li>Duration: ${duration} minutes</li>
+        </ul>
+        <p>Please login at <a href="${confirmationLink}"> www.ciprmt.com</a> to complete the consent form and view your appointment details.</p>
+        <p>If you need to make any changes or have any questions, please contact Cip at 416-258-1230.</p>
+      `,
     });
 
     return { success: true, appointmentId: result.insertedId };
@@ -3134,4 +3199,85 @@ export async function clearAppointment(appointmentId) {
     throw new Error("Failed to clear appointment. Please try again.");
   }
   revalidatePath("/dashboard/rmt");
+}
+
+//temporary
+
+export async function saveTreatmentNotesAndIncome(formData) {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized");
+    }
+
+    const db = await getDatabase();
+    const treatmentsCollection = db.collection("treatments");
+    const incomesCollection = db.collection("incomes");
+
+    const {
+      id,
+      reasonForMassage,
+      findings,
+      treatment,
+      results,
+      remex,
+      referToHCP,
+      notes,
+      paymentType,
+      price,
+      firstName,
+      lastName,
+      date,
+    } = formData;
+
+    // Update treatment document
+    const updatedTreatment = await treatmentsCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          reasonForMassage,
+          findings,
+          treatment,
+          results,
+          remex,
+          referToHCP,
+          notes,
+          paymentType,
+          price: parseFloat(price),
+        },
+      },
+      { returnDocument: "after" }
+    );
+
+    if (!updatedTreatment) {
+      throw new Error("Treatment not found");
+    }
+
+    // Create income document
+    const incomeDocument = {
+      RMTid: session.resultObj._id,
+      treatmentId: id,
+      date: new Date(date),
+      year: new Date(date).getFullYear().toString(),
+      category: "revenue",
+      amount: parseFloat(price),
+      details: `${firstName} ${lastName}`,
+    };
+
+    const insertedIncome = await incomesCollection.insertOne(incomeDocument);
+
+    return {
+      success: true,
+      message: "Treatment notes saved and income recorded successfully",
+      updatedTreatment: updatedTreatment,
+      insertedIncome: insertedIncome,
+    };
+  } catch (error) {
+    console.error("Error in saveTreatmentNotesAndIncome:", error);
+    return {
+      success: false,
+      message: "An error occurred while saving treatment notes and income",
+      error: error.message,
+    };
+  }
 }
