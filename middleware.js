@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 export async function middleware(request) {
   console.log("middleware ran successfully");
 
-  if (request.nextUrl.pathname === "/api/reset-stale-appointments") {
+  if (request.nextUrl.pathname === "/api/cron") {
     return NextResponse.next();
   }
 

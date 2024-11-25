@@ -211,7 +211,10 @@ const Calendar = ({ appointments }) => {
                             alt="Client Signature"
                             width={300}
                             height={100}
-                            layout="responsive"
+                            style={{
+                              width: "100%",
+                              height: "auto",
+                            }}
                           />
                         </div>
                       </div>
