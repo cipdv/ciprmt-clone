@@ -3281,3 +3281,75 @@ export async function saveTreatmentNotesAndIncome(formData) {
     };
   }
 }
+
+export async function addAppointments() {
+  try {
+    const db = await getDatabase();
+
+    const today = new Date();
+    const currentDay = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ][today.getDay()];
+
+    // Fetch all RMT locations
+    const rmtLocations = await db.collection("rmtLocations").find().toArray();
+
+    for (const location of rmtLocations) {
+      const workDay = location.formattedFormData.workDays.find(
+        (day) => day.day === currentDay
+      );
+
+      if (workDay) {
+        const appointments = [];
+
+        for (let i = 0; i < 8; i++) {
+          const appointmentDate = new Date(today);
+          appointmentDate.setDate(today.getDate() + i * 7 + 56); // 8 weeks from today
+
+          for (const timeSlot of workDay.appointmentTimes) {
+            const expiryDate = new Date(appointmentDate);
+            expiryDate.setDate(appointmentDate.getDate() + 7);
+
+            appointments.push({
+              RMTId: new ObjectId(location.userId),
+              RMTLocationId: location._id,
+              appointmentDate: appointmentDate.toISOString().split("T")[0],
+              appointmentStartTime: timeSlot.start,
+              appointmentEndTime: timeSlot.end,
+              status: "available",
+              expiryDate: expiryDate,
+            });
+          }
+        }
+
+        if (appointments.length > 0) {
+          const result = await db
+            .collection("appointments")
+            .insertMany(appointments);
+          console.log(
+            `Inserted ${result.insertedCount} appointments for RMT ${location.userId}`
+          );
+        }
+      }
+    }
+
+    // Ensure index for appointment expiry
+    await db.collection("appointments").createIndex(
+      { expiryDate: 1 },
+      {
+        expireAfterSeconds: 0,
+        partialFilterExpression: { status: "available" },
+      }
+    );
+
+    console.log("Cron job completed successfully");
+  } catch (error) {
+    console.error("Error in cron job:", error);
+  }
+}
