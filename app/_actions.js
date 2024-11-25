@@ -3283,6 +3283,7 @@ export async function saveTreatmentNotesAndIncome(formData) {
 }
 
 export async function addAppointments() {
+  console.log("Adding appointments...");
   try {
     const db = await getDatabase();
 
