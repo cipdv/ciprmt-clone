@@ -1243,6 +1243,7 @@ export const getAllAvailableAppointments = async (
   duration,
   currentEventGoogleId
 ) => {
+  console.log(":D:D:D:D:D", rmtLocationId, duration, currentEventGoogleId);
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
 
@@ -1253,9 +1254,11 @@ export const getAllAvailableAppointments = async (
   const appointments = await appointmentsCollection
     .find({
       RMTLocationId: new ObjectId(rmtLocationId),
-      status: { $in: ["available", "rescheduling"] },
+      // status: { $in: ["available", "rescheduling"] },
     })
     .toArray();
+
+  console.log("appointments", appointments);
 
   const availableTimes = [];
 
@@ -2893,6 +2896,8 @@ export async function getClientProfile(clientId) {
       throw new Error("Client not found");
     }
 
+    console.log("user", user);
+
     // // Log the audit event
     // await logAuditEvent({
     //   typeOfInfo: "client profile",
@@ -2912,6 +2917,7 @@ export async function getClientProfile(clientId) {
       lastName: user.lastName,
       email: user.email,
       phoneNumber: user.phoneNumber || "N/A",
+      rmtId: user.rmtId.toString(),
     });
   } catch (error) {
     console.error("Error in getClientProfile:", error);
@@ -2961,7 +2967,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
 
     const appointmentDoc = {
       RMTId: new ObjectId(rmt._id),
-      RMTLocationId: new ObjectId(rmt.RMTLocationId), // Assuming RMT has a location ID
+      RMTLocationId: new ObjectId("673a415085f1bd8631e7a426"), // Assuming RMT has a location ID
       appointmentDate: date,
       appointmentStartTime: time,
       appointmentEndTime: appointmentEndDate.toTimeString().slice(0, 5),
@@ -2974,7 +2980,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       firstName: client.firstName,
       lastName: client.lastName,
       userId: client._id.toString(),
-      location: rmt.location, // Assuming RMT has a location field
+      location: "268 Shuter Street", // Assuming RMT has a location field
       workplace: "",
       consentForm: null,
       consentFormSubmittedAt: null,
@@ -3282,8 +3288,11 @@ export async function saveTreatmentNotesAndIncome(formData) {
   }
 }
 
+////////////////////////////////////////
+// Cron Jobs////////////////////////////
+////////////////////////////////////////
+
 export async function addAppointments() {
-  console.log("Adding appointments...");
   try {
     const db = await getDatabase();
 
@@ -3309,24 +3318,22 @@ export async function addAppointments() {
       if (workDay) {
         const appointments = [];
 
-        for (let i = 0; i < 8; i++) {
-          const appointmentDate = new Date(today);
-          appointmentDate.setDate(today.getDate() + i * 7 + 56); // 8 weeks from today
+        const appointmentDate = new Date(today);
+        appointmentDate.setDate(today.getDate() + 56); // 8 weeks from today
 
-          for (const timeSlot of workDay.appointmentTimes) {
-            const expiryDate = new Date(appointmentDate);
-            expiryDate.setDate(appointmentDate.getDate() + 7);
+        for (const timeSlot of workDay.appointmentTimes) {
+          const expiryDate = new Date(appointmentDate);
+          expiryDate.setDate(appointmentDate.getDate() + 7);
 
-            appointments.push({
-              RMTId: new ObjectId(location.userId),
-              RMTLocationId: location._id,
-              appointmentDate: appointmentDate.toISOString().split("T")[0],
-              appointmentStartTime: timeSlot.start,
-              appointmentEndTime: timeSlot.end,
-              status: "available",
-              expiryDate: expiryDate,
-            });
-          }
+          appointments.push({
+            RMTId: new ObjectId(location.userId),
+            RMTLocationId: location._id,
+            appointmentDate: appointmentDate.toISOString().split("T")[0], // Format as "YYYY-MM-DD"
+            appointmentStartTime: timeSlot.start,
+            appointmentEndTime: timeSlot.end,
+            status: "available",
+            expiryDate: expiryDate,
+          });
         }
 
         if (appointments.length > 0) {
@@ -3348,9 +3355,142 @@ export async function addAppointments() {
         partialFilterExpression: { status: "available" },
       }
     );
-
-    console.log("Cron job completed successfully");
   } catch (error) {
     console.error("Error in cron job:", error);
   }
+}
+
+export async function sendAppointmentReminders() {
+  console.log("Starting appointment reminder process...");
+  const db = await getDatabase();
+  const appointmentsCollection = db.collection("appointments");
+  const transporter = getEmailTransporter();
+
+  // Get tomorrow's date in YYYY-MM-DD format
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowString = tomorrow.toISOString().split("T")[0];
+
+  try {
+    // Find all appointments for tomorrow with status "booked"
+    const appointments = await appointmentsCollection
+      .find({
+        appointmentDate: tomorrowString,
+        status: "booked",
+      })
+      .toArray();
+
+    console.log(`Found ${appointments.length} appointments for tomorrow.`);
+
+    for (const appointment of appointments) {
+      // Determine if the consent form is completed
+      const isConsentFormCompleted =
+        appointment.consentForm &&
+        Object.keys(appointment.consentForm).length > 0;
+
+      // Choose the appropriate email template
+      const emailContent = isConsentFormCompleted
+        ? getStandardReminderEmail(appointment)
+        : getConsentFormReminderEmail(appointment);
+
+      // Send reminder email
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: appointment.email,
+        subject: "Reminder: Your Massage Appointment Tomorrow",
+        text: emailContent.text,
+        html: emailContent.html,
+      });
+
+      console.log(`Sent reminder email for appointment ${appointment._id}`);
+    }
+
+    console.log("Appointment reminder process completed successfully.");
+  } catch (error) {
+    console.error("Error in sendAppointmentReminders:", error);
+  }
+}
+
+function getStandardReminderEmail(appointment) {
+  return {
+    text: `
+      Hi ${appointment.firstName},
+
+      This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.
+
+      Location: ${appointment.location}
+      Duration: ${appointment.duration} minutes
+
+      If you need to make any changes, please contact me as soon as possible:
+      - Email: ${process.env.EMAIL_USER}
+      - Phone: 416-258-1230
+
+      Otherwise, I look forward to seeing you tomorrow!
+
+      Best regards,
+      Cip
+    `,
+    html: `
+      <h2>Reminder: Your Massage Appointment Tomorrow</h2>
+      <p>Hi ${appointment.firstName},</p>
+      <p>This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
+      <ul>
+        <li><strong>Location:</strong> ${appointment.location}</li>
+        <li><strong>Duration:</strong> ${appointment.duration} minutes</li>
+      </ul>
+      <p>If you need to make any changes, please contact me as soon as possible:</p>
+      <ul>
+        <li>Email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></li>
+        <li>Phone: 416-258-1230</li>
+      </ul>
+      <p>Otherwise, I look forward to seeing you tomorrow!</p>
+      <p>Best regards,<br>Cip</p>
+    `,
+  };
+}
+
+function getConsentFormReminderEmail(appointment) {
+  const consentFormUrl = `http://www.ciprmt.com/dashboard/patient`; // Adjust this URL as needed
+  return {
+    text: `
+      Hi ${appointment.firstName},
+
+      This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.
+
+      Location: ${appointment.location}
+      Duration: ${appointment.duration} minutes
+
+      IMPORTANT: You haven't completed the consent form yet. Please take a moment to fill it out before your appointment: ${consentFormUrl}
+
+      Completing the consent form in advance will save time during your visit and ensure I have all the necessary information to provide you with the best possible care.
+
+      If you need to make any changes, please contact me as soon as possible:
+      - Email: ${process.env.EMAIL_USER}
+      - Phone: 416-258-1230
+
+      Otherwise, I look forward to seeing you tomorrow!
+
+      Best regards,
+      Cip
+    `,
+    html: `
+      <h2>Reminder: Your Massage Appointment Tomorrow</h2>
+      <p>Hi ${appointment.firstName},</p>
+      <p>This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
+      <ul>
+        <li><strong>Location:</strong> ${appointment.location}</li>
+        <li><strong>Duration:</strong> ${appointment.duration} minutes</li>
+      </ul>
+      <p><strong>IMPORTANT:</strong> You haven't completed your consent form yet. Please take a moment to fill it out before your appointment:</p>
+      <p><a href="${consentFormUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block;">Complete Consent Form</a></p>
+      <p>Completing the consent form in advance will save time during your visit and ensure we have all the necessary information to provide you with the best possible care.</p>
+       <p>If you need to make any changes, please contact me as soon as possible:</p>
+      <ul>
+        <li>Email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></li>
+        <li>Phone: 416-258-1230</li>
+      </ul>
+      <p>Otherwise, I look forward to seeing you tomorrow!</p>
+      <p>Best regards,<br>Cip</p>
+    `,
+  };
 }

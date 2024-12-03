@@ -5,6 +5,8 @@ export default async function ClientProfile({ params }) {
   try {
     const client = await getClientProfile(params.id);
 
+    console.log(client);
+
     return (
       <div className="container mx-auto max-w-5xl px-4 py-8">
         <h1 className="text-2xl font-bold mb-6">Client Profile</h1>

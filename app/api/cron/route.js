@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   addAppointments,
   resetStaleReschedulingAppointments,
+  sendAppointmentReminders,
 } from "@/app/_actions";
 
 export async function GET(request) {
@@ -20,8 +21,11 @@ async function handleRequest(request) {
     await resetStaleReschedulingAppointments();
     console.log("Stale appointments reset successfully");
 
-    // await addAppointments();
-    // console.log("New appointments added successfully");
+    await addAppointments();
+    console.log("New appointments added successfully");
+
+    await sendAppointmentReminders();
+    console.log("Appointment reminders sent successfully");
 
     return NextResponse.json({
       message: "Cron job executed successfully",
