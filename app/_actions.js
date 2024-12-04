@@ -2962,29 +2962,41 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
 
     const { date, time, duration } = appointmentData;
 
-    const appointmentDate = new Date(`${date}T${time}`);
-    console.log("appointmentDate", appointmentDate);
-    console.log("appointmentDate.toISOString()", appointmentDate.toISOString());
-    const appointmentEndDate = new Date(
-      appointmentDate.getTime() + duration * 60000
-    );
+    // Ensure appointmentDate is in "YYYY-MM-DD" format
+    const formattedDate = new Date(date).toISOString().split("T")[0];
+
+    // Convert appointmentTime to "HH:MM" (24-hour format)
+    const startDateTime = new Date(`${date} ${time}`);
+    const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // Calculate end time
+    const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+    const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     const appointmentDoc = {
       RMTId: new ObjectId(rmt._id),
-      RMTLocationId: new ObjectId("673a415085f1bd8631e7a426"), // Assuming RMT has a location ID
-      appointmentDate: date,
-      appointmentStartTime: time,
-      appointmentEndTime: appointmentEndDate.toTimeString().slice(0, 5),
+      RMTLocationId: new ObjectId("673a415085f1bd8631e7a426"),
+      appointmentDate: formattedDate,
+      appointmentStartTime: formattedStartTime,
+      appointmentEndTime: formattedEndTime,
       status: "booked",
-      expiryDate: new Date(appointmentDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from appointment
-      appointmentBeginsAt: time,
-      appointmentEndsAt: appointmentEndDate.toTimeString().slice(0, 5),
+      expiryDate: new Date(startDateTime.getTime() + 7 * 24 * 60 * 60 * 1000),
+      appointmentBeginsAt: formattedStartTime,
+      appointmentEndsAt: formattedEndTime,
       duration: duration.toString(),
       email: client.email,
       firstName: client.firstName,
       lastName: client.lastName,
       userId: client._id.toString(),
-      location: "268 Shuter Street", // Assuming RMT has a location field
+      location: "268 Shuter Street",
       workplace: "",
       consentForm: null,
       consentFormSubmittedAt: null,
@@ -2997,11 +3009,11 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       location: rmt.location,
       description: `${duration} minute massage appointment`,
       start: {
-        dateTime: appointmentDate.toISOString(),
+        dateTime: `${formattedDate}T${formattedStartTime}:00`,
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: appointmentEndDate.toISOString(),
+        dateTime: `${formattedDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
     };
@@ -3023,8 +3035,8 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       whoseInfo: `${client.firstName} ${client.lastName}`,
       additionalDetails: {
         appointmentId: result.insertedId.toString(),
-        appointmentDate: date,
-        appointmentTime: time,
+        appointmentDate: formattedDate,
+        appointmentTime: formattedStartTime,
         duration: duration,
         rmtId: rmt._id.toString(),
         clientId: client._id.toString(),
@@ -3041,11 +3053,11 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       subject: "Massage Appointment Confirmation",
       text: `Hi ${client.firstName},
 
-Your massage appointment has been booked for ${date} at ${time}. 
+Your massage appointment has been booked for ${formattedDate} at ${formattedStartTime}. 
 
 Appointment Details:
-- Date: ${date}
-- Time: ${time}
+- Date: ${formattedDate}
+- Time: ${formattedStartTime}
 - Duration: ${duration} minutes
 
 Please login at ${confirmationLink} to complete the consent form and view your appointment details.
@@ -3054,11 +3066,11 @@ If you need to make any changes or have any questions, please use the website to
 `,
       html: `
         <p>Hi ${client.firstName},</p>
-        <p>Your massage appointment has been booked for ${date} at ${time}.</p>
+        <p>Your massage appointment has been booked for ${formattedDate} at ${formattedStartTime}.</p>
         <h2>Appointment Details:</h2>
         <ul>
-          <li>Date: ${date}</li>
-          <li>Time: ${time}</li>
+          <li>Date: ${formattedDate}</li>
+          <li>Time: ${formattedStartTime}</li>
           <li>Duration: ${duration} minutes</li>
         </ul>
         <p>Please login at <a href="${confirmationLink}"> www.ciprmt.com</a> to complete the consent form and view your appointment details.</p>
@@ -3072,6 +3084,158 @@ If you need to make any changes or have any questions, please use the website to
     throw new Error("Failed to book appointment. Please try again.");
   }
 }
+
+// export async function bookAppointmentForClient(clientId, appointmentData) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     if (session.resultObj.userType !== "rmt") {
+//       throw new Error("Unauthorized: Only RMTs can book appointments");
+//     }
+
+//     await checkRateLimit(
+//       session.resultObj._id,
+//       "bookAppointmentForClient",
+//       5,
+//       60
+//     ); // 5 requests per minute
+
+//     const db = await getDatabase();
+//     const usersCollection = db.collection("users");
+//     const appointmentsCollection = db.collection("appointments");
+
+//     const rmt = await usersCollection.findOne({
+//       _id: new ObjectId(session.resultObj._id),
+//     });
+//     const client = await usersCollection.findOne({
+//       _id: new ObjectId(clientId),
+//     });
+
+//     if (!client) {
+//       throw new Error("Client not found");
+//     }
+
+//     const { date, time, duration } = appointmentData;
+
+//     const appointmentDate = new Date(`${date}T${time}:00-04:00`);
+//     const appointmentEndDate = new Date(
+//       appointmentDate.getTime() + duration * 60000
+//     );
+
+//     // const appointmentDate = new Date(`${date}T${time}`);
+//     // console.log("appointmentDate", appointmentDate);
+//     // console.log("appointmentDate.toISOString()", appointmentDate.toISOString());
+//     // const appointmentEndDate = new Date(
+//     //   appointmentDate.getTime() + duration * 60000
+//     // );
+
+//     const appointmentDoc = {
+//       RMTId: new ObjectId(rmt._id),
+//       RMTLocationId: new ObjectId("673a415085f1bd8631e7a426"), // Assuming RMT has a location ID
+//       appointmentDate: date,
+//       appointmentStartTime: time,
+//       appointmentEndTime: appointmentEndDate.toTimeString().slice(0, 5),
+//       status: "booked",
+//       expiryDate: new Date(appointmentDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from appointment
+//       appointmentBeginsAt: time,
+//       appointmentEndsAt: appointmentEndDate.toTimeString().slice(0, 5),
+//       duration: duration.toString(),
+//       email: client.email,
+//       firstName: client.firstName,
+//       lastName: client.lastName,
+//       userId: client._id.toString(),
+//       location: "268 Shuter Street", // Assuming RMT has a location field
+//       workplace: "",
+//       consentForm: null,
+//       consentFormSubmittedAt: null,
+//     };
+
+//     // Create Google Calendar event
+//     // const calendar = google.calendar({ version: "v3", auth: jwtClient });
+//     const event = {
+//       summary: `[Booked] Mx: ${client.firstName} ${client.lastName}`,
+//       location: rmt.location,
+//       description: `Email: ${client.email}\nPhone: ${client.phoneNumber}`,
+//       start: {
+//         dateTime: appointmentDate.toISOString(),
+//         timeZone: "America/Toronto",
+//       },
+//       end: {
+//         dateTime: appointmentEndDate.toISOString(),
+//         timeZone: "America/Toronto",
+//       },
+//       colorId: "2",
+//     };
+
+//     const calendarEvent = await calendar.events.insert({
+//       calendarId: GOOGLE_CALENDAR_ID,
+//       resource: event,
+//     });
+
+//     appointmentDoc.googleCalendarEventId = calendarEvent.data.id;
+//     appointmentDoc.googleCalendarEventLink = calendarEvent.data.htmlLink;
+
+//     const result = await appointmentsCollection.insertOne(appointmentDoc);
+
+//     await logAuditEvent({
+//       typeOfInfo: "appointment booking",
+//       actionPerformed: "booked",
+//       accessedBy: `${rmt.firstName} ${rmt.lastName}`,
+//       whoseInfo: `${client.firstName} ${client.lastName}`,
+//       additionalDetails: {
+//         appointmentId: result.insertedId.toString(),
+//         appointmentDate: date,
+//         appointmentTime: time,
+//         duration: duration,
+//         rmtId: rmt._id.toString(),
+//         clientId: client._id.toString(),
+//       },
+//     });
+
+//     // Send email notification
+//     const transporter = getEmailTransporter();
+//     const confirmationLink = `${BASE_URL}/dashboard/patient`;
+
+//     await transporter.sendMail({
+//       from: process.env.EMAIL_USER,
+//       to: client.email,
+//       subject: "Massage Appointment Confirmation",
+//       text: `Hi ${client.firstName},
+
+// Your massage appointment has been booked for ${date} at ${time}.
+
+// Appointment Details:
+// - Date: ${date}
+// - Time: ${time}
+// - Duration: ${duration} minutes
+
+// Please login at ${confirmationLink} to complete the consent form and view your appointment details.
+
+// If you need to make any changes or have any questions, please use the website to make any changes, or reach out by text: 416-258-1230.
+// `,
+//       html: `
+//         <p>Hi ${client.firstName},</p>
+//         <p>Your massage appointment has been booked for ${date} at ${time}.</p>
+//         <h2>Appointment Details:</h2>
+//         <ul>
+//           <li>Date: ${date}</li>
+//           <li>Time: ${time}</li>
+//           <li>Duration: ${duration} minutes</li>
+//         </ul>
+//         <p>Please login at <a href="${confirmationLink}"> www.ciprmt.com</a> to complete the consent form and view your appointment details.</p>
+//         <p>If you need to make any changes or have any questions, please contact Cip at 416-258-1230.</p>
+//       `,
+//     });
+
+//     return { success: true, appointmentId: result.insertedId };
+//   } catch (error) {
+//     console.error("Error in bookAppointmentForClient:", error);
+//     throw new Error("Failed to book appointment. Please try again.");
+//   }
+// }
 
 export async function deleteAppointment(appointmentId) {
   try {
