@@ -1589,6 +1589,8 @@ export async function rescheduleAppointment(
       $set: {
         status: "requested",
         location: location,
+        firstName: firstName,
+        lastName: lastName,
         appointmentBeginsAt: formattedStartTime,
         appointmentEndsAt: formattedEndTime,
         userId: _id,
@@ -2961,6 +2963,8 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     const { date, time, duration } = appointmentData;
 
     const appointmentDate = new Date(`${date}T${time}`);
+    console.log("appointmentDate", appointmentDate);
+    console.log("appointmentDate.toISOString()", appointmentDate.toISOString());
     const appointmentEndDate = new Date(
       appointmentDate.getTime() + duration * 60000
     );
@@ -3361,7 +3365,6 @@ export async function addAppointments() {
 }
 
 export async function sendAppointmentReminders() {
-  console.log("Starting appointment reminder process...");
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
   const transporter = getEmailTransporter();
@@ -3380,8 +3383,6 @@ export async function sendAppointmentReminders() {
       })
       .toArray();
 
-    console.log(`Found ${appointments.length} appointments for tomorrow.`);
-
     for (const appointment of appointments) {
       // Determine if the consent form is completed
       const isConsentFormCompleted =
@@ -3397,12 +3398,11 @@ export async function sendAppointmentReminders() {
       await transporter.sendMail({
         from: process.env.EMAIL_USER,
         to: appointment.email,
-        subject: "Reminder: Your Massage Appointment Tomorrow",
+        bcc: process.env.EMAIL_USER, // Send a BCC to process.env.EMAIL_USER
+        subject: "Reminder: Your Upcoming Massage Appointment",
         text: emailContent.text,
         html: emailContent.html,
       });
-
-      console.log(`Sent reminder email for appointment ${appointment._id}`);
     }
 
     console.log("Appointment reminder process completed successfully.");
@@ -3416,7 +3416,7 @@ function getStandardReminderEmail(appointment) {
     text: `
       Hi ${appointment.firstName},
 
-      This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.
+      This is a friendly reminder that you have a massage appointment scheduled for ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.
 
       Location: ${appointment.location}
       Duration: ${appointment.duration} minutes
@@ -3431,9 +3431,8 @@ function getStandardReminderEmail(appointment) {
       Cip
     `,
     html: `
-      <h2>Reminder: Your Massage Appointment Tomorrow</h2>
       <p>Hi ${appointment.firstName},</p>
-      <p>This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
+      <p>This is a friendly reminder that you have a massage appointment scheduled for ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
       <ul>
         <li><strong>Location:</strong> ${appointment.location}</li>
         <li><strong>Duration:</strong> ${appointment.duration} minutes</li>
@@ -3450,17 +3449,17 @@ function getStandardReminderEmail(appointment) {
 }
 
 function getConsentFormReminderEmail(appointment) {
-  const consentFormUrl = `http://www.ciprmt.com/dashboard/patient`; // Adjust this URL as needed
+  const consentFormUrl = `http://www.ciprmt.com/dashboard/patient`;
   return {
     text: `
       Hi ${appointment.firstName},
 
-      This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.
+      This is a friendly reminder that you have a massage appointment scheduled for ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.
 
       Location: ${appointment.location}
       Duration: ${appointment.duration} minutes
 
-      IMPORTANT: You haven't completed the consent form yet. Please take a moment to fill it out before your appointment: ${consentFormUrl}
+      IMPORTANT: Please take a moment to fill out the consent form before your appointment: ${consentFormUrl}
 
       Completing the consent form in advance will save time during your visit and ensure I have all the necessary information to provide you with the best possible care.
 
@@ -3476,12 +3475,12 @@ function getConsentFormReminderEmail(appointment) {
     html: `
       <h2>Reminder: Your Massage Appointment Tomorrow</h2>
       <p>Hi ${appointment.firstName},</p>
-      <p>This is a friendly reminder that you have a massage appointment scheduled for tomorrow, ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
+      <p>This is a friendly reminder that you have a massage appointment scheduled for ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
       <ul>
         <li><strong>Location:</strong> ${appointment.location}</li>
         <li><strong>Duration:</strong> ${appointment.duration} minutes</li>
       </ul>
-      <p><strong>IMPORTANT:</strong> You haven't completed your consent form yet. Please take a moment to fill it out before your appointment:</p>
+      <p><strong>IMPORTANT:</strong> Please take a moment to fill out the consent form before your appointment:</p>
       <p><a href="${consentFormUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block;">Complete Consent Form</a></p>
       <p>Completing the consent form in advance will save time during your visit and ensure we have all the necessary information to provide you with the best possible care.</p>
        <p>If you need to make any changes, please contact me as soon as possible:</p>
