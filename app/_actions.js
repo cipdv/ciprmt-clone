@@ -3005,9 +3005,9 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     // Create Google Calendar event
     const calendar = google.calendar({ version: "v3", auth: jwtClient });
     const event = {
-      summary: `Massage Appointment: ${client.firstName} ${client.lastName}`,
+      summary: `[Booked] Mx: ${client.firstName} ${client.lastName}`,
       location: rmt.location,
-      description: `${duration} minute massage appointment`,
+      description: `Email: ${client.email}\nPhone: ${client.phoneNumber}`,
       start: {
         dateTime: `${formattedDate}T${formattedStartTime}:00`,
         timeZone: "America/Toronto",
@@ -3016,6 +3016,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
         dateTime: `${formattedDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
+      colorId: "2", // "2" corresponds to "sage" in Google Calendar
     };
 
     const calendarEvent = await calendar.events.insert({
@@ -3084,158 +3085,6 @@ If you need to make any changes or have any questions, please use the website to
     throw new Error("Failed to book appointment. Please try again.");
   }
 }
-
-// export async function bookAppointmentForClient(clientId, appointmentData) {
-//   try {
-//     const session = await getSession();
-//     if (!session || !session.resultObj) {
-//       throw new Error("Unauthorized: User not logged in");
-//     }
-
-//     if (session.resultObj.userType !== "rmt") {
-//       throw new Error("Unauthorized: Only RMTs can book appointments");
-//     }
-
-//     await checkRateLimit(
-//       session.resultObj._id,
-//       "bookAppointmentForClient",
-//       5,
-//       60
-//     ); // 5 requests per minute
-
-//     const db = await getDatabase();
-//     const usersCollection = db.collection("users");
-//     const appointmentsCollection = db.collection("appointments");
-
-//     const rmt = await usersCollection.findOne({
-//       _id: new ObjectId(session.resultObj._id),
-//     });
-//     const client = await usersCollection.findOne({
-//       _id: new ObjectId(clientId),
-//     });
-
-//     if (!client) {
-//       throw new Error("Client not found");
-//     }
-
-//     const { date, time, duration } = appointmentData;
-
-//     const appointmentDate = new Date(`${date}T${time}:00-04:00`);
-//     const appointmentEndDate = new Date(
-//       appointmentDate.getTime() + duration * 60000
-//     );
-
-//     // const appointmentDate = new Date(`${date}T${time}`);
-//     // console.log("appointmentDate", appointmentDate);
-//     // console.log("appointmentDate.toISOString()", appointmentDate.toISOString());
-//     // const appointmentEndDate = new Date(
-//     //   appointmentDate.getTime() + duration * 60000
-//     // );
-
-//     const appointmentDoc = {
-//       RMTId: new ObjectId(rmt._id),
-//       RMTLocationId: new ObjectId("673a415085f1bd8631e7a426"), // Assuming RMT has a location ID
-//       appointmentDate: date,
-//       appointmentStartTime: time,
-//       appointmentEndTime: appointmentEndDate.toTimeString().slice(0, 5),
-//       status: "booked",
-//       expiryDate: new Date(appointmentDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from appointment
-//       appointmentBeginsAt: time,
-//       appointmentEndsAt: appointmentEndDate.toTimeString().slice(0, 5),
-//       duration: duration.toString(),
-//       email: client.email,
-//       firstName: client.firstName,
-//       lastName: client.lastName,
-//       userId: client._id.toString(),
-//       location: "268 Shuter Street", // Assuming RMT has a location field
-//       workplace: "",
-//       consentForm: null,
-//       consentFormSubmittedAt: null,
-//     };
-
-//     // Create Google Calendar event
-//     // const calendar = google.calendar({ version: "v3", auth: jwtClient });
-//     const event = {
-//       summary: `[Booked] Mx: ${client.firstName} ${client.lastName}`,
-//       location: rmt.location,
-//       description: `Email: ${client.email}\nPhone: ${client.phoneNumber}`,
-//       start: {
-//         dateTime: appointmentDate.toISOString(),
-//         timeZone: "America/Toronto",
-//       },
-//       end: {
-//         dateTime: appointmentEndDate.toISOString(),
-//         timeZone: "America/Toronto",
-//       },
-//       colorId: "2",
-//     };
-
-//     const calendarEvent = await calendar.events.insert({
-//       calendarId: GOOGLE_CALENDAR_ID,
-//       resource: event,
-//     });
-
-//     appointmentDoc.googleCalendarEventId = calendarEvent.data.id;
-//     appointmentDoc.googleCalendarEventLink = calendarEvent.data.htmlLink;
-
-//     const result = await appointmentsCollection.insertOne(appointmentDoc);
-
-//     await logAuditEvent({
-//       typeOfInfo: "appointment booking",
-//       actionPerformed: "booked",
-//       accessedBy: `${rmt.firstName} ${rmt.lastName}`,
-//       whoseInfo: `${client.firstName} ${client.lastName}`,
-//       additionalDetails: {
-//         appointmentId: result.insertedId.toString(),
-//         appointmentDate: date,
-//         appointmentTime: time,
-//         duration: duration,
-//         rmtId: rmt._id.toString(),
-//         clientId: client._id.toString(),
-//       },
-//     });
-
-//     // Send email notification
-//     const transporter = getEmailTransporter();
-//     const confirmationLink = `${BASE_URL}/dashboard/patient`;
-
-//     await transporter.sendMail({
-//       from: process.env.EMAIL_USER,
-//       to: client.email,
-//       subject: "Massage Appointment Confirmation",
-//       text: `Hi ${client.firstName},
-
-// Your massage appointment has been booked for ${date} at ${time}.
-
-// Appointment Details:
-// - Date: ${date}
-// - Time: ${time}
-// - Duration: ${duration} minutes
-
-// Please login at ${confirmationLink} to complete the consent form and view your appointment details.
-
-// If you need to make any changes or have any questions, please use the website to make any changes, or reach out by text: 416-258-1230.
-// `,
-//       html: `
-//         <p>Hi ${client.firstName},</p>
-//         <p>Your massage appointment has been booked for ${date} at ${time}.</p>
-//         <h2>Appointment Details:</h2>
-//         <ul>
-//           <li>Date: ${date}</li>
-//           <li>Time: ${time}</li>
-//           <li>Duration: ${duration} minutes</li>
-//         </ul>
-//         <p>Please login at <a href="${confirmationLink}"> www.ciprmt.com</a> to complete the consent form and view your appointment details.</p>
-//         <p>If you need to make any changes or have any questions, please contact Cip at 416-258-1230.</p>
-//       `,
-//     });
-
-//     return { success: true, appointmentId: result.insertedId };
-//   } catch (error) {
-//     console.error("Error in bookAppointmentForClient:", error);
-//     throw new Error("Failed to book appointment. Please try again.");
-//   }
-// }
 
 export async function deleteAppointment(appointmentId) {
   try {
@@ -3535,7 +3384,8 @@ export async function sendAppointmentReminders() {
 
   // Get tomorrow's date in YYYY-MM-DD format
   const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  //actually set to 2 days from now, not "tomorrow," should change the variable name later
+  tomorrow.setDate(tomorrow.getDate() + 2);
   const tomorrowString = tomorrow.toISOString().split("T")[0];
 
   try {
@@ -3589,8 +3439,6 @@ function getStandardReminderEmail(appointment) {
       - Email: ${process.env.EMAIL_USER}
       - Phone: 416-258-1230
 
-      Otherwise, I look forward to seeing you tomorrow!
-
       Best regards,
       Cip
     `,
@@ -3606,7 +3454,6 @@ function getStandardReminderEmail(appointment) {
         <li>Email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></li>
         <li>Phone: 416-258-1230</li>
       </ul>
-      <p>Otherwise, I look forward to seeing you tomorrow!</p>
       <p>Best regards,<br>Cip</p>
     `,
   };
@@ -3631,13 +3478,11 @@ function getConsentFormReminderEmail(appointment) {
       - Email: ${process.env.EMAIL_USER}
       - Phone: 416-258-1230
 
-      Otherwise, I look forward to seeing you tomorrow!
-
       Best regards,
       Cip
     `,
     html: `
-      <h2>Reminder: Your Massage Appointment Tomorrow</h2>
+      <h2>Reminder: Your Upcoming Massage Appointment</h2>
       <p>Hi ${appointment.firstName},</p>
       <p>This is a friendly reminder that you have a massage appointment scheduled for ${appointment.appointmentDate}, at ${appointment.appointmentBeginsAt}.</p>
       <ul>
@@ -3652,8 +3497,95 @@ function getConsentFormReminderEmail(appointment) {
         <li>Email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a></li>
         <li>Phone: 416-258-1230</li>
       </ul>
-      <p>Otherwise, I look forward to seeing you tomorrow!</p>
       <p>Best regards,<br>Cip</p>
     `,
   };
 }
+
+//save this in case i need to populate appointments in the future
+// export async function populateAppointmentsForDateRange() {
+//   console.log("Populating appointments for Jan 13, 2025 to Jan 28, 2025...");
+//   try {
+//     const db = await getDatabase();
+
+//     // Fetch the RMT location
+//     const rmtLocation = await db.collection("rmtLocations").findOne({
+//       _id: new ObjectId("673a415085f1bd8631e7a426"), // Hardcoded ID as requested
+//     });
+
+//     if (!rmtLocation) {
+//       console.log("RMT location not found");
+//       return;
+//     }
+
+//     const startDate = new Date("2025-01-13T00:00:00-05:00"); // Ensure correct timezone
+//     const endDate = new Date("2025-01-28T23:59:59-05:00"); // Ensure correct timezone
+//     const appointments = [];
+
+//     // Iterate through each day in the date range
+//     for (
+//       let date = new Date(startDate);
+//       date <= endDate;
+//       date.setDate(date.getDate() + 1)
+//     ) {
+//       const dayName = [
+//         "Sunday",
+//         "Monday",
+//         "Tuesday",
+//         "Wednesday",
+//         "Thursday",
+//         "Friday",
+//         "Saturday",
+//       ][date.getDay()];
+
+//       // Find if this day exists in workdays
+//       const workDay = rmtLocation.formattedFormData.workDays.find(
+//         (day) => day.day === dayName
+//       );
+
+//       if (workDay) {
+//         // Add appointments for each time slot on this workday
+//         for (const timeSlot of workDay.appointmentTimes) {
+//           const appointmentDate = new Date(date);
+//           const [hours, minutes] = timeSlot.start.split(":");
+//           appointmentDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+//           const expiryDate = new Date(appointmentDate);
+//           expiryDate.setDate(appointmentDate.getDate() + 7);
+
+//           appointments.push({
+//             RMTId: new ObjectId("615b37ba970196ca0d3122fe"), // Using the RMTId from your example
+//             RMTLocationId: new ObjectId("673a415085f1bd8631e7a426"),
+//             appointmentDate: appointmentDate.toISOString().split("T")[0],
+//             appointmentStartTime: timeSlot.start,
+//             appointmentEndTime: timeSlot.end,
+//             status: "available",
+//             expiryDate: expiryDate,
+//           });
+//         }
+//       }
+//     }
+
+//     if (appointments.length > 0) {
+//       const result = await db
+//         .collection("appointments")
+//         .insertMany(appointments);
+//       console.log(`Inserted ${result.insertedCount} appointments`);
+
+//       // Ensure index for appointment expiry
+//       await db.collection("appointments").createIndex(
+//         { expiryDate: 1 },
+//         {
+//           expireAfterSeconds: 0,
+//           partialFilterExpression: { status: "available" },
+//         }
+//       );
+//     } else {
+//       console.log("No appointments to insert for the specified date range");
+//     }
+
+//     console.log("Appointment population completed successfully");
+//   } catch (error) {
+//     console.error("Error populating appointments:", error);
+//   }
+// }

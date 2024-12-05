@@ -1,6 +1,10 @@
 "use client";
 import React, { useState } from "react";
-import { addAppointments, sendAppointmentReminders } from "@/app/_actions";
+import {
+  addAppointments,
+  sendAppointmentReminders,
+  populateAppointmentsForDateRange,
+} from "@/app/_actions";
 
 const TestPage = () => {
   const [results, setResults] = useState(null);
@@ -15,6 +19,11 @@ const TestPage = () => {
     setResults(result);
   };
 
+  const handlepopulateAppointmentsForDateRange = async () => {
+    const result = await populateAppointmentsForDateRange();
+    setResults(result);
+  };
+
   return (
     <div className="space-y-4 m-8">
       <h1>Test Page</h1>
@@ -25,6 +34,14 @@ const TestPage = () => {
       <div>
         <button className="btn" onClick={handleSendAppointmentReminders}>
           Call: Send Appointment Reminders
+        </button>
+      </div>
+      <div>
+        <button
+          className="btn"
+          onClick={handlepopulateAppointmentsForDateRange}
+        >
+          Call populate appointments
         </button>
       </div>
     </div>
