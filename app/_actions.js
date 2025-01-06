@@ -3589,3 +3589,88 @@ function getConsentFormReminderEmail(appointment) {
 //     console.error("Error populating appointments:", error);
 //   }
 // }
+
+export async function getClientHealthHistory(clientId) {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const db = await getDatabase();
+    const healthHistoryCollection = db.collection("healthhistories");
+
+    // Check if the user has permission to access this health history
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      session.resultObj._id.toString() === clientId;
+
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access this health history"
+      );
+    }
+
+    // Search for both types of health history records
+    const healthHistories = await healthHistoryCollection
+      .find({
+        $or: [{ userId: new ObjectId(clientId) }, { clientId: clientId }],
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const processedHistories = healthHistories.map((history) => {
+      let processedHistory = { ...history, _id: history._id.toString() };
+
+      if (history.encryptedData) {
+        // Handle encrypted data
+        try {
+          const decrypted = decryptData(history.encryptedData);
+          if (decrypted) {
+            if (typeof decrypted === "object" && decrypted !== null) {
+              processedHistory = { ...processedHistory, ...decrypted };
+            } else {
+              console.error(
+                `Unexpected decrypted data type for health history ${history._id}:`,
+                typeof decrypted
+              );
+            }
+          } else {
+            console.error(`Failed to decrypt health history ${history._id}`);
+          }
+        } catch (error) {
+          console.error(
+            `Error processing encrypted data for health history ${history._id}:`,
+            error
+          );
+        }
+        delete processedHistory.encryptedData;
+      } else if (history.clientId) {
+        // Handle unencrypted data
+        delete processedHistory._id;
+        delete processedHistory.clientId;
+        delete processedHistory.__v;
+      }
+
+      return processedHistory;
+    });
+
+    // Log the audit event
+    await logAuditEvent({
+      typeOfInfo: "health history",
+      actionPerformed: "viewed",
+      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+      whoseInfo: clientId,
+      additionalDetails: {
+        accessedByUserId: session.resultObj._id.toString(),
+        accessedByUserType: session.resultObj.userType,
+        numberOfHistories: processedHistories.length,
+      },
+    });
+
+    return processedHistories;
+  } catch (error) {
+    console.error("Error fetching client health history:", error);
+    throw new Error("Failed to fetch client health history");
+  }
+}

@@ -1,11 +1,11 @@
-import { getClientProfile } from "@/app/_actions";
+import { getClientProfile, getClientHealthHistory } from "@/app/_actions";
 import BookAppointment from "@/components/rmt/BookAppointment";
+import ClientHealthHistory from "@/components/rmt/ClientHealthHistory";
 
 export default async function ClientProfile({ params }) {
   try {
     const client = await getClientProfile(params.id);
-
-    console.log(client);
+    const healthHistory = await getClientHealthHistory(params.id);
 
     return (
       <div className="container mx-auto max-w-5xl px-4 py-8">
@@ -19,6 +19,7 @@ export default async function ClientProfile({ params }) {
             <p className="text-gray-600">Phone: {client.phoneNumber}</p>
           </div>
           <BookAppointment clientId={params.id} />
+          <ClientHealthHistory healthHistory={healthHistory} />
         </div>
       </div>
     );
