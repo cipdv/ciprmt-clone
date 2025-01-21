@@ -11,12 +11,14 @@ const page = async () => {
 
   const rmtSetup = await getRMTSetup(currentUser.resultObj.rmtId);
 
+  console.log(rmtSetup);
+
   // Ensure rmtSetup is a plain object
   const plainRmtSetup = JSON.parse(JSON.stringify(rmtSetup));
 
   return (
     <section>
-      <BookMassageForm rmtSetup={plainRmtSetup} />
+      <BookMassageForm rmtSetup={plainRmtSetup} user={currentUser} />
     </section>
   );
 };

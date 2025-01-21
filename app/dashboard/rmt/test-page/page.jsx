@@ -3,7 +3,8 @@ import React, { useState } from "react";
 import {
   addAppointments,
   sendAppointmentReminders,
-  populateAppointmentsForDateRange,
+  addCanBookAtIdsToUser,
+  addCanBookAtIdsToAll,
 } from "@/app/_actions";
 
 const TestPage = () => {
@@ -19,9 +20,8 @@ const TestPage = () => {
     setResults(result);
   };
 
-  const handlepopulateAppointmentsForDateRange = async () => {
-    const result = await populateAppointmentsForDateRange();
-    setResults(result);
+  const handleaddCanBookAtIdsToAll = async () => {
+    const result = await addCanBookAtIdsToAll();
   };
 
   return (
@@ -36,12 +36,10 @@ const TestPage = () => {
           Call: Send Appointment Reminders
         </button>
       </div>
+
       <div>
-        <button
-          className="btn"
-          onClick={handlepopulateAppointmentsForDateRange}
-        >
-          Call populate appointments
+        <button className="btn" onClick={handleaddCanBookAtIdsToAll}>
+          Call: Add Can Book At Ids To All Users
         </button>
       </div>
     </div>

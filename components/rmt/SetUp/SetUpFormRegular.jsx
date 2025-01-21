@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { RMTSetup } from "@/app/_actions";
 
-const SetupForm = () => {
+const SetUpFormRegular = () => {
   // form states
   const [step, setStep] = useState(1);
   const [address, setAddress] = useState({
@@ -389,7 +389,7 @@ const SetupForm = () => {
         </div>
       )}
 
-      {step === 3 && (
+      {/* {step === 3 && (
         <div className="mx-auto max-w-4xl px-4 mt-20 mb-4">
           <div className="flex items-center space-x-8">
             <div className="space-y-2 flex-grow">
@@ -435,8 +435,8 @@ const SetupForm = () => {
           </div>
           <StepButtons />
         </div>
-      )}
-      {step === 4 && (
+      )} */}
+      {step === 3 && (
         <div className="mx-auto max-w-4xl px-4 mt-20 mb-4">
           <div className="flex items-center space-x-8">
             <div className="space-y-2 flex-grow">
@@ -562,7 +562,7 @@ const SetupForm = () => {
           <StepButtons />
         </div>
       )}
-      {step === 5 && (
+      {step === 4 && (
         <div className="mx-auto max-w-4xl px-4 mt-20 mb-4">
           <div className="flex items-center space-x-8">
             <div className="space-y-2 flex-grow">
@@ -605,7 +605,7 @@ const SetupForm = () => {
         </div>
       )}
 
-      {step === 6 && (
+      {step === 5 && (
         <div className="mx-auto max-w-4xl px-4 mt-20 mb-4">
           <div className="flex items-center space-x-8">
             <div className="space-y-2 flex-grow">
@@ -851,7 +851,7 @@ const SetupForm = () => {
           </div>
         </div>
       )}
-      {step === 7 && (
+      {step === 6 && (
         <div>
           <div className="mx-auto max-w-4xl px-4 mt-20 mb-4">
             <div className="flex items-center space-x-8">
@@ -952,4 +952,4 @@ const SetupForm = () => {
   );
 };
 
-export default SetupForm;
+export default SetUpFormRegular;

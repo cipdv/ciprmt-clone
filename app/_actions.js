@@ -668,6 +668,131 @@ export async function RMTSetup({
   return;
 }
 
+export async function RMTIrregularSetup(formData) {
+  const session = await getSession();
+  if (session.resultObj.userType !== "rmt") {
+    return {
+      success: false,
+      message: "You must be logged in as a RMT to create a new set up.",
+    };
+  }
+
+  const { address, contactInfo, workDays, massageServices } = formData;
+
+  const trimAndCapitalize = (str) =>
+    typeof str === "string" ? str.trim().toUpperCase() : "";
+  const capitalize = (str) =>
+    typeof str === "string"
+      ? str.trim().replace(/\b\w/g, (char) => char.toUpperCase())
+      : "";
+  const formatPhoneNumber = (phone) => {
+    const cleaned =
+      typeof phone === "string" ? phone.trim().replace(/\D/g, "") : "";
+    const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+    if (match) {
+      return `${match[1]}-${match[2]}-${match[3]}`;
+    }
+    return phone;
+  };
+
+  const formattedFormData = {
+    address: {
+      locationName: capitalize(address.locationName),
+      streetAddress: address.streetAddress.trim(),
+      city: capitalize(address.city),
+      province: capitalize(address.province),
+      country: capitalize(address.country),
+      postalCode: trimAndCapitalize(address.postalCode),
+    },
+    contactInfo: {
+      phone: formatPhoneNumber(contactInfo.phone),
+      email: contactInfo.email.trim().toLowerCase(),
+    },
+    workDays,
+    massageServices,
+  };
+
+  const { _id } = session.resultObj;
+  const db = await getDatabase();
+
+  const setup = {
+    userId: _id,
+    formattedFormData: {
+      address: formattedFormData.address,
+      contactInfo: formattedFormData.contactInfo,
+      workDays,
+      workplaceType: "irregular",
+      massageServices,
+    },
+  };
+
+  try {
+    const result = await db.collection("rmtLocations").insertOne(setup);
+    if (result.acknowledged) {
+      console.log("Document inserted with _id:", result.insertedId);
+
+      const appointments = [];
+      const today = new Date();
+
+      for (const workDay of setup.formattedFormData.workDays) {
+        const appointmentDate = new Date(workDay.date);
+        for (const timeSlot of workDay.appointmentTimes) {
+          const expiryDate = new Date(appointmentDate);
+          expiryDate.setDate(expiryDate.getDate() + 7);
+
+          appointments.push({
+            RMTId: new ObjectId(session.resultObj._id),
+            RMTLocationId: result.insertedId,
+            appointmentDate: appointmentDate.toISOString().split("T")[0],
+            appointmentStartTime: timeSlot.start,
+            appointmentEndTime: timeSlot.end,
+            status: "available",
+            expiryDate: expiryDate,
+          });
+        }
+      }
+
+      const appointmentResult = await db
+        .collection("appointments")
+        .insertMany(appointments);
+      if (appointmentResult.acknowledged) {
+        console.log("Appointments inserted:", appointmentResult.insertedCount);
+
+        await db.collection("appointments").createIndex(
+          { expiryDate: 1 },
+          {
+            expireAfterSeconds: 0,
+            partialFilterExpression: { status: "available" },
+          }
+        );
+
+        return {
+          success: true,
+          message: "Therapist setup and appointments created successfully.",
+        };
+      } else {
+        console.error("Failed to insert appointments.");
+        return {
+          success: false,
+          message: "Failed to create appointments.",
+        };
+      }
+    } else {
+      console.error("Failed to insert the document.");
+      return {
+        success: false,
+        message: "Failed to create therapist setup.",
+      };
+    }
+  } catch (error) {
+    console.error("An error occurred while inserting the document:", error);
+    return {
+      success: false,
+      message: "An error occurred during setup.",
+    };
+  }
+}
+
 export const getRMTSetup = async () => {
   const session = await getSession();
 
@@ -729,9 +854,23 @@ export async function getUsersAppointments(id) {
 export const getAvailableAppointments = async (rmtLocationId, duration) => {
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
+  const rmtLocationsCollection = db.collection("rmtLocations");
+
+  // Fetch the RMT location details
+  const rmtLocation = await rmtLocationsCollection.findOne({
+    _id: new ObjectId(rmtLocationId),
+  });
+
+  if (!rmtLocation) {
+    throw new Error("RMT location not found");
+  }
+
+  const { workplaceType } = rmtLocation;
 
   // Convert duration to an integer
   const durationMinutes = parseInt(duration, 10);
+
+  let availableTimes = [];
 
   // Fetch appointments with the given rmtLocationId and status 'available'
   const appointments = await appointmentsCollection
@@ -741,33 +880,53 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     })
     .toArray();
 
-  const availableTimes = [];
+  if (workplaceType === "irregular") {
+    // For irregular workplaces, use the stored appointmentTimes without adding breaks
+    appointments.forEach((appointment) => {
+      const startTime = new Date(
+        `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+      );
+      const endTime = new Date(
+        `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+      );
 
-  appointments.forEach((appointment) => {
-    const startTime = new Date(
-      `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
-    );
-    const endTime = new Date(
-      `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
-    );
-
-    let currentTime = new Date(startTime);
-
-    while (currentTime <= endTime) {
-      const nextTime = new Date(currentTime);
-      nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
-
-      if (nextTime <= endTime) {
+      // Check if the appointment duration fits within the available time slot
+      if (endTime.getTime() - startTime.getTime() >= durationMinutes * 60000) {
         availableTimes.push({
           date: appointment.appointmentDate,
-          startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
-          endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+          startTime: appointment.appointmentStartTime,
+          endTime: appointment.appointmentEndTime,
         });
       }
+    });
+  } else {
+    // For regular workplaces, use the existing logic
+    appointments.forEach((appointment) => {
+      const startTime = new Date(
+        `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+      );
+      const endTime = new Date(
+        `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+      );
 
-      currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
-    }
-  });
+      let currentTime = new Date(startTime);
+
+      while (currentTime <= endTime) {
+        const nextTime = new Date(currentTime);
+        nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
+
+        if (nextTime <= endTime) {
+          availableTimes.push({
+            date: appointment.appointmentDate,
+            startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
+            endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+          });
+        }
+
+        currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
+      }
+    });
+  }
 
   // Fetch busy times from Google Calendar
   const now = new Date();
@@ -850,6 +1009,131 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
   return sortedAvailableTimes;
 };
+
+// export const getAvailableAppointments = async (rmtLocationId, duration) => {
+//   const db = await getDatabase();
+//   const appointmentsCollection = db.collection("appointments");
+
+//   // Convert duration to an integer
+//   const durationMinutes = parseInt(duration, 10);
+
+//   // Fetch appointments with the given rmtLocationId and status 'available'
+//   const appointments = await appointmentsCollection
+//     .find({
+//       RMTLocationId: new ObjectId(rmtLocationId),
+//       status: "available",
+//     })
+//     .toArray();
+
+//   const availableTimes = [];
+
+//   appointments.forEach((appointment) => {
+//     const startTime = new Date(
+//       `${appointment.appointmentDate}T${appointment.appointmentStartTime}`
+//     );
+//     const endTime = new Date(
+//       `${appointment.appointmentDate}T${appointment.appointmentEndTime}`
+//     );
+
+//     let currentTime = new Date(startTime);
+
+//     while (currentTime <= endTime) {
+//       const nextTime = new Date(currentTime);
+//       nextTime.setMinutes(currentTime.getMinutes() + durationMinutes);
+
+//       if (nextTime <= endTime) {
+//         availableTimes.push({
+//           date: appointment.appointmentDate,
+//           startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
+//           endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+//         });
+//       }
+
+//       currentTime.setMinutes(currentTime.getMinutes() + 30); // Increment by 30 minutes
+//     }
+//   });
+
+//   // Fetch busy times from Google Calendar
+//   const now = new Date();
+//   const oneMonthLater = new Date();
+//   oneMonthLater.setMonth(now.getMonth() + 2.5);
+
+//   const busyTimes = await calendar.freebusy.query({
+//     requestBody: {
+//       timeMin: now.toISOString(),
+//       timeMax: oneMonthLater.toISOString(),
+//       items: [{ id: GOOGLE_CALENDAR_ID }],
+//       timeZone: "America/Toronto",
+//     },
+//   });
+
+//   const busyPeriods = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.map(
+//     (period) => {
+//       const start = period.start;
+//       const end = period.end;
+
+//       // Function to add or subtract minutes from a date-time string
+//       const addMinutes = (dateTimeStr, minutes) => {
+//         const [date, time] = dateTimeStr.split("T");
+//         const [hours, minutesStr] = time.split(":");
+//         const totalMinutes =
+//           parseInt(hours) * 60 + parseInt(minutesStr) + minutes;
+//         const newHours = Math.floor(totalMinutes / 60)
+//           .toString()
+//           .padStart(2, "0");
+//         const newMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+//         return `${date}T${newHours}:${newMinutes}:00Z`;
+//       };
+
+//       // Function to convert date-time string to desired format
+//       const formatDateTime = (dateTimeStr) => {
+//         const [date, time] = dateTimeStr.split("T");
+//         const [hours, minutes] = time.split(":");
+//         return {
+//           date,
+//           time: `${hours}:${minutes}`,
+//         };
+//       };
+
+//       const bufferedStart = addMinutes(start, -30); // Subtract 30 minutes from start
+//       const bufferedEnd = addMinutes(end, 30); // Add 30 minutes to end
+
+//       return {
+//         date: formatDateTime(bufferedStart).date,
+//         startTime: formatDateTime(bufferedStart).time,
+//         endTime: formatDateTime(bufferedEnd).time,
+//       };
+//     }
+//   );
+
+//   // Filter out conflicting times
+//   const filteredAvailableTimes = availableTimes.filter((available) => {
+//     return !busyPeriods.some((busy) => {
+//       return (
+//         available.date === busy.date &&
+//         ((available.startTime >= busy.startTime &&
+//           available.startTime < busy.endTime) ||
+//           (available.endTime > busy.startTime &&
+//             available.endTime <= busy.endTime) ||
+//           (available.startTime <= busy.startTime &&
+//             available.endTime >= busy.endTime))
+//       );
+//     });
+//   });
+
+//   // Filter out dates that are not greater than today
+//   const today = new Date().toISOString().split("T")[0];
+//   const futureAvailableTimes = filteredAvailableTimes.filter(
+//     (available) => available.date > today
+//   );
+
+//   // Sort the results by date
+//   const sortedAvailableTimes = futureAvailableTimes.sort(
+//     (a, b) => new Date(a.date) - new Date(b.date)
+//   );
+
+//   return sortedAvailableTimes;
+// };
 
 export async function bookAppointment({
   location,
@@ -1243,7 +1527,6 @@ export const getAllAvailableAppointments = async (
   duration,
   currentEventGoogleId
 ) => {
-  console.log(":D:D:D:D:D", rmtLocationId, duration, currentEventGoogleId);
   const db = await getDatabase();
   const appointmentsCollection = db.collection("appointments");
 
@@ -1254,11 +1537,9 @@ export const getAllAvailableAppointments = async (
   const appointments = await appointmentsCollection
     .find({
       RMTLocationId: new ObjectId(rmtLocationId),
-      // status: { $in: ["available", "rescheduling"] },
+      status: { $in: ["available", "rescheduling"] },
     })
     .toArray();
-
-  console.log("appointments", appointments);
 
   const availableTimes = [];
 
@@ -3324,44 +3605,55 @@ export async function addAppointments() {
       "Saturday",
     ][today.getDay()];
 
-    // Fetch all RMT locations
-    const rmtLocations = await db.collection("rmtLocations").find().toArray();
+    // Fetch the specific RMT location
+    const location = await db
+      .collection("rmtLocations")
+      .findOne({ _id: new ObjectId("673a415085f1bd8631e7a426") });
 
-    for (const location of rmtLocations) {
-      const workDay = location.formattedFormData.workDays.find(
-        (day) => day.day === currentDay
-      );
+    if (!location) {
+      console.log("Specified RMT location not found");
+      return;
+    }
 
-      if (workDay) {
-        const appointments = [];
+    const workDay = location.formattedFormData.workDays.find(
+      (day) => day.day === currentDay
+    );
 
-        const appointmentDate = new Date(today);
-        appointmentDate.setDate(today.getDate() + 56); // 8 weeks from today
+    if (workDay) {
+      const appointments = [];
 
-        for (const timeSlot of workDay.appointmentTimes) {
-          const expiryDate = new Date(appointmentDate);
-          expiryDate.setDate(appointmentDate.getDate() + 7);
+      const appointmentDate = new Date(today);
+      appointmentDate.setDate(today.getDate() + 56); // 8 weeks from today
 
-          appointments.push({
-            RMTId: new ObjectId(location.userId),
-            RMTLocationId: location._id,
-            appointmentDate: appointmentDate.toISOString().split("T")[0], // Format as "YYYY-MM-DD"
-            appointmentStartTime: timeSlot.start,
-            appointmentEndTime: timeSlot.end,
-            status: "available",
-            expiryDate: expiryDate,
-          });
-        }
+      for (const timeSlot of workDay.appointmentTimes) {
+        const expiryDate = new Date(appointmentDate);
+        expiryDate.setDate(appointmentDate.getDate() + 7);
 
-        if (appointments.length > 0) {
-          const result = await db
-            .collection("appointments")
-            .insertMany(appointments);
-          console.log(
-            `Inserted ${result.insertedCount} appointments for RMT ${location.userId}`
-          );
-        }
+        appointments.push({
+          RMTId: new ObjectId(location.userId),
+          RMTLocationId: location._id,
+          appointmentDate: appointmentDate.toISOString().split("T")[0], // Format as "YYYY-MM-DD"
+          appointmentStartTime: timeSlot.start,
+          appointmentEndTime: timeSlot.end,
+          status: "available",
+          expiryDate: expiryDate,
+        });
       }
+
+      if (appointments.length > 0) {
+        const result = await db
+          .collection("appointments")
+          .insertMany(appointments);
+        console.log(
+          `Inserted ${result.insertedCount} appointments for RMT ${location.userId}`
+        );
+      } else {
+        console.log("No appointments to insert for the specified RMT location");
+      }
+    } else {
+      console.log(
+        `No work day found for ${currentDay} for the specified RMT location`
+      );
     }
 
     // Ensure index for appointment expiry
@@ -3373,9 +3665,77 @@ export async function addAppointments() {
       }
     );
   } catch (error) {
-    console.error("Error in cron job:", error);
+    console.error("Error in addAppointments function:", error);
   }
 }
+
+// export async function addAppointments() {
+//   try {
+//     const db = await getDatabase();
+
+//     const today = new Date();
+//     const currentDay = [
+//       "Sunday",
+//       "Monday",
+//       "Tuesday",
+//       "Wednesday",
+//       "Thursday",
+//       "Friday",
+//       "Saturday",
+//     ][today.getDay()];
+
+//     // Fetch all RMT locations
+//     const rmtLocations = await db.collection("rmtLocations").find().toArray();
+
+//     for (const location of rmtLocations) {
+//       const workDay = location.formattedFormData.workDays.find(
+//         (day) => day.day === currentDay
+//       );
+
+//       if (workDay) {
+//         const appointments = [];
+
+//         const appointmentDate = new Date(today);
+//         appointmentDate.setDate(today.getDate() + 56); // 8 weeks from today
+
+//         for (const timeSlot of workDay.appointmentTimes) {
+//           const expiryDate = new Date(appointmentDate);
+//           expiryDate.setDate(appointmentDate.getDate() + 7);
+
+//           appointments.push({
+//             RMTId: new ObjectId(location.userId),
+//             RMTLocationId: location._id,
+//             appointmentDate: appointmentDate.toISOString().split("T")[0], // Format as "YYYY-MM-DD"
+//             appointmentStartTime: timeSlot.start,
+//             appointmentEndTime: timeSlot.end,
+//             status: "available",
+//             expiryDate: expiryDate,
+//           });
+//         }
+
+//         if (appointments.length > 0) {
+//           const result = await db
+//             .collection("appointments")
+//             .insertMany(appointments);
+//           console.log(
+//             `Inserted ${result.insertedCount} appointments for RMT ${location.userId}`
+//           );
+//         }
+//       }
+//     }
+
+//     // Ensure index for appointment expiry
+//     await db.collection("appointments").createIndex(
+//       { expiryDate: 1 },
+//       {
+//         expireAfterSeconds: 0,
+//         partialFilterExpression: { status: "available" },
+//       }
+//     );
+//   } catch (error) {
+//     console.error("Error in cron job:", error);
+//   }
+// }
 
 export async function sendAppointmentReminders() {
   const db = await getDatabase();
@@ -3672,5 +4032,44 @@ export async function getClientHealthHistory(clientId) {
   } catch (error) {
     console.error("Error fetching client health history:", error);
     throw new Error("Failed to fetch client health history");
+  }
+}
+
+export async function addCanBookAtIdsToAll() {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    const users = await usersCollection.find().toArray();
+
+    for (const user of users) {
+      await usersCollection.updateOne(
+        { _id: user._id },
+        { $set: { canBookAtIds: [new ObjectId("673a415085f1bd8631e7a426")] } }
+      );
+    }
+
+    console.log("Added canBookAtIds to all users");
+  } catch (error) {
+    console.error("Error adding canBookAtIds to all users:", error);
+  }
+}
+
+export async function addCanBookAtIdsToUser() {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    await usersCollection.updateOne(
+      { _id: new ObjectId("6647ca0931451e7a50f3b5d1") },
+      { $set: { canBookAtIds: [new ObjectId("673a415085f1bd8631e7a426")] } }
+    );
+
+    console.log(`Added canBookAtIds to user with _id: ${userId}`);
+  } catch (error) {
+    console.error(
+      `Error adding canBookAtIds to user with _id: ${userId}`,
+      error
+    );
   }
 }

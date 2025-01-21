@@ -10,6 +10,7 @@ import {
 export default function RescheduleMassageForm({
   rmtSetup,
   currentAppointment,
+  user,
 }) {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
@@ -39,8 +40,6 @@ export default function RescheduleMassageForm({
             parseInt(formData.duration),
             currentAppointment.googleCalendarEventId
           );
-
-          console.log("times", times);
 
           const sortedTimes = times.sort(
             (a, b) => new Date(a.date) - new Date(b.date)
@@ -239,6 +238,13 @@ export default function RescheduleMassageForm({
     });
   };
 
+  const usersLocations = user?.resultObj?.canBookAtIds;
+  const filterLocations = (rmtSetup, canBOokatIds) => {
+    return rmtSetup.filter((setup) => canBOokatIds.includes(setup._id));
+  };
+
+  const filteredLocations = filterLocations(rmtSetup, usersLocations);
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -290,7 +296,8 @@ export default function RescheduleMassageForm({
             <option value="" disabled>
               Select a location
             </option>
-            {rmtSetup.map((setup, index) => (
+
+            {filteredLocations.map((setup, index) => (
               <option
                 key={index}
                 value={setup.formattedFormData.address.streetAddress}

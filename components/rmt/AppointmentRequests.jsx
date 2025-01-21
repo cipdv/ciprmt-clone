@@ -30,9 +30,7 @@ const AppointmentRequests = ({ appointments }) => {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">
-        Appointment Requests
-      </h2>
+      <h2 className="text-xl font-semibold mb-4">Appointment Requests</h2>
       {appointmentRequests.length === 0 ? (
         <div className="p-8 bg-white rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">

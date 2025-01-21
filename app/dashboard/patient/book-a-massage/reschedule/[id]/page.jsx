@@ -39,6 +39,7 @@ export default async function ReschedulePage({ params }) {
       <RescheduleMassageForm
         rmtSetup={plainRmtSetup}
         currentAppointment={appointment}
+        user={currentUser}
       />
     </section>
   );
