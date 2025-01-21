@@ -138,6 +138,7 @@ export async function registerNewPatient(prevState, formData) {
       password: hashedPassword,
       rmtId: new ObjectId("615b37ba970196ca0d3122fe"),
       createdAt: new Date(),
+      canBookAtIds: [new ObjectId("673a415085f1bd8631e7a426")],
     };
 
     await db.collection("users").insertOne(newPatient);
