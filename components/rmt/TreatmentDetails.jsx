@@ -20,6 +20,13 @@ const TreatmentDetails = ({ treatment, onSelectTreatment }) => {
     onSelectTreatment(treatment);
   };
 
+  const handleDNS = (e) => {
+    e.preventDefault();
+    console.log(
+      "DNS clicked - add DNS count to user's profile (if 2 or more, user can't book online), set appointment status to DNS, add DNS balance to user's profile"
+    );
+  };
+
   return (
     <div
       className={`bg-white shadow-md rounded-lg p-6 cursor-move ${
@@ -43,6 +50,11 @@ const TreatmentDetails = ({ treatment, onSelectTreatment }) => {
           <span className="font-semibold">Date:</span>{" "}
           {new Date(treatment.appointmentDate).toLocaleDateString()}
         </p>
+      </div>
+      <div>
+        <button className="btn mt-4" onClick={handleDNS}>
+          DNS
+        </button>
       </div>
       <p className="mt-4 text-sm text-gray-500">
         Tap or drag this card to add treatment notes

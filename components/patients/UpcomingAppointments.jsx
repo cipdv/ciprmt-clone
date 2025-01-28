@@ -3,7 +3,11 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { setAppointmentStatus, keepAppointment } from "@/app/_actions";
+import {
+  setAppointmentStatus,
+  keepAppointment,
+  getRMTSetupById,
+} from "@/app/_actions";
 import AppointmentNeedToKnow from "./AppointmentNeedToKnow";
 import { CancelAppointmentForm } from "./CancelAppointmentButton";
 import AppointmentConsent from "./AppointmentConsentForm";
@@ -28,10 +32,14 @@ const formatAppointment = (appointment) => {
   return { ...appointment, formattedDate, formattedTime };
 };
 
-const AppointmentItem = ({ appointment }) => {
+const AppointmentItem = ({ appointment, locations }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
   const router = useRouter();
+
+  const location = locations.find(
+    (location) => location._id === appointment.RMTLocationId
+  );
 
   const handleReschedule = async () => {
     setIsProcessing(true);
@@ -164,11 +172,14 @@ const AppointmentItem = ({ appointment }) => {
           </div>
         )}
       </div>
+      <div className="mt-4">
+        <AppointmentNeedToKnow location={location} />
+      </div>
     </div>
   );
 };
 
-const AppointmentList = ({ appointments }) => (
+const AppointmentList = ({ appointments, locations }) => (
   <div className="space-y-4 flex-grow w-full">
     <h1 className="text-3xl mb-6">
       Your upcoming massage{" "}
@@ -176,7 +187,13 @@ const AppointmentList = ({ appointments }) => (
       scheduled for:
     </h1>
     {appointments.map((appointment, index) => (
-      <AppointmentItem key={appointment._id} appointment={appointment} />
+      <div>
+        <AppointmentItem
+          key={appointment._id}
+          appointment={appointment}
+          locations={locations}
+        />
+      </div>
     ))}
   </div>
 );
@@ -194,7 +211,7 @@ const NoAppointments = () => (
   </div>
 );
 
-export default function UpcomingAppointments({ appointments }) {
+export default function UpcomingAppointments({ appointments, locations }) {
   const upcomingAppointments = appointments
     ? appointments
         .filter(
@@ -216,10 +233,13 @@ export default function UpcomingAppointments({ appointments }) {
       <div className="flex flex-col items-start space-y-8">
         {upcomingAppointments.length > 0 ? (
           <>
-            <AppointmentList appointments={upcomingAppointments} />
-            <div className="w-full">
-              <AppointmentNeedToKnow />
-            </div>
+            <AppointmentList
+              appointments={upcomingAppointments}
+              locations={locations}
+            />
+            {/* <div className="w-full">
+              <AppointmentNeedToKnow appointments={upcomingAppointments} />
+            </div> */}
           </>
         ) : (
           <NoAppointments />

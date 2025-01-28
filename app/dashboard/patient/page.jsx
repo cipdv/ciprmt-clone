@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { getSession, getUsersAppointments } from "@/app/_actions";
+import { getRMTSetup, getSession, getUsersAppointments } from "@/app/_actions";
 import UpcomingAppointments from "@/components/patients/UpcomingAppointments";
 
 function LoadingFallback() {
@@ -13,10 +13,11 @@ function LoadingFallback() {
 export default async function PatientDashboardPage() {
   const currentUser = await getSession();
   const appointments = await getUsersAppointments(currentUser.resultObj._id);
+  const locations = await getRMTSetup();
 
   return (
     <Suspense fallback={<LoadingFallback />}>
-      <UpcomingAppointments appointments={appointments} />
+      <UpcomingAppointments appointments={appointments} locations={locations} />
     </Suspense>
   );
 }

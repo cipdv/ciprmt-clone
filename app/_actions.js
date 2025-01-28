@@ -190,6 +190,108 @@ export async function registerNewPatient(prevState, formData) {
   redirect("/");
 }
 
+export async function registerNewWorkplacePatient(prevState, formData) {
+  try {
+    const result = registerPatientSchema.safeParse(
+      Object.fromEntries(formData.entries())
+    );
+
+    if (!result.success) {
+      return {
+        errors: result.error.flatten().fieldErrors,
+      };
+    }
+
+    const { confirmPassword, ...patientData } = result.data;
+
+    const db = await getDatabase();
+    const patientExists = await db
+      .collection("users")
+      .findOne({ email: patientData.email });
+
+    if (patientExists) {
+      return { errors: { email: ["This email is already registered"] } };
+    }
+
+    const officename = formData.get("officename");
+    const office = await db
+      .collection("rmtLocations")
+      .findOne({ URL: officename });
+
+    const hashedPassword = await bcrypt.hash(patientData.password, 10);
+
+    const newPatient = {
+      ...patientData,
+      userType: "patient",
+      password: hashedPassword,
+      rmtId: new ObjectId("615b37ba970196ca0d3122fe"),
+      createdAt: new Date(),
+      canBookAtIds: [
+        new ObjectId("673a415085f1bd8631e7a426"),
+        new ObjectId(office._id),
+      ],
+    };
+
+    await db.collection("users").insertOne(newPatient);
+
+    const sessionData = {
+      resultObj: {
+        ...newPatient,
+        password: undefined,
+      },
+    };
+
+    const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+    const session = await encrypt({ ...sessionData, expires });
+
+    cookies().set("session", session, {
+      expires,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+
+    const transporter = getEmailTransporter();
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: `New Workplace Patient Registration for ${
+        office.formattedFormData.address.locationName ||
+        office.formattedFormData.address.streetAddress
+      }`,
+      text: `A new patient has registered: ${patientData.firstName} ${
+        patientData.lastName
+      } (${patientData.email}) at ${
+        office.formattedFormData.address.locationName ||
+        office.formattedFormData.address.streetAddress
+      }`,
+      html: `
+        <h1>New Patient Registration</h1>
+        <p>A new patient has registered from ${
+          office.formattedFormData.address.locationName ||
+          office.formattedFormData.address.streetAddress
+        } with the following details:</p>
+        <ul>
+          <li>Name: ${patientData.firstName} ${patientData.lastName}</li>
+          <li>Email: ${patientData.email}</li>
+          <li>Phone: ${patientData?.phoneNumber || "N/A"}</li>
+        </ul>
+      `,
+    });
+
+    revalidatePath("/");
+  } catch (error) {
+    console.error(error);
+    return {
+      message: "An unexpected error occurred. Please try again later.",
+    };
+  }
+
+  // Redirect outside of try-catch
+  redirect("/");
+}
+
 export async function login(prevState, formData) {
   const formDataObj = Object.fromEntries(formData.entries());
   formDataObj.rememberMe = formDataObj.rememberMe === "on";
@@ -678,7 +780,8 @@ export async function RMTIrregularSetup(formData) {
     };
   }
 
-  const { address, contactInfo, workDays, massageServices } = formData;
+  const { address, contactInfo, workDays, massageServices, locationDetails } =
+    formData;
 
   const trimAndCapitalize = (str) =>
     typeof str === "string" ? str.trim().toUpperCase() : "";
@@ -705,6 +808,11 @@ export async function RMTIrregularSetup(formData) {
       country: capitalize(address.country),
       postalCode: trimAndCapitalize(address.postalCode),
     },
+    locationDetails: {
+      description: locationDetails.description,
+      payment: locationDetails.payment,
+      whatToWear: locationDetails.whatToWear,
+    },
     contactInfo: {
       phone: formatPhoneNumber(contactInfo.phone),
       email: contactInfo.email.trim().toLowerCase(),
@@ -721,10 +829,14 @@ export async function RMTIrregularSetup(formData) {
     formattedFormData: {
       address: formattedFormData.address,
       contactInfo: formattedFormData.contactInfo,
+      locationDetails: formattedFormData.locationDetails,
       workDays,
       workplaceType: "irregular",
       massageServices,
     },
+    URL: formattedFormData.address.locationName
+      .replace(/\s+/g, "")
+      .toLowerCase(),
   };
 
   try {
@@ -807,6 +919,15 @@ export const getRMTSetup = async () => {
 
   return serializeDocument(setupArray);
 };
+
+export async function getRMTSetupById(id) {
+  const db = await getDatabase();
+  const setup = await db
+    .collection("rmtLocations")
+    .findOne({ _id: new ObjectId(id) });
+
+  return serializeDocument(setup);
+}
 
 export async function getUsersAppointments(id) {
   try {

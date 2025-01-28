@@ -38,9 +38,13 @@ const Intro = () => {
                 give you the best treatment possible. Your health and well-being
                 are just as important to me as my own.
               </p>
+              <p className="text-sm sm:text-base">
+                All are welcome and I promise to treat everyone equally with
+                respect and kindness.
+              </p>
               <div>
                 <Link href="/auth/sign-in">
-                  <button className="px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2">
+                  <button className="mt-2 px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2">
                     Book a Massage
                   </button>
                 </Link>

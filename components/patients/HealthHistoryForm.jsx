@@ -147,7 +147,7 @@ export default function HealthHistoryForm({ user, initialHealthHistory }) {
         <h2 className="text-2xl font-bold">Doctor's Information</h2>
         {renderField(
           "doctor.noDoctor",
-          "I don't currently have a family doctor",
+          "I currently do not have a family doctor",
           "checkbox"
         )}
         {!watchNoDoctor && (
@@ -349,19 +349,19 @@ export default function HealthHistoryForm({ user, initialHealthHistory }) {
       {/* Policies section */}
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">
-          Policies: Cancellations and Privacy
+          Policies: Privacy and Cancellations
         </h2>
         {renderField(
           "privacyPolicy",
-          "I have read and agree to the privacy policy",
+          "I have read and agree to the privacy & cancellation policies",
           "checkbox"
         )}
         <Link
-          href="/privacypolicy"
+          href="/dashboard/patient/privacy-policy"
           target="_blank"
           className="text-blue-600 hover:underline"
         >
-          Read Privacy Policy
+          Read Privacy & Cancellation Policies
         </Link>
       </div>
 

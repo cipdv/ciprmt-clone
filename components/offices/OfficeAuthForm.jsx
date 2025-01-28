@@ -1,8 +1,9 @@
 "use client";
 
-import { login, registerNewPatient } from "@/app/_actions";
+import { login, registerNewWorkplacePatient } from "@/app/_actions";
 import { useFormState, useFormStatus } from "react-dom";
 import { useState } from "react";
+import Link from "next/link";
 
 const initialSignInState = {
   email: "",
@@ -13,6 +14,14 @@ const initialSignInState = {
 const initialSignUpState = {
   errors: {},
   message: "",
+  firstName: "",
+  preferredName: "",
+  lastName: "",
+  pronouns: "",
+  phoneNumber: "",
+  email: "",
+  password: "",
+  confirmPassword: "",
 };
 
 function SignInButton() {
@@ -44,14 +53,14 @@ function SignUpButton() {
   );
 }
 
-const AuthForm = () => {
+const AuthForm = ({ officename }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [signInState, signInFormAction] = useFormState(
     login,
     initialSignInState
   );
-  const [signUpState, signUpFormAction] = useFormState(
-    registerNewPatient,
+  const [state, signUpFormAction] = useFormState(
+    registerNewWorkplacePatient,
     initialSignUpState
   );
 
@@ -67,164 +76,158 @@ const AuthForm = () => {
   };
 
   return (
-    <div className="bg-authForms p-4 rounded-md mt-6 w-full lg:w-2/5 mx-auto space-y-4">
-      <h1 className="text-2xl font-bold mb-4">Login</h1>
-      <div className="border-b border-black my-6">
-        <form action={signInFormAction} className="space-y-4 mb-10">
+    <form
+      action={signUpFormAction}
+      className="bg-authForms p-4 rounded-md mt-6 w-full lg:w-2/5 mx-auto space-y-4"
+    >
+      <h1 className="text-2xl font-bold">Register to Book a Massage</h1>
+      <div className="flex flex-col gap-3 glassmorphism mt-4">
+        <h1 className="font-bold">Personal information</h1>
+        <input name="officename" value={officename} readOnly hidden />
+
+        <label htmlFor="firstName">First Name</label>
+        <input
+          type="text"
+          id="firstName"
+          name="firstName"
+          placeholder="Legal first name"
+          required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        />
+        {state?.errors?.firstName && (
+          <p className="text-red-500 text-sm">{state.errors.firstName[0]}</p>
+        )}
+        <label htmlFor="preferredName">Preferred Name</label>
+        <input
+          type="text"
+          id="preferredName"
+          name="preferredName"
+          placeholder="Name you go by"
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        />
+        {state?.errors?.preferredName && (
+          <p className="text-red-500 text-sm">
+            {state.errors.preferredName[0]}
+          </p>
+        )}
+        <label htmlFor="lastName">Last Name</label>
+        <input
+          type="text"
+          id="lastName"
+          name="lastName"
+          placeholder="Full last name"
+          required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        />
+        {state?.errors?.lastName && (
+          <p className="text-red-500 text-sm">{state.errors.lastName[0]}</p>
+        )}
+        <label htmlFor="pronouns">Pronouns</label>
+        <select
+          id="pronouns"
+          name="pronouns"
+          defaultValue={""}
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        >
+          <option value="" disabled="disabled">
+            Select
+          </option>
+          <option value="they/them">They/them</option>
+          <option value="she/her">She/her</option>
+          <option value="he/him">He/him</option>
+          <option value="other">Other</option>
+        </select>
+        {state?.errors?.pronouns && (
+          <p className="text-red-500 text-sm">{state.errors.pronouns[0]}</p>
+        )}
+        <label htmlFor="phoneNumber">Phone Number</label>
+        <input
+          type="tel"
+          id="phoneNumber"
+          name="phoneNumber"
+          placeholder="123-456-7890"
+          required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        />
+        {state?.errors?.phoneNumber && (
+          <p className="text-red-500 text-sm">{state.errors.phoneNumber[0]}</p>
+        )}
+        <h1 className="font-bold mt-4">Login information</h1>
+        <label htmlFor="email">Email</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          placeholder="Will be used as login"
+          required
+          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        />
+        {state?.errors?.email && (
+          <p className="text-red-500 text-sm">{state.errors.email[0]}</p>
+        )}
+        <label htmlFor="password">Password</label>
+        <div className="flex items-center">
           <input
-            type="email"
-            name="email"
-            placeholder="Email"
+            type={showPassword ? "text" : "password"}
+            id="password"
+            name="password"
+            placeholder="8 characters minimum"
             required
             className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
           />
-          <div className="flex items-center">
-            <input
-              type={showPassword ? "text" : "password"}
-              name="password"
-              placeholder="Password"
-              required
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            />
-            <button
-              type="button"
-              onClick={togglePasswordVisibility}
-              className="ml-2 transform transition-transform duration-300 hover:scale-110"
-            >
-              <img
-                src={
-                  showPassword
-                    ? "/images/icons8-hide-16.png"
-                    : "/images/icons8-eye-16.png"
-                }
-                alt={showPassword ? "Hide password" : "Show password"}
-              />
-            </button>
-          </div>
-          {signInState.message && (
-            <p className="text-red-500 text-lg font-bold">
-              {signInState.message}
-            </p>
-          )}
-          <SignInButton />
-          <p className="mt-4 text-gray-600">
-            <a href="/password-reset" className="hover:text-gray-800">
-              Forgot your password? Click here.
-            </a>
+          <button
+            type="button"
+            onClick={togglePasswordVisibility}
+            className="ml-2 transform transition-transform duration-300 hover:scale-110"
+          >
+            {showPassword ? (
+              <img src="/images/icons8-hide-16.png" alt="Hide password" />
+            ) : (
+              <img src="/images/icons8-eye-16.png" alt="Show password" />
+            )}
+          </button>
+        </div>
+        {state?.errors?.password && (
+          <p className="text-red-500 text-sm">{state.errors.password[0]}</p>
+        )}
+        <label htmlFor="confirmPassword">Confirm Password</label>
+        <div className="flex items-center mb-4">
+          <input
+            type={showConfirmPassword ? "text" : "password"}
+            id="confirmPassword"
+            name="confirmPassword"
+            placeholder="Confirm password"
+            required
+            className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+          />
+          <button
+            type="button"
+            onClick={toggleConfirmPasswordVisibility}
+            className="ml-2 transform transition-transform duration-300 hover:scale-110"
+          >
+            {showConfirmPassword ? (
+              <img src="/images/icons8-hide-16.png" alt="Hide password" />
+            ) : (
+              <img src="/images/icons8-eye-16.png" alt="Show password" />
+            )}
+          </button>
+        </div>
+        {state?.errors?.confirmPassword && (
+          <p className="text-red-500 text-sm">
+            {state.errors.confirmPassword[0]}
           </p>
-        </form>
+        )}
+        <h2 className="mt-4 text-bold">
+          <Link href="/auth/sign-in">
+            Already have an account? Click here to sign in.
+          </Link>
+        </h2>
+        {state?.message && (
+          <p className="text-red-500 text-lg text-bold">{state.message}</p>
+        )}
+        <SignUpButton />
       </div>
-      <div>
-        <h1 className="text-2xl font-bold mb-4">First Time Here? Sign-up:</h1>
-
-        <form action={signUpFormAction} className="space-y-4 mt-10">
-          <div className="flex flex-col gap-3">
-            <h2 className="font-bold">Personal information</h2>
-            <input
-              type="text"
-              name="firstName"
-              placeholder="Legal first name"
-              required
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            />
-            <input
-              type="text"
-              name="preferredName"
-              placeholder="Preferred name"
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            />
-            <input
-              type="text"
-              name="lastName"
-              placeholder="Full last name"
-              required
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            />
-            <select
-              name="pronouns"
-              defaultValue=""
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            >
-              <option value="" disabled>
-                Select pronouns
-              </option>
-              <option value="they/them">They/them</option>
-              <option value="she/her">She/her</option>
-              <option value="he/him">He/him</option>
-              <option value="other">Other</option>
-            </select>
-            <input
-              type="tel"
-              name="phoneNumber"
-              placeholder="Phone number (123-456-7890)"
-              required
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            />
-
-            <h2 className="font-bold mt-4">Login information</h2>
-            <input
-              type="email"
-              name="email"
-              placeholder="Email (will be used as login)"
-              required
-              className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-            />
-            <div className="flex items-center">
-              <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                placeholder="Password (8 characters minimum)"
-                required
-                className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-              />
-              <button
-                type="button"
-                onClick={togglePasswordVisibility}
-                className="ml-2 transform transition-transform duration-300 hover:scale-110"
-              >
-                <img
-                  src={
-                    showPassword
-                      ? "/images/icons8-hide-16.png"
-                      : "/images/icons8-eye-16.png"
-                  }
-                  alt={showPassword ? "Hide password" : "Show password"}
-                />
-              </button>
-            </div>
-            <div className="flex items-center">
-              <input
-                type={showConfirmPassword ? "text" : "password"}
-                name="confirmPassword"
-                placeholder="Confirm password"
-                required
-                className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
-              />
-              <button
-                type="button"
-                onClick={toggleConfirmPasswordVisibility}
-                className="ml-2 transform transition-transform duration-300 hover:scale-110"
-              >
-                <img
-                  src={
-                    showConfirmPassword
-                      ? "/images/icons8-hide-16.png"
-                      : "/images/icons8-eye-16.png"
-                  }
-                  alt={showConfirmPassword ? "Hide password" : "Show password"}
-                />
-              </button>
-            </div>
-          </div>
-          {signUpState.message && (
-            <p className="text-red-500 text-lg font-bold">
-              {signUpState.message}
-            </p>
-          )}
-          <SignUpButton />
-        </form>
-      </div>
-    </div>
+    </form>
   );
 };
 

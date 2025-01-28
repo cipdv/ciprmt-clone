@@ -9,14 +9,15 @@ const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
     findings: "",
     treatment: {
       specificTreatment: "",
-      generalTreatment: "",
+      generalTreatment:
+        "Compressions bi: feet, entire legs and glutes, entire back and UFT region, arms and hands, anterior shoulder girdles and upper chest, neck, scalp and face. Stretching bi: ankle d/p flexion, knee flexion, hip flexion/extension/abduction/adduction/IR/ER/SLR/FABER, spinal rotation/ext/lateral flexion, T/S extension, GH flexion/extension/horizontal abduction/adduction, scapulae retraction/depression/general mobilization, neck flexion/ext/rotation/lateral flexion.",
     },
     results: {
       subjectiveResults: "",
       objectiveResults: "",
     },
     remex: "",
-    referToHCP: "",
+    referToHCP: "none given",
     notes: "",
     paymentType: "",
     price: "",

@@ -15,6 +15,11 @@ export default function TherapistSetupForm() {
       country: "",
       postalCode: "",
     },
+    locationDetails: {
+      description: "",
+      payment: "",
+      whatToWear: "",
+    },
     contactInfo: {
       phone: "",
       email: "",
@@ -190,6 +195,57 @@ export default function TherapistSetupForm() {
             placeholder="Postal Code"
             className="w-full p-2 border rounded"
             required
+          />
+        </div>
+      </div>
+      <div>
+        <h3 className="text-xl font-semibold mb-4">Location Details</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <textarea
+            name="description"
+            value={formData.locationDetails.description}
+            onChange={(e) =>
+              setFormData((prevData) => ({
+                ...prevData,
+                locationDetails: {
+                  ...prevData.locationDetails,
+                  description: e.target.value,
+                },
+              }))
+            }
+            placeholder="Description"
+            className="w-full p-2 border rounded"
+            required
+          />
+          <textarea
+            name="payment"
+            value={formData.locationDetails.payment}
+            onChange={(e) =>
+              setFormData((prevData) => ({
+                ...prevData,
+                locationDetails: {
+                  ...prevData.locationDetails,
+                  payment: e.target.value,
+                },
+              }))
+            }
+            placeholder="Payment"
+            className="w-full p-2 border rounded"
+          />
+          <textarea
+            name="whatToWear"
+            value={formData.locationDetails.whatToWear}
+            onChange={(e) =>
+              setFormData((prevData) => ({
+                ...prevData,
+                locationDetails: {
+                  ...prevData.locationDetails,
+                  whatToWear: e.target.value,
+                },
+              }))
+            }
+            placeholder="What to Wear"
+            className="w-full p-2 border rounded"
           />
         </div>
       </div>

@@ -18,6 +18,7 @@ const Navbar = ({ session, logout }) => {
           <Link href="/" className="text-3xl font-serif" onClick={closeMenu}>
             CipRMT.com
           </Link>
+
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="lg:hidden focus:outline-none focus:ring-2 focus:ring-white"
@@ -92,6 +93,17 @@ const NavItems = ({ session, logout, closeMenu, mobile = false }) => {
                 height={24}
               />
             </a>
+          </li>
+          <li className={itemClass}>
+            <Image
+              src="/images/pride-flag.png"
+              alt="pride flag"
+              className="hover:opacity-80 transition duration-300 inline-block"
+              onClick={closeMenu}
+              rel="noopener noreferrer"
+              width={30}
+              height={30}
+            />
           </li>
           <li className={itemClass}>
             <Link href="/auth/sign-in" onClick={closeMenu}>
