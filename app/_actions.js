@@ -4195,3 +4195,352 @@ export async function addCanBookAtIdsToUser() {
     );
   }
 }
+
+export async function getMostRecentAppointments() {
+  try {
+    const db = await getDatabase();
+    const appointmentsCollection = db.collection("treatments");
+
+    // Define the start and end dates for the year 2024 as strings
+    const startDate = "2024-01-01";
+    const endDate = "2024-12-31";
+
+    // Query to find appointments within the year 2024
+    const oldAppointments = await appointmentsCollection
+      .find({
+        date: {
+          $gte: startDate,
+          $lte: endDate,
+        },
+      })
+      .toArray();
+
+    // Group appointments by clientId and find the most recent appointment for each user
+    const mostRecentAppointments = oldAppointments.reduce(
+      (acc, appointment) => {
+        const { clientId } = appointment;
+        if (!acc[clientId] || acc[clientId].date < appointment.date) {
+          acc[clientId] = appointment;
+        }
+        return acc;
+      },
+      {}
+    );
+
+    console.log("Most Recent Appointments:", mostRecentAppointments);
+
+    return Object.values(mostRecentAppointments);
+  } catch (error) {
+    console.error("Error fetching most recent appointments:", error);
+    throw new Error("Failed to fetch most recent appointments");
+  }
+}
+
+export async function emailBeenAWhile() {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    const transporter = getEmailTransporter();
+
+    // List of users with their names and dates
+    const usersList = [
+      { firstName: "Nicole", lastName: "Spiegelaar", date: "2024-01-03" },
+      { firstName: "Robert", lastName: "Aiello", date: "2024-04-22" },
+      { firstName: "Julian", lastName: "Andrei", date: "2024-06-25" },
+      { firstName: "Jason", lastName: "DeFreitas", date: "2024-01-17" },
+      { firstName: "Bradley", lastName: "Donaldson", date: "2024-01-16" },
+      { firstName: "Yiding", lastName: "Franco Cheng", date: "2024-01-30" },
+      { firstName: "Kevin", lastName: "Landry", date: "2024-01-30" },
+      { firstName: "Dean", lastName: "MUNROE", date: "2024-04-03" },
+      { firstName: "Neill", lastName: "Kernohan", date: "2024-07-02" },
+      { firstName: "Zhenyu", lastName: "Zhan", date: "2024-02-01" },
+      { firstName: "Matthew", lastName: "Oh", date: "2024-04-28" },
+      { firstName: "Robert", lastName: "Wright", date: "2024-02-05" },
+      { firstName: "Joshua", lastName: "Katz", date: "2024-11-14" },
+      { firstName: "Ryan", lastName: "Chyzie", date: "2024-02-25" },
+      { firstName: "Justin", lastName: "Dowling", date: "2024-02-26" },
+      { firstName: "Rick", lastName: "Pereira", date: "2024-05-09" },
+      { firstName: "Vincent", lastName: "Koo", date: "2024-04-21" },
+      { firstName: "Luke", lastName: "Opdahl", date: "2024-03-31" },
+      { firstName: "Reinier", lastName: "Tromp", date: "2024-04-17" },
+      { firstName: "David", lastName: "Mazzacato", date: "2024-04-11" },
+      { firstName: "Jon", lastName: "T", date: "2024-04-14" },
+      { firstName: "Christian", lastName: "Baines", date: "2024-11-12" },
+      { firstName: "Alex", lastName: "Tulk", date: "2024-04-18" },
+      { firstName: "Eric", lastName: "Seguin", date: "2024-04-22" },
+      { firstName: "Chris", lastName: "Pike", date: "2024-09-16" },
+      { firstName: "Peter", lastName: "Rogers", date: "2024-05-08" },
+      { firstName: "Paul", lastName: "Starostin", date: "2024-10-23" },
+      { firstName: "Terence", lastName: "Franco", date: "2024-05-20" },
+      { firstName: "J", lastName: "Deschamps", date: "2024-05-26" },
+      { firstName: "Victor", lastName: "Y Liu", date: "2024-06-03" },
+      { firstName: "Timothy", lastName: "Burbidge", date: "2024-07-14" },
+      { firstName: "Doug", lastName: "Doyle-Baker", date: "2024-06-05" },
+      { firstName: "Karina", lastName: "Kaimova", date: "2024-06-23" },
+      { firstName: "Michael", lastName: "San Diego", date: "2024-06-18" },
+      { firstName: "Steve", lastName: "Lessard", date: "2024-06-27" },
+      { firstName: "Marvin", lastName: "Imperial", date: "2024-07-01" },
+      { firstName: "Aiden", lastName: "Xu", date: "2024-07-03" },
+      { firstName: "Phi", lastName: "Luong", date: "2024-07-09" },
+      { firstName: "Michael", lastName: "Fazal", date: "2024-07-10" },
+      { firstName: "Emily", lastName: "Van de Laar", date: "2024-07-21" },
+      { firstName: "Brian", lastName: "Rieper", date: "2024-08-11" },
+      { firstName: "Tarek", lastName: "Elganainy", date: "2024-09-10" },
+      { firstName: "Daniel", lastName: "Lynau", date: "2024-09-18" },
+      { firstName: "Justin", lastName: "Lorentz", date: "2024-10-02" },
+      { firstName: "Yatin", lastName: "Dhamija", date: "2024-10-03" },
+      { firstName: "Adam", lastName: "Jagdat", date: "2024-10-07" },
+      { firstName: "Tri", lastName: "Huynh", date: "2024-10-09" },
+      { firstName: "Daniel", lastName: "Molina Valencia", date: "2024-10-21" },
+      { firstName: "Barry", lastName: "Reid", date: "2024-10-30" },
+    ];
+    // Query to find users by first name and last name
+    const users = await usersCollection
+      .find({
+        $or: usersList.map((user) => ({
+          firstName: user.firstName,
+          lastName: user.lastName,
+        })),
+      })
+      .toArray();
+
+    // Map the users to return only the required fields and serialize the documents
+    const result = users.map((user) => ({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+    }));
+
+    // Send email to each user
+    // for (const user of result) {
+    //   const mailOptions = {
+    //     from: "cipdevries@ciprmt.com",
+    //     to: user.email,
+    //     subject: "It's been a while since your last massage appointment",
+    //     text: `Hi ${user.firstName},\n\nIt's been a while since your last massage appointment, so I just wanted to check in to see how you're feeling. If all is well, that’s great! If you’re feeling tense, achy or just need to relax, feel free to set up an appointment by logging in at ciprmt.com (your old login will still work on the new website), and click "book an appointment" to see all the available times.\n\nIf you no longer wish to seek massage treatments from me, that’s okay too. I’d appreciate your feedback, if you can spare a couple minutes to complete this survey it would really help me improve.\n\nWishing you a happy and healthy day,\nCip\ncipdevries@ciprmt.com\n416-258-1230\nwww.ciprmt.com`,
+    //     html: `<p>Hi ${user.firstName},</p>
+    //            <p>It's been a while since your last massage appointment, so I just wanted to check in to see how you're feeling. If all is well, that’s great! If you’re feeling tense, achy or just need to relax, feel free to set up an appointment by logging in at <a href="https://www.ciprmt.com">ciprmt.com</a> (your old login will still work on the new website), and click "book an appointment" to see all the available times.</p>
+    //            <p>If you no longer wish to seek massage treatments from me, that’s okay too. I’d appreciate your feedback, if you can spare a couple minutes to <a href="https://www.ciprmt.com/survey">complete this survey</a> it would really help me improve.</p>
+    //            <p>Wishing you a happy and healthy day,<br>Cip</p>
+    //            <p>cipdevries@ciprmt.com<br>416-258-1230<br><a href="https://www.ciprmt.com">www.ciprmt.com</a></p>`,
+    //   };
+
+    //   await transporter.sendMail(mailOptions);
+    //   console.log(`Email sent to ${user.email}`);
+    // }
+
+    for (const user of result) {
+      const mailOptions = {
+        from: "cipdevries@ciprmt.com",
+        to: user.email,
+        subject: "It's been a while since your last massage appointment",
+        text: `Hi ${user.firstName},\n\nIt's been a while since your last massage appointment, so I just wanted to check in to see how you're feeling. If all is well, that’s great! If you’re feeling tense, achy or just need to relax, feel free to set up an appointment by logging in at ciprmt.com (your old login will still work on the new website), and click "book an appointment" to see all the available times.\n\nIf you no longer wish to seek massage treatments from me, that’s okay too. I’d appreciate your feedback, if you can spare a couple minutes to complete this survey it would really help me improve.\n\nWishing you a happy and healthy day,\nCip\ncipdevries@ciprmt.com\n416-258-1230\nwww.ciprmt.com`,
+        html: `<p>Hi ${user.firstName},</p>
+               <p>It's been a while since your last massage appointment, so I just wanted to check in to see how you're feeling. If all is well, that’s great! If you’re feeling tense, achy or just need to relax, feel free to set up an appointment by logging in at <a href="https://www.ciprmt.com">ciprmt.com</a> (your old login will still work on the new website), and click "book an appointment" to see all the available times.</p>
+               <p>If you no longer wish to seek massage treatments from me, that’s okay too. I’d appreciate your feedback, if you can spare a couple minutes to <a href="https://www.ciprmt.com/survey">complete this survey</a>, or simply reply to this email, it would really help me improve.</p>
+               <p>Wishing you a happy and healthy day,<br>Cip</p>
+               <p>cipdevries@ciprmt.com<br>416-258-1230<br><a href="https://www.ciprmt.com">www.ciprmt.com</a></p>`,
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log(`Email sent to ${user.email}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    throw new Error("Failed to fetch users");
+  }
+}
+
+export async function submitBeenAWhileSurvey(formData) {
+  try {
+    const db = await getDatabase();
+    const surveysCollection = db.collection("surveys");
+
+    // Add surveyTitle to the formData
+    const surveyData = {
+      ...formData,
+      surveyTitle: "exitSurvey",
+    };
+
+    // Insert the survey data into the surveys collection
+    const result = await surveysCollection.insertOne(surveyData);
+    console.log("Survey submitted:", surveyData);
+
+    return { success: true, message: "Survey submitted successfully" };
+  } catch (error) {
+    console.error("Error submitting survey:", error);
+    throw new Error("Failed to submit survey");
+  }
+}
+
+export async function unsubscribeEmail(email) {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    // Update the user's subscription status
+    const result = await usersCollection.updateOne(
+      { email },
+      { $set: { emailList: false } }
+    );
+
+    if (result.modifiedCount === 0) {
+      throw new Error("Email not found or already unsubscribed");
+    }
+
+    // Send notification email to cipdevries@ciprmt.com
+    const transporter = getEmailTransporter();
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: "Unsubscribe Notification",
+      text: `The following email has unsubscribed from the email list: ${email}`,
+      html: `<p>The following email has unsubscribed from the email list: <strong>${email}</strong></p>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Unsubscribe notification sent to cipdevries@ciprmt.com`);
+
+    return { success: true, message: "User unsubscribed successfully" };
+  } catch (error) {
+    console.error("Error unsubscribing:", error);
+    throw new Error("Failed to unsubscribe");
+  }
+}
+
+import path from "path";
+
+export async function sendValentinesDayEmail() {
+  try {
+    const db = await getDatabase();
+    const usersCollection = db.collection("users");
+
+    // List of users to exclude
+    const excludeUsersList = [
+      { firstName: "Nicole", lastName: "Spiegelaar" },
+      { firstName: "Robert", lastName: "Aiello" },
+      { firstName: "Julian", lastName: "Andrei" },
+      { firstName: "Jason", lastName: "DeFreitas" },
+      { firstName: "Bradley", lastName: "Donaldson" },
+      { firstName: "Yiding", lastName: "Franco Cheng" },
+      { firstName: "Kevin", lastName: "Landry" },
+      { firstName: "Dean", lastName: "MUNROE" },
+      { firstName: "Neill", lastName: "Kernohan" },
+      { firstName: "Zhenyu", lastName: "Zhan" },
+      { firstName: "Matthew", lastName: "Oh" },
+      { firstName: "Robert", lastName: "Wright" },
+      { firstName: "Joshua", lastName: "Katz" },
+      { firstName: "Ryan", lastName: "Chyzie" },
+      { firstName: "Justin", lastName: "Dowling" },
+      { firstName: "Rick", lastName: "Pereira" },
+      { firstName: "Vincent", lastName: "Koo" },
+      { firstName: "Luke", lastName: "Opdahl" },
+      { firstName: "Reinier", lastName: "Tromp" },
+      { firstName: "David", lastName: "Mazzacato" },
+      { firstName: "Jon", lastName: "T" },
+      { firstName: "Christian", lastName: "Baines" },
+      { firstName: "Alex", lastName: "Tulk" },
+      { firstName: "Eric", lastName: "Seguin" },
+      { firstName: "Chris", lastName: "Pike" },
+      { firstName: "Peter", lastName: "Rogers" },
+      { firstName: "Paul", lastName: "Starostin" },
+      { firstName: "Terence", lastName: "Franco" },
+      { firstName: "J", lastName: "Deschamps" },
+      { firstName: "Victor", lastName: "Y Liu" },
+      { firstName: "Timothy", lastName: "Burbidge" },
+      { firstName: "Doug", lastName: "Doyle-Baker" },
+      { firstName: "Karina", lastName: "Kaimova" },
+      { firstName: "Michael", lastName: "San Diego" },
+      { firstName: "Steve", lastName: "Lessard" },
+      { firstName: "Marvin", lastName: "Imperial" },
+      { firstName: "Aiden", lastName: "Xu" },
+      { firstName: "Phi", lastName: "Luong" },
+      { firstName: "Michael", lastName: "Fazal" },
+      { firstName: "Emily", lastName: "Van de Laar" },
+      { firstName: "Brian", lastName: "Rieper" },
+      { firstName: "Tarek", lastName: "Elganainy" },
+      { firstName: "Daniel", lastName: "Lynau" },
+      { firstName: "Justin", lastName: "Lorentz" },
+      { firstName: "Yatin", lastName: "Dhamija" },
+      { firstName: "Adam", lastName: "Jagdat" },
+      { firstName: "Tri", lastName: "Huynh" },
+      { firstName: "Daniel", lastName: "Molina Valencia" },
+      { firstName: "Barry", lastName: "Reid" },
+    ];
+
+    // Query to find users who are subscribed to the email list and not in the exclude list
+    const users = await usersCollection
+      .find({
+        $nor: excludeUsersList.map((user) => ({
+          firstName: user.firstName,
+          lastName: user.lastName,
+        })),
+      })
+      .toArray();
+
+    console.log(users);
+
+    // Map the users to return only the required fields
+    const result = users.map((user) => ({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+    }));
+
+    const transporter = getEmailTransporter();
+
+    for (const user of result) {
+      const emailContent = {
+        subject: "Valentine's Day Gift Idea",
+        text: `Hi ${user.firstName},
+
+If you're looking for a last minute Valentine's Day gift for a partner, friend or family member, consider giving the gift of Massage! 
+If you'd like a gift certificate to give to a loved one, simply reply to this email and I can customize a card for you.
+
+Happy Valentine's Day to you as well :)
+Have a great day,
+Cip
+
+If you no longer wish to receive these emails, you can unsubscribe here: https://www.ciprmt.com/unsubscribe`,
+        html: `<p>Hi ${user.firstName},</p>
+               <p>If you're looking for a last minute Valentine's Day gift for a partner, friend or family member, consider giving the gift of Massage! 
+               If you'd like a gift certificate to give to a loved one, simply reply to this email and I can customize a card for you.</p>
+               <img src="cid:valentines-gift-card" alt="Valentine's Gift Card" style="max-width: 100%; height: auto;">
+               <p>Happy Valentine's Day to you as well :)</p>
+               <p>Have a great day,<br>Cip</p>
+               <p style="font-size: 12px; color: #888888;">If you no longer wish to receive these emails, you can <a href="https://www.ciprmt.com/unsubscribe" style="color: #888888;">unsubscribe here</a>.</p>`,
+        attachments: [
+          {
+            filename: "Valentines-Gift-Card.png",
+            path: path.join(
+              process.cwd(),
+              "public/images/Valentines-Gift-Card.png"
+            ),
+            cid: "valentines-gift-card", // same cid value as in the html img src
+          },
+        ],
+      };
+
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: user.email,
+        subject: emailContent.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+        attachments: emailContent.attachments,
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log(`Email sent to ${user.email}`);
+    }
+
+    return { success: true, message: "Emails sent successfully" };
+  } catch (error) {
+    console.error("Error sending emails:", error);
+    throw new Error("Failed to send emails");
+  }
+}

@@ -31,7 +31,8 @@ export async function middleware(request) {
       "/contact",
       "/faq",
       "/reset-password",
-
+      "/survey",
+      "/unsubscribe",
       new RegExp("^/workplace-wellness/.*$"),
       new RegExp("^/password-reset/set-new-password/.*$"),
     ].some((path) =>
