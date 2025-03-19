@@ -1,6 +1,4 @@
 "use client";
-
-import React from "react";
 import { updateAppointmentStatus } from "@/app/_actions";
 import { useFormStatus } from "react-dom";
 
@@ -23,15 +21,12 @@ function SubmitButton({ children }) {
   );
 }
 
-const AppointmentRequests = ({ appointments }) => {
-  const appointmentRequests = appointments.filter(
-    (appointment) => appointment.status === "requested"
-  );
-
+const AppointmentRequests = ({ requestedAppointments }) => {
+  console.log(requestedAppointments);
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">Appointment Requests</h2>
-      {appointmentRequests.length === 0 ? (
+      {requestedAppointments.length === 0 ? (
         <div className="p-8 bg-white rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
             There are currently no appointment requests.
@@ -39,25 +34,36 @@ const AppointmentRequests = ({ appointments }) => {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {appointmentRequests.map((appointment) => (
+          {requestedAppointments.map((appointment, index) => (
             <div
-              key={appointment._id}
+              key={appointment.id || `appointment-${index}`}
               className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200"
             >
               <div className="mb-4">
                 <h3 className="font-semibold text-lg mb-2 text-gray-800">
-                  {appointment.firstName} {appointment.lastName}
+                  {appointment.firstName || "N/A"}{" "}
+                  {appointment.lastName || "N/A"}
                 </h3>
                 <div className="space-y-1 text-sm text-gray-600">
                   <p>
-                    {appointment.appointmentDate} at{" "}
-                    {appointment.appointmentBeginsAt}
+                    {appointment.appointmentDate
+                      ? new Date(
+                          appointment.appointmentDate
+                        ).toLocaleDateString("en-US", {
+                          weekday: "long",
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })
+                      : "No date specified"}
+                    {appointment.appointmentBeginsAt &&
+                      ` at ${appointment.appointmentBeginsAt}`}
                   </p>
-                  <p>for {appointment.duration} minutes</p>
+                  {/* <p>for {appointment.duration} minutes</p>
                   <p>
                     <span className="font-medium">Reason:</span>{" "}
                     {appointment?.consentForm?.reasonForMassage || "Unknown"}
-                  </p>
+                  </p> */}
                 </div>
               </div>
               <div className="flex justify-between mt-4 space-x-2">
@@ -65,7 +71,7 @@ const AppointmentRequests = ({ appointments }) => {
                   <input
                     type="hidden"
                     name="appointmentId"
-                    value={appointment._id}
+                    value={appointment.id || ""}
                   />
                   <input type="hidden" name="status" value="booked" />
                   <SubmitButton>Accept</SubmitButton>
@@ -74,7 +80,7 @@ const AppointmentRequests = ({ appointments }) => {
                   <input
                     type="hidden"
                     name="appointmentId"
-                    value={appointment._id}
+                    value={appointment.id || ""}
                   />
                   <input type="hidden" name="status" value="available" />
                   <SubmitButton>Deny</SubmitButton>

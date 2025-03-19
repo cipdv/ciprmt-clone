@@ -57,7 +57,7 @@ export default function Receipts({ receipts }) {
                 key={receipt._id}
                 className="bg-white shadow hover:bg-gray-200 rounded-lg p-4"
               >
-                <Link href={`/dashboard/patient/receipts/${receipt._id}`}>
+                <Link href={`/dashboard/patient/receipts/${receipt.id}`}>
                   <div className="flex justify-between items-center transition-colors duration-150 ease-in-out">
                     <div>
                       <p className="font-semibold">

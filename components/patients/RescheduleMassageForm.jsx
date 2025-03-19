@@ -30,6 +30,7 @@ export default function RescheduleMassageForm({
   });
 
   useEffect(() => {
+    console.log(rmtSetup);
     const fetchAppointments = async () => {
       if (formData.RMTLocationId && formData.duration) {
         setLoading(true);
@@ -260,18 +261,40 @@ export default function RescheduleMassageForm({
         </h2>
         <p>
           <strong>Date:</strong>{" "}
-          {new Date(
-            `${currentAppointment.appointmentDate}T00:00:00`
-          ).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-            timeZone: "UTC",
-          })}
+          {(() => {
+            // Handle different date formats
+            try {
+              let dateObj;
+              if (currentAppointment.date) {
+                // PostgreSQL format
+                dateObj = new Date(currentAppointment.date);
+              } else if (currentAppointment.appointmentDate) {
+                // MongoDB format
+                dateObj = new Date(
+                  `${currentAppointment.appointmentDate}T00:00:00`
+                );
+              } else {
+                return "Not specified";
+              }
+
+              return dateObj.toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "UTC",
+              });
+            } catch (e) {
+              console.error("Error formatting date:", e);
+              return "Date format error";
+            }
+          })()}
         </p>
         <p>
           <strong>Time:</strong>{" "}
-          {formatTime(currentAppointment.appointmentBeginsAt)}
+          {formatTime(
+            currentAppointment.appointmentBeginsAt ||
+              currentAppointment.appointment_begins_at
+          )}
         </p>
         <p>
           <strong>Duration:</strong> {currentAppointment.duration} minutes

@@ -4,10 +4,44 @@ import React from "react";
 import { jsPDF } from "jspdf";
 
 const ReceiptDownloadButton = ({ receipt, user }) => {
+  // Format date to "Month Day, Year" format
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const options = {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC", // Use UTC to avoid timezone issues
+    };
+    return date.toLocaleDateString("en-US", options);
+  };
+
+  // Format time to 12-hour format
+  const formatTime = (timeString) => {
+    if (!timeString) return "N/A";
+
+    const timeParts = timeString.split(":");
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = parseInt(timeParts[1], 10);
+
+    const date = new Date(2000, 0, 1, hours, minutes);
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
   const generatePDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageCenter = pageWidth / 2;
+
+    // Format the date and time
+    const formattedDate = formatDate(receipt.date);
+    const formattedTime = formatTime(
+      receipt.appointment_begins_at || receipt.appointment_start_time
+    );
 
     // Add background color
     doc.setFillColor(180, 200, 194); // Light green color
@@ -53,7 +87,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
       "center"
     );
     doc.text(
-      `Date of treatment: ${receipt.appointmentDate || receipt.date}`,
+      `Date of treatment: ${formattedDate}`,
       pageCenter,
       80,
       null,
@@ -61,7 +95,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
       "center"
     );
     doc.text(
-      `Time of treatment: ${receipt.appointmentBeginsAt || receipt.time}`,
+      `Time of treatment: ${formattedTime}`,
       pageCenter,
       85,
       null,
@@ -85,7 +119,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
       "center"
     );
     doc.text(
-      `Receipt number: ${receipt._id}`,
+      `Receipt number: ${receipt.id}`,
       pageCenter,
       100,
       null,
@@ -116,7 +150,7 @@ const ReceiptDownloadButton = ({ receipt, user }) => {
     }
 
     // Save the PDF
-    doc.save(`RMTreceipt-${receipt._id}.pdf`);
+    doc.save(`RMTreceipt-${receipt.id}.pdf`);
   };
 
   return (

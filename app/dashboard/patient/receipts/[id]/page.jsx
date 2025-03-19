@@ -33,8 +33,14 @@ const formatPrice = (price) => {
 const formatTime = (timeString) => {
   if (!timeString) return "N/A";
 
-  const [hours, minutes] = timeString.split(":");
+  // Handle PostgreSQL time format (HH:MM:SS)
+  const timeParts = timeString.split(":");
+  const hours = parseInt(timeParts[0], 10);
+  const minutes = parseInt(timeParts[1], 10);
+
+  // Create a date object with the parsed hours and minutes
   const date = new Date(2000, 0, 1, hours, minutes); // Year, month, and day are arbitrary
+
   return date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -69,7 +75,7 @@ async function ReceiptDetails({ params }) {
             <p className="text-gray-600">Time:</p>
             <p className="font-semibold">
               {formatTime(
-                isAppointment ? receipt.appointmentBeginsAt : receipt.time
+                receipt.appointment_begins_at || receipt.appointment_start_time
               )}
             </p>
           </div>
@@ -86,7 +92,7 @@ async function ReceiptDetails({ params }) {
           {!isAppointment && (
             <div>
               <p className="text-gray-600">Payment Type:</p>
-              <p className="font-semibold">{receipt.paymentType || "N/A"}</p>
+              <p className="font-semibold">{receipt.payment_type || "N/A"}</p>
             </div>
           )}
         </div>

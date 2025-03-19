@@ -2,15 +2,12 @@ import AppointmentRequests from "@/components/rmt/AppointmentRequests";
 import Calendar from "@/components/rmt/Calendar";
 import NotesToComplete from "@/components/rmt/NotesToComplete";
 import SearchBar from "@/components/rmt/SearchBar";
-import SetUpForm2 from "@/components/rmt/SetUp/SetUpFormRegular";
+import IncomeTracker from "@/components/rmt/IncomeTracker";
 import Messages from "@/components/rmt/Messages";
-import React from "react";
-
-import TemporaryNotes from "@/components/rmt/TemporaryNotes";
 
 import {
   getSession,
-  getAllAppointmentsByRMTId,
+  getDashboardAppointments,
   getAllMessagesByRMTId,
 } from "@/app/_actions";
 import AddExpense from "@/components/rmt/AddExpense";
@@ -18,23 +15,32 @@ import Link from "next/link";
 
 export default async function Dashboard() {
   const currentUser = await getSession();
+  const userId = currentUser.resultObj.id || currentUser.resultObj._id;
 
-  const results = await getAllAppointmentsByRMTId(currentUser.resultObj._id);
+  // Fetch all appointment data in one call
+  const appointmentData = await getDashboardAppointments(userId);
+  const messages = await getAllMessagesByRMTId(userId);
 
-  const appointments = results.appointments;
-
-  const messages = await getAllMessagesByRMTId(currentUser.resultObj._id);
+  // Log the data for debugging
+  console.log("Dashboard received appointment data:", {
+    requested: appointmentData.requested?.length || 0,
+    upcoming: appointmentData.upcoming?.length || 0,
+    past: appointmentData.past?.length || 0,
+  });
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <section className="space-y-8">
         <SearchBar />
 
-        <AppointmentRequests appointments={appointments} />
+        <AppointmentRequests
+          requestedAppointments={appointmentData.requested || []}
+        />
         <Messages messages={messages} />
-        <Calendar appointments={appointments} />
-        <NotesToComplete appointments={appointments} />
+        <Calendar appointments={appointmentData.upcoming || []} />
+        <NotesToComplete appointments={appointmentData.past || []} />
         <AddExpense />
+        <IncomeTracker />
         <div className="pt-8">
           <h2 className="text-xl font-semibold mb-4">Set Up A New Workspace</h2>
 
@@ -49,11 +55,6 @@ export default async function Dashboard() {
             </button>
           </Link>
         </div>
-        {/* Uncomment these when ready to use
-        <SearchBar />
-        <NotesToComplete />
-        <Calendar /> 
-        */}
       </section>
     </div>
   );

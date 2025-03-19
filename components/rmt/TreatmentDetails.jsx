@@ -27,6 +27,15 @@ const TreatmentDetails = ({ treatment, onSelectTreatment }) => {
     );
   };
 
+  // Format the appointment date
+  const formatDate = (dateString) => {
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch (e) {
+      return dateString;
+    }
+  };
+
   return (
     <div
       className={`bg-white shadow-md rounded-lg p-6 cursor-move ${
@@ -44,12 +53,19 @@ const TreatmentDetails = ({ treatment, onSelectTreatment }) => {
           {treatment.lastName}
         </p>
         <p>
-          <span className="font-semibold">Location:</span> {treatment.location}
+          <span className="font-semibold">Location:</span>{" "}
+          {treatment.location || "Not specified"}
         </p>
         <p>
           <span className="font-semibold">Date:</span>{" "}
-          {new Date(treatment.appointmentDate).toLocaleDateString()}
+          {formatDate(treatment.appointmentDate)}
         </p>
+        {treatment.duration && (
+          <p>
+            <span className="font-semibold">Duration:</span>{" "}
+            {treatment.duration} minutes
+          </p>
+        )}
       </div>
       <div>
         <button className="btn mt-4" onClick={handleDNS}>

@@ -1,43 +1,22 @@
-// import RescheduleMassageForm from "@/components/patients/RescheduleMassageForm";
-// import React from "react";
-// import { getSession, getRMTSetup, getAppointmentById } from "@/app/_actions";
-
-// const page = async ({ params }) => {
-//   const currentUser = await getSession();
-
-//   const rmtSetup = await getRMTSetup(currentUser.resultObj.rmtId);
-
-//   // Ensure rmtSetup is a plain object
-//   const plainRmtSetup = JSON.parse(JSON.stringify(rmtSetup));
-
-//   const appointment = await getAppointmentById(params.id);
-
-//   return (
-//     <section>
-//       <RescheduleMassageForm
-//         rmtSetup={plainRmtSetup}
-//         currentAppointment={appointment}
-//       />
-//     </section>
-//   );
-// };
-
 import RescheduleMassageForm from "@/components/patients/RescheduleMassageForm";
 import React from "react";
-import { getSession, getRMTSetup, getAppointmentById } from "@/app/_actions";
+import { getSession, getDataForReschedulePage } from "@/app/_actions";
 
 export default async function ReschedulePage({ params }) {
-  const currentUser = await getSession();
-  const rmtSetup = await getRMTSetup(currentUser.resultObj.rmtId);
-  const appointment = await getAppointmentById(params.id);
+  // Get the current user session
+  const session = await getSession();
+  const userId = session.resultObj.id;
 
-  // Ensure rmtSetup is a plain object
-  const plainRmtSetup = JSON.parse(JSON.stringify(rmtSetup));
+  // Get all the data needed for the page in one call
+  const { currentUser, appointment, rmtLocations } =
+    await getDataForReschedulePage(params.id, userId);
+
+  console.log(currentUser, appointment, rmtLocations);
 
   return (
     <section className="container mx-auto px-4 py-8">
       <RescheduleMassageForm
-        rmtSetup={plainRmtSetup}
+        rmtSetup={rmtLocations}
         currentAppointment={appointment}
         user={currentUser}
       />

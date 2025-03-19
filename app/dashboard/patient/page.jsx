@@ -12,8 +12,8 @@ function LoadingFallback() {
 
 export default async function PatientDashboardPage() {
   const currentUser = await getSession();
-  const appointments = await getUsersAppointments(currentUser.resultObj._id);
-  const locations = await getRMTSetup();
+  const appointments = await getUsersAppointments(currentUser.resultObj.id);
+  const locations = await getRMTSetup(currentUser.resultObj.rmtId);
 
   return (
     <Suspense fallback={<LoadingFallback />}>

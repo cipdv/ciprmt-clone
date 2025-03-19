@@ -1,4 +1,6 @@
 const AppointmentNeedToKnow = ({ location }) => {
+  console.log(location);
+
   if (!location) {
     return (
       <div className="text-center">
@@ -10,7 +12,7 @@ const AppointmentNeedToKnow = ({ location }) => {
     );
   }
 
-  if (location._id !== "673a415085f1bd8631e7a426") {
+  if (location.id !== "ea5fbe60-7d3c-44ff-9307-b97ea3bc10f9") {
     return (
       <div className="mb-4 space-y-4 mt-2">
         <h3 className="text-3xl mb-6">What to know for your appointment:</h3>
@@ -129,9 +131,9 @@ const AppointmentNeedToKnow = ({ location }) => {
             the previous appointment.
           </p>
           <p>
-            There is free parking available at the side of the building, on
-            Berkeley Street and free street parking available on Shuter Street
-            and Berkeley Street.
+            There is free parking for up to 1 hour available at the side of the
+            building, on Berkeley Street and free street parking available on
+            Shuter Street and Berkeley Street.
           </p>
         </div>
         <div className="space-y-2">

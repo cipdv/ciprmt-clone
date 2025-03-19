@@ -31,7 +31,8 @@ function LoadingFallback() {
 
 export default async function HealthHistoryPage() {
   const user = await getUserDetails();
-  const healthHistory = await getHealthHistory(user._id);
+  // Use user.id instead of user._id for PostgreSQL
+  const healthHistory = await getHealthHistory(user.id);
 
   return (
     <section className="container mx-auto px-4 py-8">

@@ -2,8 +2,17 @@
 
 import { useState } from "react";
 import { saveTreatmentNotes } from "@/app/_actions";
+import { useRouter } from "next/navigation";
 
-const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
+const TreatmentNotesForm = ({
+  treatment,
+  planId,
+  plan,
+  planDetails,
+  onClose,
+  onSubmit,
+}) => {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     reasonForMassage: treatment?.consentForm?.reasonForMassage,
     findings: "",
@@ -46,9 +55,12 @@ const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const result = await saveTreatmentNotes(treatment._id, planId, formData);
+      const treatmentId = treatment.id || treatment._id;
+      const result = await saveTreatmentNotes(treatmentId, planId, formData);
       if (result.success) {
         onSubmit(formData);
+        // Redirect to the dashboard after successful submission
+        router.push("/dashboard/rmt");
       } else {
         console.error("Failed to save treatment notes:", result.message);
       }
@@ -57,13 +69,101 @@ const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
     }
   };
 
+  // Format the appointment date
+  const formatDate = (dateString) => {
+    if (!dateString) return "Not specified";
+
+    try {
+      // If it's already a Date object, convert it to a string
+      if (dateString instanceof Date) {
+        return dateString.toLocaleDateString();
+      }
+
+      // Otherwise, parse it as a date and format it
+      return new Date(dateString).toLocaleDateString();
+    } catch (e) {
+      console.error("Error formatting date:", e);
+      return String(dateString); // Convert to string to avoid React rendering errors
+    }
+  };
+
+  // Format the appointment time
+  const formatTime = (timeString) => {
+    if (!timeString) return "";
+    return String(timeString).substring(0, 5);
+  };
+
+  // Safely get plan start date
+  const getPlanStartDate = () => {
+    if (!plan || !plan.startDate) return "Not specified";
+
+    try {
+      if (plan.startDate instanceof Date) {
+        return plan.startDate.toLocaleDateString();
+      }
+      return new Date(plan.startDate).toLocaleDateString();
+    } catch (e) {
+      console.error("Error formatting plan start date:", e);
+      return String(plan.startDate);
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <h3 className="text-xl font-bold mb-4">Treatment Notes</h3>
-      <p className="text-gray-600 mb-4">
-        For: {treatment.firstName} {treatment.lastName} -{" "}
-        {new Date(treatment.appointmentDate).toLocaleDateString()}
-      </p>
+
+      {/* Treatment Information */}
+      <div className="bg-blue-50 p-4 rounded-lg mb-4">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-gray-700 font-medium">
+              Patient: {treatment.firstName} {treatment.lastName}
+            </p>
+            <p className="text-gray-600">
+              Date: {formatDate(treatment.appointmentDate)}
+            </p>
+            <p className="text-gray-600">
+              Time: {formatTime(treatment.appointmentBeginsAt)}
+            </p>
+            {treatment.duration && (
+              <p className="text-gray-600">
+                Duration: {treatment.duration} minutes
+              </p>
+            )}
+          </div>
+
+          {/* Treatment Plan Information */}
+          {plan && planDetails && (
+            <div className="bg-white p-3 rounded border border-blue-200 ml-4 flex-1">
+              <h4 className="font-medium text-blue-700 mb-2">Treatment Plan</h4>
+              <p className="text-sm text-gray-700 mb-1">
+                <span className="font-medium">Start Date:</span>{" "}
+                {getPlanStartDate()}
+              </p>
+              <p className="text-sm text-gray-700 mb-1">
+                <span className="font-medium">Goals:</span>{" "}
+                {planDetails.clientGoals || "Not specified"}
+              </p>
+              <p className="text-sm text-gray-700 mb-1">
+                <span className="font-medium">Areas:</span>{" "}
+                {planDetails.areasToBeTreated || "Not specified"}
+              </p>
+              {planDetails.durationAndFrequency && (
+                <p className="text-sm text-gray-700 mb-1">
+                  <span className="font-medium">Frequency:</span>{" "}
+                  {planDetails.durationAndFrequency}
+                </p>
+              )}
+              {planDetails.typeAndFocusOfTreatments && (
+                <p className="text-sm text-gray-700">
+                  <span className="font-medium">Focus:</span>{" "}
+                  {planDetails.typeAndFocusOfTreatments}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700">
@@ -71,7 +171,7 @@ const TreatmentNotesForm = ({ treatment, planId, onClose, onSubmit }) => {
         </label>
         <textarea
           name="reasonForMassage"
-          value={formData.reasonForMassage}
+          value={formData.reasonForMassage || ""}
           onChange={handleChange}
           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
           rows="3"

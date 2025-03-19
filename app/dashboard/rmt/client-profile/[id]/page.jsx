@@ -1,11 +1,12 @@
-import { getClientProfile, getClientHealthHistory } from "@/app/_actions";
+import { getClientWithHealthHistory } from "@/app/_actions";
 import BookAppointment from "@/components/rmt/BookAppointment";
 import ClientHealthHistory from "@/components/rmt/ClientHealthHistory";
 
 export default async function ClientProfile({ params }) {
   try {
-    const client = await getClientProfile(params.id);
-    const healthHistory = await getClientHealthHistory(params.id);
+    const { client, healthHistory } = await getClientWithHealthHistory(
+      params.id
+    );
 
     return (
       <div className="container mx-auto max-w-5xl px-4 py-8">

@@ -13,7 +13,7 @@ function LoadingFallback() {
 async function ReceiptsContent() {
   const currentUser = await getSession();
   const user = currentUser.resultObj;
-  const receipts = await getReceipts(user._id);
+  const receipts = await getReceipts(user.id);
   return <Receipts user={user} receipts={receipts} />;
 }
 

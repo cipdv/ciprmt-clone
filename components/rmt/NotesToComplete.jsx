@@ -1,27 +1,89 @@
 "use client";
-
-import React from "react";
 import { useRouter } from "next/navigation";
+import { setDNSTreatmentStatusAttachment } from "@/app/_actions";
+import { useState } from "react";
 
 const NotesToComplete = ({ appointments }) => {
   const router = useRouter();
-  const currentDate = new Date();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Filter past appointments that don't have treatment notes
   const notesToComplete = appointments.filter(
-    (appointment) =>
-      appointment.status === "booked" &&
-      new Date(
-        `${appointment.appointmentDate}T${appointment.appointmentBeginsAt}`
-      ) < currentDate &&
-      !appointment.treatmentNotes
+    (appointment) => !appointment.encryptedTreatmentNotes
   );
 
   const handleAppointmentClick = (id) => {
     router.push(`/dashboard/rmt/treatments/${id}`);
   };
 
+  const handleDNSClick = async (e, id) => {
+    e.stopPropagation(); // Prevent the card click from triggering
+
+    try {
+      setLoading(true);
+      setError(null);
+      await setDNSTreatmentStatusAttachment(id);
+      // Refresh the page to show updated data
+      router.refresh();
+    } catch (err) {
+      console.error("Error marking appointment as DNS:", err);
+      setError("Failed to mark appointment as DNS");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Format date for display without date-fns
+  const formatAppointmentDate = (date) => {
+    try {
+      const dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) return date; // Return original if invalid
+
+      const months = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+      ];
+
+      const month = months[dateObj.getMonth()];
+      const day = dateObj.getDate();
+      const year = dateObj.getFullYear();
+
+      return `${month} ${day}, ${year}`;
+    } catch (e) {
+      console.error("Error formatting date:", e);
+      return date;
+    }
+  };
+
+  // Format time for display
+  const formatAppointmentTime = (time) => {
+    try {
+      const [hours, minutes] = time.split(":");
+      const hour = Number.parseInt(hours, 10);
+      const ampm = hour >= 12 ? "PM" : "AM";
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes} ${ampm}`;
+    } catch (e) {
+      console.error("Error formatting time:", e);
+      return time;
+    }
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">Notes to Complete</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
       {notesToComplete.length === 0 ? (
         <div className="p-8 bg-white rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
@@ -32,17 +94,32 @@ const NotesToComplete = ({ appointments }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {notesToComplete.map((appointment) => (
             <div
-              key={appointment._id}
+              key={appointment.id}
               className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
-              onClick={() => handleAppointmentClick(appointment._id)}
+              onClick={() => handleAppointmentClick(appointment.id)}
             >
               <div>
                 <h3 className="font-semibold text-lg mb-2 text-gray-800">
                   {appointment.firstName} {appointment.lastName}
                 </h3>
                 <div className="space-y-1 text-sm text-gray-600">
-                  <p>{appointment.appointmentDate}</p>
-                  <p>{appointment.appointmentBeginsAt}</p>
+                  <p>{formatAppointmentDate(appointment.appointmentDate)}</p>
+                  <p>
+                    {formatAppointmentTime(appointment.appointmentBeginsAt)}
+                  </p>
+                  <p>Duration: {appointment.duration} minutes</p>
+                  {appointment.location && (
+                    <p>Location: {appointment.location}</p>
+                  )}
+                </div>
+                <div className="mt-4">
+                  <button
+                    onClick={(e) => handleDNSClick(e, appointment.id)}
+                    disabled={loading}
+                    className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
+                  >
+                    DNS
+                  </button>
                 </div>
               </div>
             </div>

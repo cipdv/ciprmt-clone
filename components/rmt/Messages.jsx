@@ -36,11 +36,13 @@ function formatDate(dateString) {
 }
 
 const Messages = ({ messages }) => {
+  console.log(messages);
+
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [replyText, setReplyText] = useState("");
 
   const messageRequests = messages.filter(
-    (message) => message.status === "sent"
+    (message) => message.status === "delivered"
   );
 
   const openReplyModal = (message) => {
@@ -55,7 +57,8 @@ const Messages = ({ messages }) => {
 
   const handleReplySubmit = async (event) => {
     event.preventDefault();
-    await sendReply(selectedMessage._id, replyText);
+    // Use id instead of _id for PostgreSQL
+    await sendReply(selectedMessage.id, replyText);
     closeReplyModal();
   };
 
@@ -72,7 +75,7 @@ const Messages = ({ messages }) => {
         <div className="grid gap-6 mb-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {messageRequests.map((message) => (
             <div
-              key={message._id}
+              key={message.id} // Use id instead of _id
               className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200"
             >
               <div className="mb-4">
@@ -84,8 +87,8 @@ const Messages = ({ messages }) => {
                     <span className="font-medium">Email:</span> {message.email}
                   </p>
                   <p>
-                    <span className="font-medium">Phone:</span>{" "}
-                    {message.phoneNumber}
+                    <span className="font-medium">Phone:</span> {message.phone}{" "}
+                    {/* Changed from phoneNumber to phone */}
                   </p>
                 </div>
                 <div className="mt-3">
@@ -106,7 +109,8 @@ const Messages = ({ messages }) => {
                   Reply
                 </button>
                 <form action={updateMessageStatus} className="flex-1">
-                  <input type="hidden" name="messageId" value={message._id} />
+                  <input type="hidden" name="messageId" value={message.id} />{" "}
+                  {/* Use id instead of _id */}
                   <input type="hidden" name="status" value="replied" />
                   <SubmitButton>Mark as Replied</SubmitButton>
                 </form>
@@ -133,7 +137,8 @@ const Messages = ({ messages }) => {
               </p>
               <p>
                 <span className="font-medium">Phone:</span>{" "}
-                {selectedMessage.phoneNumber}
+                {selectedMessage.phone}{" "}
+                {/* Changed from phoneNumber to phone */}
               </p>
               <p className="font-medium">Original Message:</p>
               <p className="bg-gray-50 p-3 rounded text-gray-600">

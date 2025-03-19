@@ -1,8 +1,7 @@
-// app/dashboard/rmt/treatments/[id]/page.jsx
 "use client";
 
 import { useState, useEffect } from "react";
-import { getTreatmentById, getTreatmentPlansForUser } from "@/app/_actions";
+import { getTreatmentAndPlans } from "@/app/_actions";
 import TreatmentDetails from "@/components/rmt/TreatmentDetails";
 import TreatmentPlanDetails from "@/components/rmt/TreatmentPlanDetails";
 
@@ -11,20 +10,24 @@ const TreatmentPage = ({ params }) => {
   const [treatmentPlans, setTreatmentPlans] = useState([]);
   const [selectedTreatment, setSelectedTreatment] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const { id } = params;
-        const treatmentData = await getTreatmentById(id);
-        setTreatment(treatmentData);
-        setSelectedTreatment(treatmentData);
+        const result = await getTreatmentAndPlans(id);
 
-        const { userId } = treatmentData;
-        const plansData = await getTreatmentPlansForUser(userId);
-        setTreatmentPlans(plansData);
+        if (result.success) {
+          setTreatment(result.treatment);
+          setSelectedTreatment(result.treatment);
+          setTreatmentPlans(result.treatmentPlans);
+        } else {
+          setError(result.message);
+        }
       } catch (error) {
         console.error("Error fetching data:", error);
+        setError("Failed to load treatment data. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -39,6 +42,10 @@ const TreatmentPage = ({ params }) => {
 
   if (loading) {
     return <div className="text-center py-8">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-8 text-red-500">{error}</div>;
   }
 
   return (

@@ -3,6 +3,7 @@ import {
   addAppointments,
   resetStaleReschedulingAppointments,
   sendAppointmentReminders,
+  deleteExpiredAppointments,
 } from "@/app/_actions";
 
 export async function GET(request) {
@@ -23,6 +24,9 @@ async function handleRequest(request) {
 
     await addAppointments();
     console.log("New appointments added successfully");
+
+    await deleteExpiredAppointments();
+    console.log("Expired appointments deleted successfully");
 
     await sendAppointmentReminders();
     console.log("Appointment reminders sent successfully");
