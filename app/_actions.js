@@ -2,7 +2,6 @@
 
 // External libraries
 import { z } from "zod";
-import { ObjectId } from "mongodb";
 import { encryptData, decryptData } from "@/app/lib/security/security";
 import { logAuditEvent } from "@/app/lib/auditLog/auditLog";
 import { checkRateLimit } from "@/app/lib/security/rate-limit";
@@ -19,7 +18,6 @@ import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
 
 // Database connection
-import { getDatabase } from "./lib/database/mongoDbConnection";
 import { sql } from "@vercel/postgres";
 
 // Nodemailer transporter
@@ -511,17 +509,17 @@ export async function getReceipts(id) {
     `;
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatments",
-      actionPerformed: "viewed",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: id, // This is the user ID whose treatments were accessed
-      additionalDetails: {
-        accessedByUserId: session.resultObj.id,
-        accessedByUserType: session.resultObj.userType,
-        numberOfTreatments: rows.length,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatments",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: id, // This is the user ID whose treatments were accessed
+    //   additionalDetails: {
+    //     accessedByUserId: session.resultObj.id,
+    //     accessedByUserType: session.resultObj.userType,
+    //     numberOfTreatments: rows.length,
+    //   },
+    // });
 
     // Process the results to match the expected format
     const treatments = rows.map((treatment) => ({
@@ -586,17 +584,17 @@ export async function getReceiptById(id) {
     }
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatment",
-      actionPerformed: "viewed",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: receipt.client_id,
-      additionalDetails: {
-        accessedByUserId: session.resultObj.id,
-        accessedByUserType: session.resultObj.userType,
-        treatmentId: receipt.id,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatment",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: receipt.client_id,
+    //   additionalDetails: {
+    //     accessedByUserId: session.resultObj.id,
+    //     accessedByUserType: session.resultObj.userType,
+    //     treatmentId: receipt.id,
+    //   },
+    // });
 
     // Process the result to match the expected format
     const formattedReceipt = {
@@ -1381,17 +1379,17 @@ export async function getUsersAppointments(id) {
     `;
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "user treatments",
-      actionPerformed: "viewed",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: id, // This is the user ID whose treatments were accessed
-      additionalDetails: {
-        accessedByUserId: session.resultObj.id.toString(),
-        accessedByUserType: session.resultObj.userType,
-        numberOftreatments: treatments.length,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "user treatments",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: id, // This is the user ID whose treatments were accessed
+    //   additionalDetails: {
+    //     accessedByUserId: session.resultObj.id.toString(),
+    //     accessedByUserType: session.resultObj.userType,
+    //     numberOftreatments: treatments.length,
+    //   },
+    // });
 
     return treatments;
   } catch (error) {
@@ -1732,21 +1730,21 @@ export async function bookAppointment({
 
     // Log the audit event
     console.log("Logging audit event");
-    await logAuditEvent({
-      typeOfInfo: "appointment booking",
-      actionPerformed: "appointment booked",
-      accessedBy: `${firstName} ${lastName}`,
-      whoseInfo: `${firstName} ${lastName}`,
-      additionalDetails: {
-        userId: id,
-        appointmentId: appointmentId,
-        appointmentDate: formattedDate,
-        appointmentTime: formattedStartTime,
-        duration: duration,
-        location: location,
-        workplace: workplace,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "appointment booking",
+    //   actionPerformed: "appointment booked",
+    //   accessedBy: `${firstName} ${lastName}`,
+    //   whoseInfo: `${firstName} ${lastName}`,
+    //   additionalDetails: {
+    //     userId: id,
+    //     appointmentId: appointmentId,
+    //     appointmentDate: formattedDate,
+    //     appointmentTime: formattedStartTime,
+    //     duration: duration,
+    //     location: location,
+    //     workplace: workplace,
+    //   },
+    // });
 
     // Send email notification
     console.log("Sending email notification");
@@ -1873,18 +1871,18 @@ export const cancelAppointment = async (prevState, formData) => {
       console.log("Appointment cancelled successfully.");
 
       // Log the audit event
-      await logAuditEvent({
-        typeOfInfo: "appointment cancellation",
-        actionPerformed: "cancelled",
-        accessedBy: `${firstName} ${lastName}`,
-        whoseInfo: `${firstName} ${lastName}`,
-        additionalDetails: {
-          userId: id,
-          appointmentId: appointmentId,
-          appointmentDate: appointment.date,
-          appointmentTime: appointment.appointment_begins_at,
-        },
-      });
+      // await logAuditEvent({
+      //   typeOfInfo: "appointment cancellation",
+      //   actionPerformed: "cancelled",
+      //   accessedBy: `${firstName} ${lastName}`,
+      //   whoseInfo: `${firstName} ${lastName}`,
+      //   additionalDetails: {
+      //     userId: id,
+      //     appointmentId: appointmentId,
+      //     appointmentDate: appointment.date,
+      //     appointmentTime: appointment.appointment_begins_at,
+      //   },
+      // });
 
       revalidatePath("/dashboard/patient");
       return {
@@ -1969,18 +1967,18 @@ export async function submitConsentForm(data) {
 
     if (result.rows.length === 1) {
       // Log the audit event
-      await logAuditEvent({
-        typeOfInfo: "consent form",
-        actionPerformed: "submitted",
-        accessedBy: `${firstName} ${lastName}`,
-        whoseInfo: `${firstName} ${lastName}`,
-        additionalDetails: {
-          userId: userId,
-          appointmentId: id,
-          appointmentDate: appointment.date,
-          appointmentTime: appointment.appointment_begins_at,
-        },
-      });
+      // await logAuditEvent({
+      //   typeOfInfo: "consent form",
+      //   actionPerformed: "submitted",
+      //   accessedBy: `${firstName} ${lastName}`,
+      //   whoseInfo: `${firstName} ${lastName}`,
+      //   additionalDetails: {
+      //     userId: userId,
+      //     appointmentId: id,
+      //     appointmentDate: appointment.date,
+      //     appointmentTime: appointment.appointment_begins_at,
+      //   },
+      // });
 
       revalidatePath("/dashboard/patient");
       return { success: true };
@@ -2496,22 +2494,22 @@ export async function rescheduleAppointment(
       );
 
       // Log the audit event
-      await logAuditEvent({
-        typeOfInfo: "appointment rescheduling",
-        actionPerformed: "rescheduled",
-        accessedBy: `${firstName} ${lastName}`,
-        whoseInfo: `${firstName} ${lastName}`,
-        additionalDetails: {
-          userId: id,
-          oldAppointmentId: currentAppointmentId,
-          newAppointmentDate: formattedDate,
-          newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
-          location,
-          duration,
-          workplace,
-          consentFormTransferred: consentForm ? true : false,
-        },
-      });
+      // await logAuditEvent({
+      //   typeOfInfo: "appointment rescheduling",
+      //   actionPerformed: "rescheduled",
+      //   accessedBy: `${firstName} ${lastName}`,
+      //   whoseInfo: `${firstName} ${lastName}`,
+      //   additionalDetails: {
+      //     userId: id,
+      //     oldAppointmentId: currentAppointmentId,
+      //     newAppointmentDate: formattedDate,
+      //     newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+      //     location,
+      //     duration,
+      //     workplace,
+      //     consentFormTransferred: consentForm ? true : false,
+      //   },
+      // });
 
       // Send email notification
       await sendRescheduleNotificationEmail(
@@ -2744,17 +2742,17 @@ export async function addHealthHistory(data) {
       });
 
       // Log the audit event
-      await logAuditEvent({
-        typeOfInfo: "health history",
-        actionPerformed: "added",
-        accessedBy: `${updatedUser.first_name} ${updatedUser.last_name}`,
-        whoseInfo: `${updatedUser.first_name} ${updatedUser.last_name}`,
-        additionalDetails: {
-          userId: userId,
-          healthHistoryId: newHealthHistory.id,
-          createdAt: newHealthHistory.created_at,
-        },
-      });
+      // await logAuditEvent({
+      //   typeOfInfo: "health history",
+      //   actionPerformed: "added",
+      //   accessedBy: `${updatedUser.first_name} ${updatedUser.last_name}`,
+      //   whoseInfo: `${updatedUser.first_name} ${updatedUser.last_name}`,
+      //   additionalDetails: {
+      //     userId: userId,
+      //     healthHistoryId: newHealthHistory.id,
+      //     createdAt: newHealthHistory.created_at,
+      //   },
+      // });
 
       revalidatePath("/dashboard/patient");
       return { success: true, id: newHealthHistory.id };
@@ -2833,20 +2831,20 @@ export async function getClientHealthHistories(id) {
     const user = userRows[0];
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "health histories",
-      actionPerformed: "viewed",
-      accessedBy: `${user.first_name} ${user.last_name}`,
-      whoseInfo: `${user.first_name} ${user.last_name}`,
-      additionalDetails: {
-        userId: authenticatedUserId,
-        numberOfHistories: decryptedHealthHistories.length,
-        oldestHistoryDate:
-          decryptedHealthHistories[decryptedHealthHistories.length - 1]
-            ?.createdAt,
-        newestHistoryDate: decryptedHealthHistories[0]?.createdAt,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "health histories",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${user.first_name} ${user.last_name}`,
+    //   whoseInfo: `${user.first_name} ${user.last_name}`,
+    //   additionalDetails: {
+    //     userId: authenticatedUserId,
+    //     numberOfHistories: decryptedHealthHistories.length,
+    //     oldestHistoryDate:
+    //       decryptedHealthHistories[decryptedHealthHistories.length - 1]
+    //         ?.createdAt,
+    //     newestHistoryDate: decryptedHealthHistories[0]?.createdAt,
+    //   },
+    // });
 
     return decryptedHealthHistories;
   } catch (error) {
@@ -3535,18 +3533,18 @@ export async function getTreatmentPlansForUser(userId) {
     );
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatment plans",
-      actionPerformed: "viewed",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: userId,
-      additionalDetails: {
-        accessedByUserId: session.resultObj.id.toString(),
-        accessedByUserType: session.resultObj.userType,
-        numberOfPlans: plansWithTreatments.length,
-        planIds: plansWithTreatments.map((plan) => plan.id),
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatment plans",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: userId,
+    //   additionalDetails: {
+    //     accessedByUserId: session.resultObj.id.toString(),
+    //     accessedByUserType: session.resultObj.userType,
+    //     numberOfPlans: plansWithTreatments.length,
+    //     planIds: plansWithTreatments.map((plan) => plan.id),
+    //   },
+    // });
 
     console.log("Treatment plans fetched:", plansWithTreatments.length);
     return { success: true, data: plansWithTreatments };
@@ -3621,17 +3619,17 @@ export async function getTreatmentById(id) {
     }
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatment details",
-      actionPerformed: "viewed",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: `${treatment.firstName} ${treatment.lastName}`,
-      additionalDetails: {
-        treatmentId: id,
-        accessedByUserId: session.resultObj.id.toString(),
-        accessedByUserType: session.resultObj.userType,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatment details",
+    //   actionPerformed: "viewed",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: `${treatment.firstName} ${treatment.lastName}`,
+    //   additionalDetails: {
+    //     treatmentId: id,
+    //     accessedByUserId: session.resultObj.id.toString(),
+    //     accessedByUserType: session.resultObj.userType,
+    //   },
+    // });
 
     // If the treatment has encrypted notes, decrypt them
     if (treatment.treatmentNotes) {
@@ -3806,21 +3804,21 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     const rmt = rmtInfo[0];
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatment notes",
-      actionPerformed: "saved",
-      accessedBy: `${rmt.first_name} ${rmt.last_name}`,
-      whoseInfo: `${client.first_name} ${client.last_name}`,
-      additionalDetails: {
-        rmtId: rmt.id.toString(),
-        patientId: client.id.toString(),
-        treatmentId: treatmentId,
-        treatmentPlanId: treatmentPlanId,
-        appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
-        price: notes.price,
-        paymentType: notes.paymentType,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatment notes",
+    //   actionPerformed: "saved",
+    //   accessedBy: `${rmt.first_name} ${rmt.last_name}`,
+    //   whoseInfo: `${client.first_name} ${client.last_name}`,
+    //   additionalDetails: {
+    //     rmtId: rmt.id.toString(),
+    //     patientId: client.id.toString(),
+    //     treatmentId: treatmentId,
+    //     treatmentPlanId: treatmentPlanId,
+    //     appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
+    //     price: notes.price,
+    //     paymentType: notes.paymentType,
+    //   },
+    // });
 
     // Send email to the client
     const transporter = getEmailTransporter();
@@ -3927,18 +3925,18 @@ export async function setDNSTreatmentStatusAttachment(treatmentId) {
     const rmt = rmtInfo[0];
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatment status",
-      actionPerformed: "marked as DNS",
-      accessedBy: `${rmt.first_name} ${rmt.last_name}`,
-      whoseInfo: `${client.first_name} ${client.last_name}`,
-      additionalDetails: {
-        rmtId: rmt.id.toString(),
-        patientId: client.id.toString(),
-        treatmentId: treatmentId,
-        newDnsCount: newDnsCount,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatment status",
+    //   actionPerformed: "marked as DNS",
+    //   accessedBy: `${rmt.first_name} ${rmt.last_name}`,
+    //   whoseInfo: `${client.first_name} ${client.last_name}`,
+    //   additionalDetails: {
+    //     rmtId: rmt.id.toString(),
+    //     patientId: client.id.toString(),
+    //     treatmentId: treatmentId,
+    //     newDnsCount: newDnsCount,
+    //   },
+    // });
 
     revalidatePath("/dashboard/rmt");
     return { success: true, message: "Treatment marked as DNS successfully" };
@@ -4039,19 +4037,19 @@ export async function createTreatmentPlan(planData, clientId) {
     `;
 
     // Log the audit event
-    await logAuditEvent({
-      typeOfInfo: "treatment plan",
-      actionPerformed: "created",
-      accessedBy: `${rmt.firstName} ${rmt.lastName}`,
-      whoseInfo: `${client.firstName} ${client.lastName}`,
-      additionalDetails: {
-        rmtId: rmt.id,
-        clientId: clientId,
-        treatmentPlanId: newPlan.id,
-        startDate: newPlan.start_date,
-        createdAt: newPlan.created_at,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "treatment plan",
+    //   actionPerformed: "created",
+    //   accessedBy: `${rmt.firstName} ${rmt.lastName}`,
+    //   whoseInfo: `${client.firstName} ${client.lastName}`,
+    //   additionalDetails: {
+    //     rmtId: rmt.id,
+    //     clientId: clientId,
+    //     treatmentPlanId: newPlan.id,
+    //     startDate: newPlan.start_date,
+    //     createdAt: newPlan.created_at,
+    //   },
+    // });
 
     revalidatePath("/dashboard/rmt");
 
@@ -4406,20 +4404,20 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     const appointmentId = insertedTreatment[0].id;
 
     // Log audit event
-    await logAuditEvent({
-      typeOfInfo: "appointment booking",
-      actionPerformed: "booked",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: `${client.first_name} ${client.last_name}`,
-      additionalDetails: {
-        appointmentId: appointmentId,
-        appointmentDate: formattedDate,
-        appointmentTime: formattedStartTime,
-        duration: duration,
-        rmtId: session.resultObj.id,
-        clientId: clientId,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "appointment booking",
+    //   actionPerformed: "booked",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: `${client.first_name} ${client.last_name}`,
+    //   additionalDetails: {
+    //     appointmentId: appointmentId,
+    //     appointmentDate: formattedDate,
+    //     appointmentTime: formattedStartTime,
+    //     duration: duration,
+    //     rmtId: session.resultObj.id,
+    //     clientId: clientId,
+    //   },
+    // });
 
     // Send email notification
     const transporter = getEmailTransporter();
@@ -4515,17 +4513,17 @@ export async function deleteAppointment(appointmentId) {
     `;
 
     // Log audit event
-    await logAuditEvent({
-      typeOfInfo: "appointment",
-      actionPerformed: "deleted",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
-      additionalDetails: {
-        appointmentId: appointmentId,
-        appointmentDate: appointment.date,
-        rmtId: session.resultObj.id.toString(),
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "appointment",
+    //   actionPerformed: "deleted",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
+    //   additionalDetails: {
+    //     appointmentId: appointmentId,
+    //     appointmentDate: appointment.date,
+    //     rmtId: session.resultObj.id.toString(),
+    //   },
+    // });
   } catch (error) {
     console.error("Error in deleteAppointment:", error);
     throw new Error("Failed to delete appointment. Please try again.");
@@ -4600,17 +4598,17 @@ export async function clearAppointment(appointmentId) {
     `;
 
     // Log audit event
-    await logAuditEvent({
-      typeOfInfo: "appointment",
-      actionPerformed: "cleared",
-      accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-      whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
-      additionalDetails: {
-        appointmentId: appointmentId,
-        appointmentDate: appointment.date,
-        rmtId: session.resultObj.id,
-      },
-    });
+    // await logAuditEvent({
+    //   typeOfInfo: "appointment",
+    //   actionPerformed: "cleared",
+    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+    //   whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
+    //   additionalDetails: {
+    //     appointmentId: appointmentId,
+    //     appointmentDate: appointment.date,
+    //     rmtId: session.resultObj.id,
+    //   },
+    // });
   } catch (error) {
     console.error("Error in clearAppointment:", error);
     throw new Error("Failed to clear appointment. Please try again.");
@@ -5827,1913 +5825,1913 @@ export async function getIncomeByMonth() {
   }
 }
 
-export async function consolidateTreatments() {
-  console.log(
-    "Starting consolidation of treatments and appointments collections..."
-  );
+// export async function consolidateTreatments() {
+//   console.log(
+//     "Starting consolidation of treatments and appointments collections..."
+//   );
 
-  try {
-    // Connect to MongoDB
-    const db = await getDatabase();
+//   try {
+//     // Connect to MongoDB
+//     const db = await getDatabase();
 
-    // Check if migrateTreatments collection already exists and drop it if it does
-    const collections = await db
-      .listCollections({ name: "migrateTreatments" })
-      .toArray();
-    if (collections.length > 0) {
-      console.log(
-        "migrateTreatments collection already exists, dropping it..."
-      );
-      await db.collection("migrateTreatments").drop();
-    }
+//     // Check if migrateTreatments collection already exists and drop it if it does
+//     const collections = await db
+//       .listCollections({ name: "migrateTreatments" })
+//       .toArray();
+//     if (collections.length > 0) {
+//       console.log(
+//         "migrateTreatments collection already exists, dropping it..."
+//       );
+//       await db.collection("migrateTreatments").drop();
+//     }
 
-    // Get all documents from both collections
-    const treatments = await db.collection("treatments").find({}).toArray();
-    const appointments = await db.collection("appointments").find({}).toArray();
+//     // Get all documents from both collections
+//     const treatments = await db.collection("treatments").find({}).toArray();
+//     const appointments = await db.collection("appointments").find({}).toArray();
 
-    console.log(
-      `Found ${treatments.length} treatments and ${appointments.length} appointments to consolidate`
-    );
+//     console.log(
+//       `Found ${treatments.length} treatments and ${appointments.length} appointments to consolidate`
+//     );
 
-    // Create a new collection for the consolidated data
-    const migrateTreatments = [];
-    const errors = [];
+//     // Create a new collection for the consolidated data
+//     const migrateTreatments = [];
+//     const errors = [];
 
-    // Process treatments collection first
-    for (const treatment of treatments) {
-      try {
-        // Create a standardized document structure
-        const standardizedTreatment = {
-          _id: treatment._id,
-          RMTId: treatment.RMTId || treatment.rmtId || null,
-          RMTLocationId:
-            treatment.RMTLocationId || treatment.rmtLocationId || null,
-          appointmentDate: treatment.appointmentDate || treatment.date || null,
-          appointmentStartTime:
-            treatment.appointmentStartTime ||
-            treatment.appointmentBeginsAt ||
-            null,
-          appointmentEndTime:
-            treatment.appointmentEndTime || treatment.appointmentEndsAt || null,
-          status: treatment.status || "completed",
-          duration: treatment.duration ? treatment.duration.toString() : "60",
-          email: treatment.email || "",
-          firstName: treatment.firstName || treatment.first_name || "",
-          lastName: treatment.lastName || treatment.last_name || "",
-          location: treatment.location || "268 Shuter Street",
-          userId: treatment.userId || treatment.clientId || null,
-          workplace: treatment.workplace || "",
-          paymentType: treatment.paymentType || treatment.payment_type || null,
-          price: treatment.price ? treatment.price.toString() : null,
-          googleCalendarEventId: treatment.googleCalendarEventId || null,
-          googleCalendarEventLink: treatment.googleCalendarEventLink || null,
-          consentForm: treatment.consentForm || null,
-          consentFormSubmittedAt: treatment.consentFormSubmittedAt || null,
-          createdAt: treatment.createdAt || new Date(),
-          treatmentPlanId: treatment.treatmentPlanId || null,
-        };
+//     // Process treatments collection first
+//     for (const treatment of treatments) {
+//       try {
+//         // Create a standardized document structure
+//         const standardizedTreatment = {
+//           _id: treatment._id,
+//           RMTId: treatment.RMTId || treatment.rmtId || null,
+//           RMTLocationId:
+//             treatment.RMTLocationId || treatment.rmtLocationId || null,
+//           appointmentDate: treatment.appointmentDate || treatment.date || null,
+//           appointmentStartTime:
+//             treatment.appointmentStartTime ||
+//             treatment.appointmentBeginsAt ||
+//             null,
+//           appointmentEndTime:
+//             treatment.appointmentEndTime || treatment.appointmentEndsAt || null,
+//           status: treatment.status || "completed",
+//           duration: treatment.duration ? treatment.duration.toString() : "60",
+//           email: treatment.email || "",
+//           firstName: treatment.firstName || treatment.first_name || "",
+//           lastName: treatment.lastName || treatment.last_name || "",
+//           location: treatment.location || "268 Shuter Street",
+//           userId: treatment.userId || treatment.clientId || null,
+//           workplace: treatment.workplace || "",
+//           paymentType: treatment.paymentType || treatment.payment_type || null,
+//           price: treatment.price ? treatment.price.toString() : null,
+//           googleCalendarEventId: treatment.googleCalendarEventId || null,
+//           googleCalendarEventLink: treatment.googleCalendarEventLink || null,
+//           consentForm: treatment.consentForm || null,
+//           consentFormSubmittedAt: treatment.consentFormSubmittedAt || null,
+//           createdAt: treatment.createdAt || new Date(),
+//           treatmentPlanId: treatment.treatmentPlanId || null,
+//         };
 
-        // Handle treatment notes - check if they need encryption
-        if (treatment.treatmentNotes) {
-          // Check if the treatment notes are already encrypted
-          // Encrypted data typically starts with a hex string followed by a colon
-          const isEncrypted =
-            typeof treatment.treatmentNotes === "string" &&
-            /^[a-f0-9]{32}:[a-f0-9]+$/.test(treatment.treatmentNotes);
+//         // Handle treatment notes - check if they need encryption
+//         if (treatment.treatmentNotes) {
+//           // Check if the treatment notes are already encrypted
+//           // Encrypted data typically starts with a hex string followed by a colon
+//           const isEncrypted =
+//             typeof treatment.treatmentNotes === "string" &&
+//             /^[a-f0-9]{32}:[a-f0-9]+$/.test(treatment.treatmentNotes);
 
-          if (isEncrypted) {
-            // Already encrypted, just copy it
-            standardizedTreatment.treatmentNotes = treatment.treatmentNotes;
-          } else {
-            // Need to encrypt the treatment notes
-            // If it's a string, parse it to an object if possible
-            let notesToEncrypt = treatment.treatmentNotes;
-            if (typeof notesToEncrypt === "string") {
-              try {
-                notesToEncrypt = JSON.parse(notesToEncrypt);
-              } catch (e) {
-                // If it's not valid JSON, keep it as a string
-                notesToEncrypt = { notes: notesToEncrypt };
-              }
-            }
+//           if (isEncrypted) {
+//             // Already encrypted, just copy it
+//             standardizedTreatment.treatmentNotes = treatment.treatmentNotes;
+//           } else {
+//             // Need to encrypt the treatment notes
+//             // If it's a string, parse it to an object if possible
+//             let notesToEncrypt = treatment.treatmentNotes;
+//             if (typeof notesToEncrypt === "string") {
+//               try {
+//                 notesToEncrypt = JSON.parse(notesToEncrypt);
+//               } catch (e) {
+//                 // If it's not valid JSON, keep it as a string
+//                 notesToEncrypt = { notes: notesToEncrypt };
+//               }
+//             }
 
-            // Encrypt the treatment notes
-            standardizedTreatment.treatmentNotes = encryptData(notesToEncrypt);
-          }
-        } else {
-          // No treatment notes, create an empty encrypted object
-          const emptyNotes = {
-            reasonForMassage: "",
-            findings: "",
-            treatment: {
-              specificTreatment: "",
-              generalTreatment: "",
-            },
-            results: {
-              subjectiveResults: "",
-              objectiveResults: "",
-            },
-            remex: "",
-            referToHCP: "",
-            notes: "",
-          };
+//             // Encrypt the treatment notes
+//             standardizedTreatment.treatmentNotes = encryptData(notesToEncrypt);
+//           }
+//         } else {
+//           // No treatment notes, create an empty encrypted object
+//           const emptyNotes = {
+//             reasonForMassage: "",
+//             findings: "",
+//             treatment: {
+//               specificTreatment: "",
+//               generalTreatment: "",
+//             },
+//             results: {
+//               subjectiveResults: "",
+//               objectiveResults: "",
+//             },
+//             remex: "",
+//             referToHCP: "",
+//             notes: "",
+//           };
 
-          standardizedTreatment.treatmentNotes = encryptData(emptyNotes);
-        }
+//           standardizedTreatment.treatmentNotes = encryptData(emptyNotes);
+//         }
 
-        // Add to the migrateTreatments array
-        migrateTreatments.push(standardizedTreatment);
-      } catch (error) {
-        console.error(`Error processing treatment ${treatment._id}:`, error);
-        errors.push({
-          type: "treatment",
-          id: treatment._id.toString(),
-          error: error.message,
-        });
-      }
-    }
+//         // Add to the migrateTreatments array
+//         migrateTreatments.push(standardizedTreatment);
+//       } catch (error) {
+//         console.error(`Error processing treatment ${treatment._id}:`, error);
+//         errors.push({
+//           type: "treatment",
+//           id: treatment._id.toString(),
+//           error: error.message,
+//         });
+//       }
+//     }
 
-    // Process appointments collection
-    for (const appointment of appointments) {
-      try {
-        // Skip if the appointment is not completed or booked
-        if (
-          !["completed", "booked", "requested", "dns"].includes(
-            appointment.status
-          )
-        ) {
-          continue;
-        }
+//     // Process appointments collection
+//     for (const appointment of appointments) {
+//       try {
+//         // Skip if the appointment is not completed or booked
+//         if (
+//           !["completed", "booked", "requested", "dns"].includes(
+//             appointment.status
+//           )
+//         ) {
+//           continue;
+//         }
 
-        // Create a standardized document structure
-        const standardizedAppointment = {
-          _id: appointment._id,
-          RMTId: appointment.RMTId || null,
-          RMTLocationId: appointment.RMTLocationId || null,
-          appointmentDate: appointment.appointmentDate || null,
-          appointmentStartTime:
-            appointment.appointmentStartTime ||
-            appointment.appointmentBeginsAt ||
-            null,
-          appointmentEndTime:
-            appointment.appointmentEndTime ||
-            appointment.appointmentEndsAt ||
-            null,
-          status: appointment.status || "available",
-          duration: appointment.duration
-            ? appointment.duration.toString()
-            : null,
-          email: appointment.email || "",
-          firstName: appointment.firstName || "",
-          lastName: appointment.lastName || "",
-          location: appointment.location || "",
-          userId: appointment.userId || null,
-          workplace: appointment.workplace || "",
-          paymentType: appointment.paymentType || null,
-          price: appointment.price ? appointment.price.toString() : null,
-          googleCalendarEventId: appointment.googleCalendarEventId || null,
-          googleCalendarEventLink: appointment.googleCalendarEventLink || null,
-          consentForm: appointment.consentForm || null,
-          consentFormSubmittedAt: appointment.consentFormSubmittedAt || null,
-          createdAt: appointment.createdAt || new Date(),
-          treatmentPlanId: appointment.treatmentPlanId || null,
-        };
+//         // Create a standardized document structure
+//         const standardizedAppointment = {
+//           _id: appointment._id,
+//           RMTId: appointment.RMTId || null,
+//           RMTLocationId: appointment.RMTLocationId || null,
+//           appointmentDate: appointment.appointmentDate || null,
+//           appointmentStartTime:
+//             appointment.appointmentStartTime ||
+//             appointment.appointmentBeginsAt ||
+//             null,
+//           appointmentEndTime:
+//             appointment.appointmentEndTime ||
+//             appointment.appointmentEndsAt ||
+//             null,
+//           status: appointment.status || "available",
+//           duration: appointment.duration
+//             ? appointment.duration.toString()
+//             : null,
+//           email: appointment.email || "",
+//           firstName: appointment.firstName || "",
+//           lastName: appointment.lastName || "",
+//           location: appointment.location || "",
+//           userId: appointment.userId || null,
+//           workplace: appointment.workplace || "",
+//           paymentType: appointment.paymentType || null,
+//           price: appointment.price ? appointment.price.toString() : null,
+//           googleCalendarEventId: appointment.googleCalendarEventId || null,
+//           googleCalendarEventLink: appointment.googleCalendarEventLink || null,
+//           consentForm: appointment.consentForm || null,
+//           consentFormSubmittedAt: appointment.consentFormSubmittedAt || null,
+//           createdAt: appointment.createdAt || new Date(),
+//           treatmentPlanId: appointment.treatmentPlanId || null,
+//         };
 
-        // Handle treatment notes - check if they need encryption
-        if (appointment.treatmentNotes) {
-          // Check if the treatment notes are already encrypted
-          const isEncrypted =
-            typeof appointment.treatmentNotes === "string" &&
-            /^[a-f0-9]{32}:[a-f0-9]+$/.test(appointment.treatmentNotes);
+//         // Handle treatment notes - check if they need encryption
+//         if (appointment.treatmentNotes) {
+//           // Check if the treatment notes are already encrypted
+//           const isEncrypted =
+//             typeof appointment.treatmentNotes === "string" &&
+//             /^[a-f0-9]{32}:[a-f0-9]+$/.test(appointment.treatmentNotes);
 
-          if (isEncrypted) {
-            // Already encrypted, just copy it
-            standardizedAppointment.treatmentNotes = appointment.treatmentNotes;
-          } else {
-            // Need to encrypt the treatment notes
-            // If it's a string, parse it to an object if possible
-            let notesToEncrypt = appointment.treatmentNotes;
-            if (typeof notesToEncrypt === "string") {
-              try {
-                notesToEncrypt = JSON.parse(notesToEncrypt);
-              } catch (e) {
-                // If it's not valid JSON, keep it as a string
-                notesToEncrypt = { notes: notesToEncrypt };
-              }
-            }
+//           if (isEncrypted) {
+//             // Already encrypted, just copy it
+//             standardizedAppointment.treatmentNotes = appointment.treatmentNotes;
+//           } else {
+//             // Need to encrypt the treatment notes
+//             // If it's a string, parse it to an object if possible
+//             let notesToEncrypt = appointment.treatmentNotes;
+//             if (typeof notesToEncrypt === "string") {
+//               try {
+//                 notesToEncrypt = JSON.parse(notesToEncrypt);
+//               } catch (e) {
+//                 // If it's not valid JSON, keep it as a string
+//                 notesToEncrypt = { notes: notesToEncrypt };
+//               }
+//             }
 
-            // Encrypt the treatment notes
-            standardizedAppointment.treatmentNotes =
-              encryptData(notesToEncrypt);
-          }
-        } else {
-          // No treatment notes, create an empty encrypted object if this is a completed appointment
-          if (appointment.status === "completed") {
-            const emptyNotes = {
-              reasonForMassage: "",
-              findings: "",
-              treatment: {
-                specificTreatment: "",
-                generalTreatment: "",
-              },
-              results: {
-                subjectiveResults: "",
-                objectiveResults: "",
-              },
-              remex: "",
-              referToHCP: "",
-              notes: "",
-            };
+//             // Encrypt the treatment notes
+//             standardizedAppointment.treatmentNotes =
+//               encryptData(notesToEncrypt);
+//           }
+//         } else {
+//           // No treatment notes, create an empty encrypted object if this is a completed appointment
+//           if (appointment.status === "completed") {
+//             const emptyNotes = {
+//               reasonForMassage: "",
+//               findings: "",
+//               treatment: {
+//                 specificTreatment: "",
+//                 generalTreatment: "",
+//               },
+//               results: {
+//                 subjectiveResults: "",
+//                 objectiveResults: "",
+//               },
+//               remex: "",
+//               referToHCP: "",
+//               notes: "",
+//             };
 
-            standardizedAppointment.treatmentNotes = encryptData(emptyNotes);
-          } else {
-            standardizedAppointment.treatmentNotes = null;
-          }
-        }
+//             standardizedAppointment.treatmentNotes = encryptData(emptyNotes);
+//           } else {
+//             standardizedAppointment.treatmentNotes = null;
+//           }
+//         }
 
-        // Add to the migrateTreatments array
-        migrateTreatments.push(standardizedAppointment);
-      } catch (error) {
-        console.error(
-          `Error processing appointment ${appointment._id}:`,
-          error
-        );
-        errors.push({
-          type: "appointment",
-          id: appointment._id.toString(),
-          error: error.message,
-        });
-      }
-    }
+//         // Add to the migrateTreatments array
+//         migrateTreatments.push(standardizedAppointment);
+//       } catch (error) {
+//         console.error(
+//           `Error processing appointment ${appointment._id}:`,
+//           error
+//         );
+//         errors.push({
+//           type: "appointment",
+//           id: appointment._id.toString(),
+//           error: error.message,
+//         });
+//       }
+//     }
 
-    // Insert the consolidated data into the new collection
-    if (migrateTreatments.length > 0) {
-      const result = await db
-        .collection("migrateTreatments")
-        .insertMany(migrateTreatments);
-      console.log(
-        `Inserted ${result.insertedCount} documents into migrateTreatments collection`
-      );
-    }
+//     // Insert the consolidated data into the new collection
+//     if (migrateTreatments.length > 0) {
+//       const result = await db
+//         .collection("migrateTreatments")
+//         .insertMany(migrateTreatments);
+//       console.log(
+//         `Inserted ${result.insertedCount} documents into migrateTreatments collection`
+//       );
+//     }
 
-    // Get a sample document to verify the structure
-    const sampleDocument = await db.collection("migrateTreatments").findOne({});
-    const fields = sampleDocument
-      ? Object.keys(sampleDocument).filter((key) => key !== "_id")
-      : [];
+//     // Get a sample document to verify the structure
+//     const sampleDocument = await db.collection("migrateTreatments").findOne({});
+//     const fields = sampleDocument
+//       ? Object.keys(sampleDocument).filter((key) => key !== "_id")
+//       : [];
 
-    return {
-      success: true,
-      message: `Successfully consolidated ${migrateTreatments.length} treatments/appointments`,
-      stats: {
-        totalTreatments: treatments.length,
-        totalAppointments: appointments.length,
-        consolidatedCount: migrateTreatments.length,
-        fields,
-      },
-      errors: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Consolidation failed:", error);
-    return {
-      success: false,
-      message: `Consolidation failed: ${error.message}`,
-      error: error.message,
-    };
-  }
-}
+//     return {
+//       success: true,
+//       message: `Successfully consolidated ${migrateTreatments.length} treatments/appointments`,
+//       stats: {
+//         totalTreatments: treatments.length,
+//         totalAppointments: appointments.length,
+//         consolidatedCount: migrateTreatments.length,
+//         fields,
+//       },
+//       errors: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Consolidation failed:", error);
+//     return {
+//       success: false,
+//       message: `Consolidation failed: ${error.message}`,
+//       error: error.message,
+//     };
+//   }
+// }
 
-export async function consolidateHealthHistories() {
-  console.log("Starting consolidation of healthhistories collection...");
+// export async function consolidateHealthHistories() {
+//   console.log("Starting consolidation of healthhistories collection...");
 
-  try {
-    // Connect to MongoDB
-    const db = await getDatabase();
+//   try {
+//     // Connect to MongoDB
+//     const db = await getDatabase();
 
-    // Check if migrateHealthHistories collection already exists and drop it if it does
-    const collections = await db
-      .listCollections({ name: "migrateHealthHistories" })
-      .toArray();
-    if (collections.length > 0) {
-      console.log(
-        "migrateHealthHistories collection already exists, dropping it..."
-      );
-      await db.collection("migrateHealthHistories").drop();
-    }
+//     // Check if migrateHealthHistories collection already exists and drop it if it does
+//     const collections = await db
+//       .listCollections({ name: "migrateHealthHistories" })
+//       .toArray();
+//     if (collections.length > 0) {
+//       console.log(
+//         "migrateHealthHistories collection already exists, dropping it..."
+//       );
+//       await db.collection("migrateHealthHistories").drop();
+//     }
 
-    // Get all documents from the healthhistories collection
-    const healthHistories = await db
-      .collection("healthhistories")
-      .find({})
-      .toArray();
+//     // Get all documents from the healthhistories collection
+//     const healthHistories = await db
+//       .collection("healthhistories")
+//       .find({})
+//       .toArray();
 
-    console.log(
-      `Found ${healthHistories.length} health history documents to consolidate`
-    );
+//     console.log(
+//       `Found ${healthHistories.length} health history documents to consolidate`
+//     );
 
-    // Create a new collection for the consolidated data
-    const migrateHealthHistories = [];
-    const errors = [];
-    let missingUserIdCount = 0;
+//     // Create a new collection for the consolidated data
+//     const migrateHealthHistories = [];
+//     const errors = [];
+//     let missingUserIdCount = 0;
 
-    // Process each health history document
-    for (const history of healthHistories) {
-      try {
-        // Determine the userId - check for both userId and clientId
-        let userId = null;
+//     // Process each health history document
+//     for (const history of healthHistories) {
+//       try {
+//         // Determine the userId - check for both userId and clientId
+//         let userId = null;
 
-        if (history.userId) {
-          userId = history.userId;
-        } else if (history.clientId) {
-          userId = history.clientId;
-        }
+//         if (history.userId) {
+//           userId = history.userId;
+//         } else if (history.clientId) {
+//           userId = history.clientId;
+//         }
 
-        // Convert string userId to ObjectId if needed
-        if (userId && typeof userId === "string") {
-          try {
-            userId = new ObjectId(userId);
-          } catch (e) {
-            console.warn(`Invalid ObjectId format for userId: ${userId}`);
-          }
-        }
+//         // Convert string userId to ObjectId if needed
+//         if (userId && typeof userId === "string") {
+//           try {
+//             userId = new ObjectId(userId);
+//           } catch (e) {
+//             console.warn(`Invalid ObjectId format for userId: ${userId}`);
+//           }
+//         }
 
-        // If still no userId, log it
-        if (!userId) {
-          missingUserIdCount++;
-          console.warn(`Document ${history._id} has no userId or clientId`);
-        }
+//         // If still no userId, log it
+//         if (!userId) {
+//           missingUserIdCount++;
+//           console.warn(`Document ${history._id} has no userId or clientId`);
+//         }
 
-        // Check if the document is already in the desired format (has encryptedData field)
-        if (
-          history.encryptedData &&
-          typeof history.encryptedData === "string" &&
-          /^[a-f0-9]{32}:[a-f0-9]+$/.test(history.encryptedData)
-        ) {
-          // Document is already in the correct format, just copy it
-          migrateHealthHistories.push({
-            _id: history._id,
-            userId: userId,
-            createdAt: history.createdAt || new Date(),
-            encryptedData: history.encryptedData,
-          });
-        } else {
-          // Document needs to be encrypted
-          // Extract all fields except _id, userId, clientId, and createdAt to be encrypted
-          const dataToEncrypt = { ...history };
-          delete dataToEncrypt._id;
-          delete dataToEncrypt.userId;
-          delete dataToEncrypt.clientId;
-          delete dataToEncrypt.createdAt;
-          delete dataToEncrypt.encryptedData; // In case it exists but isn't properly formatted
+//         // Check if the document is already in the desired format (has encryptedData field)
+//         if (
+//           history.encryptedData &&
+//           typeof history.encryptedData === "string" &&
+//           /^[a-f0-9]{32}:[a-f0-9]+$/.test(history.encryptedData)
+//         ) {
+//           // Document is already in the correct format, just copy it
+//           migrateHealthHistories.push({
+//             _id: history._id,
+//             userId: userId,
+//             createdAt: history.createdAt || new Date(),
+//             encryptedData: history.encryptedData,
+//           });
+//         } else {
+//           // Document needs to be encrypted
+//           // Extract all fields except _id, userId, clientId, and createdAt to be encrypted
+//           const dataToEncrypt = { ...history };
+//           delete dataToEncrypt._id;
+//           delete dataToEncrypt.userId;
+//           delete dataToEncrypt.clientId;
+//           delete dataToEncrypt.createdAt;
+//           delete dataToEncrypt.encryptedData; // In case it exists but isn't properly formatted
 
-          // Create the standardized document
-          const standardizedHistory = {
-            _id: history._id,
-            userId: userId,
-            createdAt: history.createdAt || new Date(),
-            encryptedData: encryptData(dataToEncrypt),
-          };
+//           // Create the standardized document
+//           const standardizedHistory = {
+//             _id: history._id,
+//             userId: userId,
+//             createdAt: history.createdAt || new Date(),
+//             encryptedData: encryptData(dataToEncrypt),
+//           };
 
-          migrateHealthHistories.push(standardizedHistory);
-        }
-      } catch (error) {
-        console.error(`Error processing health history ${history._id}:`, error);
-        errors.push({
-          id: history._id.toString(),
-          error: error.message,
-        });
-      }
-    }
+//           migrateHealthHistories.push(standardizedHistory);
+//         }
+//       } catch (error) {
+//         console.error(`Error processing health history ${history._id}:`, error);
+//         errors.push({
+//           id: history._id.toString(),
+//           error: error.message,
+//         });
+//       }
+//     }
 
-    // Insert the consolidated data into the new collection
-    if (migrateHealthHistories.length > 0) {
-      const result = await db
-        .collection("migrateHealthHistories")
-        .insertMany(migrateHealthHistories);
-      console.log(
-        `Inserted ${result.insertedCount} documents into migrateHealthHistories collection`
-      );
-    }
+//     // Insert the consolidated data into the new collection
+//     if (migrateHealthHistories.length > 0) {
+//       const result = await db
+//         .collection("migrateHealthHistories")
+//         .insertMany(migrateHealthHistories);
+//       console.log(
+//         `Inserted ${result.insertedCount} documents into migrateHealthHistories collection`
+//       );
+//     }
 
-    // Count how many documents were encrypted vs. already in the correct format
-    const alreadyEncrypted = migrateHealthHistories.filter((doc) =>
-      healthHistories.find(
-        (h) => h._id.toString() === doc._id.toString() && h.encryptedData
-      )
-    ).length;
+//     // Count how many documents were encrypted vs. already in the correct format
+//     const alreadyEncrypted = migrateHealthHistories.filter((doc) =>
+//       healthHistories.find(
+//         (h) => h._id.toString() === doc._id.toString() && h.encryptedData
+//       )
+//     ).length;
 
-    const newlyEncrypted = migrateHealthHistories.length - alreadyEncrypted;
+//     const newlyEncrypted = migrateHealthHistories.length - alreadyEncrypted;
 
-    return {
-      success: true,
-      message: `Successfully consolidated ${migrateHealthHistories.length} health history documents`,
-      stats: {
-        totalDocuments: healthHistories.length,
-        consolidatedCount: migrateHealthHistories.length,
-        alreadyEncrypted,
-        newlyEncrypted,
-        missingUserIdCount,
-        fields: ["_id", "userId", "createdAt", "encryptedData"],
-      },
-      errors: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Consolidation failed:", error);
-    return {
-      success: false,
-      message: `Consolidation failed: ${error.message}`,
-      error: error.message,
-    };
-  }
-}
+//     return {
+//       success: true,
+//       message: `Successfully consolidated ${migrateHealthHistories.length} health history documents`,
+//       stats: {
+//         totalDocuments: healthHistories.length,
+//         consolidatedCount: migrateHealthHistories.length,
+//         alreadyEncrypted,
+//         newlyEncrypted,
+//         missingUserIdCount,
+//         fields: ["_id", "userId", "createdAt", "encryptedData"],
+//       },
+//       errors: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Consolidation failed:", error);
+//     return {
+//       success: false,
+//       message: `Consolidation failed: ${error.message}`,
+//       error: error.message,
+//     };
+//   }
+// }
 
-export async function consolidateTreatmentPlans() {
-  console.log("Starting consolidation of treatmentplans collection...");
+// export async function consolidateTreatmentPlans() {
+//   console.log("Starting consolidation of treatmentplans collection...");
 
-  try {
-    // Connect to MongoDB
-    const db = await getDatabase();
+//   try {
+//     // Connect to MongoDB
+//     const db = await getDatabase();
 
-    // Check if migrateTreatmentPlans collection already exists and drop it if it does
-    const collections = await db
-      .listCollections({ name: "migrateTreatmentPlans" })
-      .toArray();
-    if (collections.length > 0) {
-      console.log(
-        "migrateTreatmentPlans collection already exists, dropping it..."
-      );
-      await db.collection("migrateTreatmentPlans").drop();
-    }
+//     // Check if migrateTreatmentPlans collection already exists and drop it if it does
+//     const collections = await db
+//       .listCollections({ name: "migrateTreatmentPlans" })
+//       .toArray();
+//     if (collections.length > 0) {
+//       console.log(
+//         "migrateTreatmentPlans collection already exists, dropping it..."
+//       );
+//       await db.collection("migrateTreatmentPlans").drop();
+//     }
 
-    // Get all documents from the treatmentplans collection
-    const treatmentPlans = await db
-      .collection("treatmentplans")
-      .find({})
-      .toArray();
+//     // Get all documents from the treatmentplans collection
+//     const treatmentPlans = await db
+//       .collection("treatmentplans")
+//       .find({})
+//       .toArray();
 
-    console.log(
-      `Found ${treatmentPlans.length} treatment plan documents to consolidate`
-    );
+//     console.log(
+//       `Found ${treatmentPlans.length} treatment plan documents to consolidate`
+//     );
 
-    // Create a new collection for the consolidated data
-    const migrateTreatmentPlans = [];
-    const errors = [];
+//     // Create a new collection for the consolidated data
+//     const migrateTreatmentPlans = [];
+//     const errors = [];
 
-    // Process each treatment plan document
-    for (const plan of treatmentPlans) {
-      try {
-        // Convert string IDs to ObjectIds
-        let clientId = plan.clientId;
-        if (clientId && typeof clientId === "string") {
-          try {
-            clientId = new ObjectId(clientId);
-          } catch (e) {
-            console.warn(`Invalid ObjectId format for clientId: ${clientId}`);
-          }
-        }
+//     // Process each treatment plan document
+//     for (const plan of treatmentPlans) {
+//       try {
+//         // Convert string IDs to ObjectIds
+//         let clientId = plan.clientId;
+//         if (clientId && typeof clientId === "string") {
+//           try {
+//             clientId = new ObjectId(clientId);
+//           } catch (e) {
+//             console.warn(`Invalid ObjectId format for clientId: ${clientId}`);
+//           }
+//         }
 
-        let createdBy = plan.createdBy;
-        if (createdBy && typeof createdBy === "string") {
-          try {
-            createdBy = new ObjectId(createdBy);
-          } catch (e) {
-            console.warn(`Invalid ObjectId format for createdBy: ${createdBy}`);
-            // If createdBy is invalid, use clientId as a fallback
-            createdBy = clientId;
-          }
-        }
+//         let createdBy = plan.createdBy;
+//         if (createdBy && typeof createdBy === "string") {
+//           try {
+//             createdBy = new ObjectId(createdBy);
+//           } catch (e) {
+//             console.warn(`Invalid ObjectId format for createdBy: ${createdBy}`);
+//             // If createdBy is invalid, use clientId as a fallback
+//             createdBy = clientId;
+//           }
+//         }
 
-        // Standardize the treatments array
-        let treatments = [];
-        if (plan.treatments && Array.isArray(plan.treatments)) {
-          treatments = plan.treatments
-            .map((treatment) => {
-              // If treatment is an object with _id, extract the _id
-              if (treatment && typeof treatment === "object" && treatment._id) {
-                return treatment._id;
-              }
-              // If treatment is already an ObjectId, use it
-              if (
-                treatment &&
-                typeof treatment === "object" &&
-                treatment.$oid
-              ) {
-                return new ObjectId(treatment.$oid);
-              }
-              // If treatment is a string, convert to ObjectId
-              if (treatment && typeof treatment === "string") {
-                try {
-                  return new ObjectId(treatment);
-                } catch (e) {
-                  console.warn(
-                    `Invalid ObjectId format for treatment: ${treatment}`
-                  );
-                  return null;
-                }
-              }
-              return treatment;
-            })
-            .filter((t) => t !== null);
-        }
+//         // Standardize the treatments array
+//         let treatments = [];
+//         if (plan.treatments && Array.isArray(plan.treatments)) {
+//           treatments = plan.treatments
+//             .map((treatment) => {
+//               // If treatment is an object with _id, extract the _id
+//               if (treatment && typeof treatment === "object" && treatment._id) {
+//                 return treatment._id;
+//               }
+//               // If treatment is already an ObjectId, use it
+//               if (
+//                 treatment &&
+//                 typeof treatment === "object" &&
+//                 treatment.$oid
+//               ) {
+//                 return new ObjectId(treatment.$oid);
+//               }
+//               // If treatment is a string, convert to ObjectId
+//               if (treatment && typeof treatment === "string") {
+//                 try {
+//                   return new ObjectId(treatment);
+//                 } catch (e) {
+//                   console.warn(
+//                     `Invalid ObjectId format for treatment: ${treatment}`
+//                   );
+//                   return null;
+//                 }
+//               }
+//               return treatment;
+//             })
+//             .filter((t) => t !== null);
+//         }
 
-        // Prepare data for encryption
-        let dataToEncrypt = {};
+//         // Prepare data for encryption
+//         let dataToEncrypt = {};
 
-        // Check if the document already has encryptedData
-        if (plan.encryptedData && typeof plan.encryptedData === "string") {
-          // Already encrypted, use as is
-          dataToEncrypt = null;
-        } else {
-          // Extract fields to encrypt
-          dataToEncrypt = {
-            clientGoals: plan.clientGoals || "",
-            objectivesOfTreatmentPlan: plan.objectivesOfTreatmentPlan || "",
-            conclusionOfTreatmentPlan: plan.conclusionOfTreatmentPlan || "",
-            endDate: plan.endDate || null,
-          };
+//         // Check if the document already has encryptedData
+//         if (plan.encryptedData && typeof plan.encryptedData === "string") {
+//           // Already encrypted, use as is
+//           dataToEncrypt = null;
+//         } else {
+//           // Extract fields to encrypt
+//           dataToEncrypt = {
+//             clientGoals: plan.clientGoals || "",
+//             objectivesOfTreatmentPlan: plan.objectivesOfTreatmentPlan || "",
+//             conclusionOfTreatmentPlan: plan.conclusionOfTreatmentPlan || "",
+//             endDate: plan.endDate || null,
+//           };
 
-          // If treatments contains objects with date/time/duration, include them in encrypted data
-          if (
-            plan.treatments &&
-            Array.isArray(plan.treatments) &&
-            plan.treatments.some(
-              (t) =>
-                t && typeof t === "object" && (t.date || t.time || t.duration)
-            )
-          ) {
-            dataToEncrypt.treatments = plan.treatments
-              .map((t) => {
-                if (
-                  t &&
-                  typeof t === "object" &&
-                  (t.date || t.time || t.duration)
-                ) {
-                  return {
-                    date: t.date || null,
-                    time: t.time || null,
-                    duration: t.duration || null,
-                  };
-                }
-                return null;
-              })
-              .filter((t) => t !== null);
-          }
-        }
+//           // If treatments contains objects with date/time/duration, include them in encrypted data
+//           if (
+//             plan.treatments &&
+//             Array.isArray(plan.treatments) &&
+//             plan.treatments.some(
+//               (t) =>
+//                 t && typeof t === "object" && (t.date || t.time || t.duration)
+//             )
+//           ) {
+//             dataToEncrypt.treatments = plan.treatments
+//               .map((t) => {
+//                 if (
+//                   t &&
+//                   typeof t === "object" &&
+//                   (t.date || t.time || t.duration)
+//                 ) {
+//                   return {
+//                     date: t.date || null,
+//                     time: t.time || null,
+//                     duration: t.duration || null,
+//                   };
+//                 }
+//                 return null;
+//               })
+//               .filter((t) => t !== null);
+//           }
+//         }
 
-        // Create the standardized document
-        const standardizedPlan = {
-          _id: plan._id,
-          startDate: plan.startDate || new Date(),
-          createdAt: plan.createdAt || new Date(),
-          createdBy: createdBy || clientId,
-          clientId: clientId,
-          treatments: treatments,
-        };
+//         // Create the standardized document
+//         const standardizedPlan = {
+//           _id: plan._id,
+//           startDate: plan.startDate || new Date(),
+//           createdAt: plan.createdAt || new Date(),
+//           createdBy: createdBy || clientId,
+//           clientId: clientId,
+//           treatments: treatments,
+//         };
 
-        // Add encrypted data
-        if (dataToEncrypt) {
-          standardizedPlan.encryptedData = encryptData(dataToEncrypt);
-        } else {
-          standardizedPlan.encryptedData = plan.encryptedData;
-        }
+//         // Add encrypted data
+//         if (dataToEncrypt) {
+//           standardizedPlan.encryptedData = encryptData(dataToEncrypt);
+//         } else {
+//           standardizedPlan.encryptedData = plan.encryptedData;
+//         }
 
-        migrateTreatmentPlans.push(standardizedPlan);
-      } catch (error) {
-        console.error(`Error processing treatment plan ${plan._id}:`, error);
-        errors.push({
-          id: plan._id.toString(),
-          error: error.message,
-        });
-      }
-    }
+//         migrateTreatmentPlans.push(standardizedPlan);
+//       } catch (error) {
+//         console.error(`Error processing treatment plan ${plan._id}:`, error);
+//         errors.push({
+//           id: plan._id.toString(),
+//           error: error.message,
+//         });
+//       }
+//     }
 
-    // Insert the consolidated data into the new collection
-    if (migrateTreatmentPlans.length > 0) {
-      const result = await db
-        .collection("migrateTreatmentPlans")
-        .insertMany(migrateTreatmentPlans);
-      console.log(
-        `Inserted ${result.insertedCount} documents into migrateTreatmentPlans collection`
-      );
-    }
+//     // Insert the consolidated data into the new collection
+//     if (migrateTreatmentPlans.length > 0) {
+//       const result = await db
+//         .collection("migrateTreatmentPlans")
+//         .insertMany(migrateTreatmentPlans);
+//       console.log(
+//         `Inserted ${result.insertedCount} documents into migrateTreatmentPlans collection`
+//       );
+//     }
 
-    // Count how many documents were encrypted vs. already in the correct format
-    const alreadyEncrypted = treatmentPlans.filter(
-      (plan) => plan.encryptedData
-    ).length;
-    const newlyEncrypted = migrateTreatmentPlans.length - alreadyEncrypted;
+//     // Count how many documents were encrypted vs. already in the correct format
+//     const alreadyEncrypted = treatmentPlans.filter(
+//       (plan) => plan.encryptedData
+//     ).length;
+//     const newlyEncrypted = migrateTreatmentPlans.length - alreadyEncrypted;
 
-    return {
-      success: true,
-      message: `Successfully consolidated ${migrateTreatmentPlans.length} treatment plan documents`,
-      stats: {
-        totalDocuments: treatmentPlans.length,
-        consolidatedCount: migrateTreatmentPlans.length,
-        alreadyEncrypted,
-        newlyEncrypted,
-        fields: Object.keys(migrateTreatmentPlans[0] || {}),
-      },
-      errors: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Consolidation failed:", error);
-    return {
-      success: false,
-      message: `Consolidation failed: ${error.message}`,
-      error: error.message,
-    };
-  }
-}
+//     return {
+//       success: true,
+//       message: `Successfully consolidated ${migrateTreatmentPlans.length} treatment plan documents`,
+//       stats: {
+//         totalDocuments: treatmentPlans.length,
+//         consolidatedCount: migrateTreatmentPlans.length,
+//         alreadyEncrypted,
+//         newlyEncrypted,
+//         fields: Object.keys(migrateTreatmentPlans[0] || {}),
+//       },
+//       errors: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Consolidation failed:", error);
+//     return {
+//       success: false,
+//       message: `Consolidation failed: ${error.message}`,
+//       error: error.message,
+//     };
+//   }
+// }
 
 // Map MongoDB ObjectIds to PostgreSQL UUIDs
-const idMappings = {
-  users: new Map(),
-  treatments: new Map(),
-  healthHistories: new Map(),
-  treatmentPlans: new Map(),
-  rmtLocations: new Map(),
-};
-
-// Helper function to convert MongoDB ObjectId to string
-function objectIdToString(id) {
-  if (!id) return null;
-  if (typeof id === "string") return id;
-  if (id instanceof ObjectId) return id.toString();
-  if (id.$oid) return id.$oid;
-  return null;
-}
-
-// Helper function to convert MongoDB date to ISO string
-function dateToISOString(date) {
-  if (!date) return null;
-  if (typeof date === "string") return date;
-  if (date instanceof Date) return date.toISOString();
-  if (date.$date) return new Date(date.$date).toISOString();
-  return null;
-}
-
-// Main migration function
-export async function migrateToPostgres() {
-  console.log("Starting migration from MongoDB to PostgreSQL...");
-
-  try {
-    // Connect to MongoDB
-    const db = await getDatabase();
-
-    // Migration steps - order matters due to foreign key constraints
-    const usersMigrated = await migrateUsers(db);
-    const rmtLocationsMigrated = await migrateRmtLocations(db);
-    const healthHistoriesMigrated = await migrateHealthHistories(db);
-    const treatmentPlansMigrated = await migrateTreatmentPlans(db);
-    const treatmentsMigrated = await migrateTreatments(db);
-    const relationshipsMigrated = await migrateRelationships(db);
-    const workDaysMigrated = await migrateWorkDays(db);
-    const messagesMigrated = await migrateMessages(db);
-
-    return {
-      success: true,
-      message: "Migration completed successfully",
-      stats: {
-        users: usersMigrated,
-        rmtLocations: rmtLocationsMigrated,
-        healthHistories: healthHistoriesMigrated,
-        treatmentPlans: treatmentPlansMigrated,
-        treatments: treatmentsMigrated,
-        relationships: relationshipsMigrated,
-        workDays: workDaysMigrated,
-        messages: messagesMigrated,
-      },
-    };
-  } catch (error) {
-    console.error("Migration failed:", error);
-    return {
-      success: false,
-      message: `Migration failed: ${error.message}`,
-      error: error.message,
-    };
-  }
-}
-
-// Migrate users
-async function migrateUsers(db) {
-  console.log("Migrating users...");
-
-  try {
-    const users = await db.collection("migrateUsers").find({}).toArray();
-    console.log(`Found ${users.length} users to migrate`);
-
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
-
-    for (const user of users) {
-      try {
-        const mongoId = objectIdToString(user._id);
-
-        // Check if user already exists in PostgreSQL
-        const existingUser = await sql`
-          SELECT id FROM users WHERE mongodb_id = ${mongoId}
-        `;
-
-        if (existingUser.rowCount > 0) {
-          // User already exists, store the mapping
-          idMappings.users.set(mongoId, existingUser.rows[0].id);
-          continue;
-        }
-
-        // Map user type
-        let userType = "client";
-        if (user.role === "rmt" || user.userType === "rmt") {
-          userType = "rmt";
-        } else if (user.role === "admin" || user.userType === "admin") {
-          userType = "admin";
-        }
-
-        // Insert user into PostgreSQL
-        const result = await sql`
-          INSERT INTO users (
-            mongodb_id, 
-            first_name, 
-            last_name, 
-            email, 
-            phone_number, 
-            password, 
-            user_type,
-            rmt_id,
-            created_at,
-            preferred_name,
-            pronouns,
-            last_health_history_update,
-            dns_count,
-            reset_token,
-            reset_token_expires,
-            cancel_count,
-            email_list
-          ) 
-          VALUES (
-            ${mongoId},
-            ${user.firstName || user.first_name || ""},
-            ${user.lastName || user.last_name || ""},
-            ${user.email || ""},
-            ${user.phone || null},
-            ${user.password || user.passwordHash || ""},
-            ${userType},
-            ${null}, -- Will update RMT relationships later
-            ${dateToISOString(user.createdAt) || new Date().toISOString()},
-            ${user.preferredName || null},
-            ${user.pronouns || null},
-            ${dateToISOString(user.lastHealthHistoryUpdate) || null},
-            ${user.dnsCount || 0},
-            ${user.resetToken || null},
-            ${dateToISOString(user.resetTokenExpires) || null},
-            ${user.cancelCount || 0},
-            ${user.emailList === false ? false : true}
-          )
-          RETURNING id
-        `;
-
-        // Store the mapping between MongoDB ObjectId and PostgreSQL id
-        if (result.rows.length > 0) {
-          idMappings.users.set(mongoId, result.rows[0].id);
-          successCount++;
-        }
-      } catch (error) {
-        console.error(`Error migrating user ${user._id}:`, error);
-        errorCount++;
-        errors.push({
-          id: objectIdToString(user._id),
-          error: error.message,
-        });
-      }
-    }
-
-    // Update RMT relationships after all users are migrated
-    console.log("Updating RMT relationships...");
-    for (const user of users) {
-      if (user.rmtId) {
-        const userId = idMappings.users.get(objectIdToString(user._id));
-        const rmtMongoId = objectIdToString(user.rmtId);
-
-        if (userId && idMappings.users.has(rmtMongoId)) {
-          const rmtId = idMappings.users.get(rmtMongoId);
-
-          try {
-            await sql`
-              UPDATE users
-              SET rmt_id = ${rmtId}
-              WHERE id = ${userId}
-            `;
-          } catch (error) {
-            console.error(
-              `Error updating RMT relationship for user ${user._id}:`,
-              error
-            );
-          }
-        }
-      }
-    }
-
-    return {
-      total: users.length,
-      success: successCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateUsers:", error);
-    throw error;
-  }
-}
-
-// Migrate RMT locations
-async function migrateRmtLocations(db) {
-  console.log("Migrating RMT locations...");
-
-  try {
-    const rmtLocations = await db.collection("rmtLocations").find({}).toArray();
-    console.log(`Found ${rmtLocations.length} RMT locations to migrate`);
-
-    let successCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
-    const errors = [];
-
-    for (const location of rmtLocations) {
-      try {
-        const mongoId = objectIdToString(location._id);
-        const userMongoId = objectIdToString(location.userId);
-
-        // Check if location already exists in PostgreSQL
-        const existingLocation = await sql`
-          SELECT id FROM rmt_locations WHERE mongodb_id = ${mongoId}
-        `;
-
-        if (existingLocation.rowCount > 0) {
-          // Location already exists, store the mapping
-          idMappings.rmtLocations.set(mongoId, existingLocation.rows[0].id);
-          continue;
-        }
-
-        // Skip if user doesn't exist in PostgreSQL
-        if (!userMongoId || !idMappings.users.has(userMongoId)) {
-          console.warn(
-            `Skipping RMT location ${mongoId} - user ${userMongoId} not found`
-          );
-          skippedCount++;
-          continue;
-        }
-
-        const userId = idMappings.users.get(userMongoId);
-
-        // Extract address and contact info
-        const formattedFormData = location.formattedFormData || {};
-        const address = formattedFormData.address || {};
-        const contactInfo = formattedFormData.contactInfo || {};
-
-        // Insert RMT location into PostgreSQL
-        const result = await sql`
-          INSERT INTO rmt_locations (
-            mongodb_id,
-            user_id,
-            location_name,
-            street_address,
-            city,
-            province,
-            country,
-            postal_code,
-            phone,
-            email,
-            workplace_type,
-            description,
-            what_to_wear,
-            payment,
-            url,
-            created_at
-          )
-          VALUES (
-            ${mongoId},
-            ${userId},
-            ${address.locationName || null},
-            ${address.streetAddress || null},
-            ${address.city || null},
-            ${address.province || null},
-            ${address.country || null},
-            ${address.postalCode || null},
-            ${contactInfo.phone || null},
-            ${contactInfo.email || null},
-            ${formattedFormData.workplaceType || null},
-            ${formattedFormData.description || null},
-            ${formattedFormData.whatToWear || null},
-            ${formattedFormData.payment || null},
-            ${formattedFormData.url || null},
-            ${dateToISOString(location.createdAt) || new Date().toISOString()}
-          )
-          RETURNING id
-        `;
-
-        // Store the mapping between MongoDB ObjectId and PostgreSQL id
-        if (result.rows.length > 0) {
-          const locationId = result.rows[0].id;
-          idMappings.rmtLocations.set(mongoId, locationId);
-
-          // Create user_rmt_locations relationship
-          await sql`
-            INSERT INTO user_rmt_locations (
-              user_id,
-              rmt_location_id,
-              is_primary
-            )
-            VALUES (
-              ${userId},
-              ${locationId},
-              true
-            )
-          `;
-
-          // Migrate massage services if available
-          if (
-            formattedFormData.massageServices &&
-            Array.isArray(formattedFormData.massageServices)
-          ) {
-            for (const service of formattedFormData.massageServices) {
-              await sql`
-                INSERT INTO massage_services (
-                  rmt_location_id,
-                  service,
-                  duration,
-                  price,
-                  plus_hst
-                )
-                VALUES (
-                  ${locationId},
-                  ${service.service || "Massage Therapy"},
-                  ${service.duration || 60},
-                  ${service.price || 0},
-                  ${service.plusHST || false}
-                )
-              `;
-            }
-          }
-
-          successCount++;
-        }
-      } catch (error) {
-        console.error(`Error migrating RMT location ${location._id}:`, error);
-        errorCount++;
-        errors.push({
-          id: objectIdToString(location._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: rmtLocations.length,
-      success: successCount,
-      skipped: skippedCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateRmtLocations:", error);
-    throw error;
-  }
-}
-
-// Migrate work days and appointment times
-async function migrateWorkDays(db) {
-  console.log("Migrating work days and appointment times...");
-
-  try {
-    const rmtLocations = await db.collection("rmtLocations").find({}).toArray();
-    console.log(
-      `Found ${rmtLocations.length} RMT locations to process for work days`
-    );
-
-    let successCount = 0;
-    let appointmentTimesCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
-    const errors = [];
-
-    for (const location of rmtLocations) {
-      try {
-        const mongoId = objectIdToString(location._id);
-
-        // Skip if location doesn't exist in PostgreSQL
-        if (!idMappings.rmtLocations.has(mongoId)) {
-          console.warn(
-            `Skipping work days for location ${mongoId} - location not found in PostgreSQL`
-          );
-          skippedCount++;
-          continue;
-        }
-
-        const locationId = idMappings.rmtLocations.get(mongoId);
-        const formattedFormData = location.formattedFormData || {};
-
-        // Process work days
-        if (
-          formattedFormData.workDays &&
-          Array.isArray(formattedFormData.workDays)
-        ) {
-          for (const workDay of formattedFormData.workDays) {
-            // Insert work day
-            const workDayResult = await sql`
-              INSERT INTO work_days (
-                location_id,
-                day,
-                schedule_type,
-                specific_date,
-                created_at
-              )
-              VALUES (
-                ${locationId},
-                ${workDay.day || null},
-                ${"weekly"}, -- Default to weekly schedule
-                ${null},
-                ${new Date().toISOString()}
-              )
-              RETURNING id
-            `;
-
-            if (workDayResult.rows.length > 0) {
-              const workDayId = workDayResult.rows[0].id;
-              successCount++;
-
-              // Process appointment times
-              if (
-                workDay.appointmentTimes &&
-                Array.isArray(workDay.appointmentTimes)
-              ) {
-                for (const timeSlot of workDay.appointmentTimes) {
-                  await sql`
-                    INSERT INTO appointment_times (
-                      work_day_id,
-                      start_time,
-                      end_time,
-                      created_at
-                    )
-                    VALUES (
-                      ${workDayId},
-                      ${timeSlot.start || null},
-                      ${timeSlot.end || null},
-                      ${new Date().toISOString()}
-                    )
-                  `;
-                  appointmentTimesCount++;
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error(
-          `Error migrating work days for location ${location._id}:`,
-          error
-        );
-        errorCount++;
-        errors.push({
-          id: objectIdToString(location._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: rmtLocations.length,
-      workDaysSuccess: successCount,
-      appointmentTimesSuccess: appointmentTimesCount,
-      skipped: skippedCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateWorkDays:", error);
-    throw error;
-  }
-}
-
-// Migrate health histories
-async function migrateHealthHistories(db) {
-  console.log("Migrating health histories...");
-
-  try {
-    const healthHistories = await db
-      .collection("migrateHealthHistories")
-      .find({})
-      .toArray();
-    console.log(`Found ${healthHistories.length} health histories to migrate`);
-
-    let successCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
-    const errors = [];
-
-    for (const history of healthHistories) {
-      try {
-        const mongoId = objectIdToString(history._id);
-        const userMongoId = objectIdToString(history.userId);
-
-        // Check if health history already exists in PostgreSQL
-        const existingHistory = await sql`
-          SELECT id FROM health_histories WHERE mongodb_id = ${mongoId}
-        `;
-
-        if (existingHistory.rowCount > 0) {
-          // Health history already exists, store the mapping
-          idMappings.healthHistories.set(mongoId, existingHistory.rows[0].id);
-          continue;
-        }
-
-        // Skip if user doesn't exist in PostgreSQL
-        if (!userMongoId || !idMappings.users.has(userMongoId)) {
-          console.warn(
-            `Skipping health history ${mongoId} - user ${userMongoId} not found`
-          );
-          skippedCount++;
-          continue;
-        }
-
-        const userId = idMappings.users.get(userMongoId);
-
-        // Insert health history into PostgreSQL
-        const result = await sql`
-          INSERT INTO health_histories (
-            mongodb_id,
-            user_id,
-            encrypted_data,
-            created_at
-          )
-          VALUES (
-            ${mongoId},
-            ${userId},
-            ${history.encryptedData || "{}"},
-            ${dateToISOString(history.createdAt) || new Date().toISOString()}
-          )
-          RETURNING id
-        `;
-
-        // Store the mapping between MongoDB ObjectId and PostgreSQL id
-        if (result.rows.length > 0) {
-          idMappings.healthHistories.set(mongoId, result.rows[0].id);
-
-          // Update user's last_health_history_update field
-          await sql`
-            UPDATE users
-            SET last_health_history_update = ${
-              dateToISOString(history.createdAt) || new Date().toISOString()
-            }
-            WHERE id = ${userId}
-            AND (last_health_history_update IS NULL OR last_health_history_update < ${
-              dateToISOString(history.createdAt) || new Date().toISOString()
-            })
-          `;
-
-          successCount++;
-        }
-      } catch (error) {
-        console.error(`Error migrating health history ${history._id}:`, error);
-        errorCount++;
-        errors.push({
-          id: objectIdToString(history._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: healthHistories.length,
-      success: successCount,
-      skipped: skippedCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateHealthHistories:", error);
-    throw error;
-  }
-}
-
-// Migrate treatment plans
-async function migrateTreatmentPlans(db) {
-  console.log("Migrating treatment plans...");
-
-  try {
-    const treatmentPlans = await db
-      .collection("migrateTreatmentPlans")
-      .find({})
-      .toArray();
-    console.log(`Found ${treatmentPlans.length} treatment plans to migrate`);
-
-    let successCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
-    const errors = [];
-
-    for (const plan of treatmentPlans) {
-      try {
-        const mongoId = objectIdToString(plan._id);
-        const clientMongoId = objectIdToString(plan.clientId);
-        const createdByMongoId = objectIdToString(plan.createdBy);
-
-        // Check if treatment plan already exists in PostgreSQL
-        const existingPlan = await sql`
-          SELECT id FROM treatment_plans WHERE mongodb_id = ${mongoId}
-        `;
-
-        if (existingPlan.rowCount > 0) {
-          // Treatment plan already exists, store the mapping
-          idMappings.treatmentPlans.set(mongoId, existingPlan.rows[0].id);
-          continue;
-        }
-
-        // Skip if client doesn't exist in PostgreSQL
-        if (!clientMongoId || !idMappings.users.has(clientMongoId)) {
-          console.warn(
-            `Skipping treatment plan ${mongoId} - client ${clientMongoId} not found`
-          );
-          skippedCount++;
-          continue;
-        }
-
-        const clientId = idMappings.users.get(clientMongoId);
-
-        // Use client ID as created by if created by doesn't exist
-        let createdById = null;
-        if (createdByMongoId && idMappings.users.has(createdByMongoId)) {
-          createdById = idMappings.users.get(createdByMongoId);
-        } else {
-          createdById = clientId;
-        }
-
-        // Parse start date if it exists
-        let startDate = null;
-        if (plan.startDate) {
-          try {
-            startDate = new Date(plan.startDate).toISOString().split("T")[0];
-          } catch (e) {
-            console.warn(
-              `Invalid start date format for plan ${mongoId}: ${plan.startDate}`
-            );
-          }
-        }
-
-        // Insert treatment plan into PostgreSQL
-        const result = await sql`
-          INSERT INTO treatment_plans (
-            mongodb_id,
-            client_id,
-            created_by,
-            encrypted_data,
-            start_date,
-            created_at
-          )
-          VALUES (
-            ${mongoId},
-            ${clientId},
-            ${createdById},
-            ${plan.encryptedData || "{}"},
-            ${startDate},
-            ${dateToISOString(plan.createdAt) || new Date().toISOString()}
-          )
-          RETURNING id
-        `;
-
-        // Store the mapping between MongoDB ObjectId and PostgreSQL id
-        if (result.rows.length > 0) {
-          idMappings.treatmentPlans.set(mongoId, result.rows[0].id);
-          successCount++;
-        }
-      } catch (error) {
-        console.error(`Error migrating treatment plan ${plan._id}:`, error);
-        errorCount++;
-        errors.push({
-          id: objectIdToString(plan._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: treatmentPlans.length,
-      success: successCount,
-      skipped: skippedCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateTreatmentPlans:", error);
-    throw error;
-  }
-}
-
-async function migrateTreatments(db) {
-  console.log("Migrating treatments...");
-
-  try {
-    const treatments = await db
-      .collection("migrateTreatments")
-      .find({})
-      .toArray();
-    console.log(`Found ${treatments.length} treatments to migrate`);
-
-    let successCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
-    const errors = [];
-
-    for (const treatment of treatments) {
-      try {
-        const mongoId = objectIdToString(treatment._id);
-        const rmtMongoId = objectIdToString(treatment.RMTId);
-        const userMongoId = objectIdToString(treatment.userId);
-        const rmtLocationMongoId = objectIdToString(treatment.RMTLocationId);
-
-        // Check if treatment already exists in PostgreSQL
-        const existingTreatment = await sql`
-          SELECT id FROM treatments WHERE mongodb_id = ${mongoId}
-        `;
-
-        if (existingTreatment.rowCount > 0) {
-          // Treatment already exists, store the mapping
-          idMappings.treatments.set(mongoId, existingTreatment.rows[0].id);
-          continue;
-        }
-
-        // Skip if neither RMT nor user exists in PostgreSQL
-        if (
-          (!rmtMongoId || !idMappings.users.has(rmtMongoId)) &&
-          (!userMongoId || !idMappings.users.has(userMongoId))
-        ) {
-          console.warn(
-            `Skipping treatment ${mongoId} - neither RMT ${rmtMongoId} nor user ${userMongoId} found`
-          );
-          skippedCount++;
-          continue;
-        }
-
-        const rmtId =
-          rmtMongoId && idMappings.users.has(rmtMongoId)
-            ? idMappings.users.get(rmtMongoId)
-            : null;
-
-        const clientId =
-          userMongoId && idMappings.users.has(userMongoId)
-            ? idMappings.users.get(userMongoId)
-            : null;
-
-        const rmtLocationId =
-          rmtLocationMongoId && idMappings.rmtLocations.has(rmtLocationMongoId)
-            ? idMappings.rmtLocations.get(rmtLocationMongoId)
-            : null;
-
-        // Parse time strings
-        let appointmentBeginsAt =
-          treatment.appointmentBeginsAt ||
-          treatment.appointmentStartTime ||
-          null;
-        let appointmentEndsAt =
-          treatment.appointmentEndsAt || treatment.appointmentEndTime || null;
-
-        if (appointmentBeginsAt && !appointmentBeginsAt.includes(":")) {
-          appointmentBeginsAt = `${appointmentBeginsAt.substring(
-            0,
-            2
-          )}:${appointmentBeginsAt.substring(2, 4)}:00`;
-        }
-
-        if (appointmentEndsAt && !appointmentEndsAt.includes(":")) {
-          appointmentEndsAt = `${appointmentEndsAt.substring(
-            0,
-            2
-          )}:${appointmentEndsAt.substring(2, 4)}:00`;
-        }
-
-        // Parse price to decimal
-        let price = null;
-        if (treatment.price) {
-          try {
-            price = parseFloat(treatment.price);
-          } catch (e) {
-            console.warn(
-              `Invalid price format for treatment ${mongoId}: ${treatment.price}`
-            );
-          }
-        }
-
-        // Parse date
-        let date = null;
-        if (treatment.appointmentDate || treatment.date) {
-          date = treatment.appointmentDate || treatment.date;
-        }
-
-        // Parse consent form
-        let consentForm = null;
-        if (treatment.consentForm) {
-          try {
-            if (typeof treatment.consentForm === "string") {
-              consentForm = JSON.parse(treatment.consentForm);
-            } else {
-              consentForm = treatment.consentForm;
-            }
-          } catch (e) {
-            console.warn(
-              `Invalid consent form format for treatment ${mongoId}`
-            );
-          }
-        }
-
-        // Insert treatment into PostgreSQL
-        const result = await sql`
-          INSERT INTO treatments (
-            mongodb_id,
-            rmt_id,
-            client_id,
-            date,
-            price,
-            payment_type,
-            status,
-            created_at,
-            rmt_location_id,
-            appointment_begins_at,
-            appointment_ends_at,
-            duration,
-            location,
-            workplace,
-            google_calendar_event_id,
-            google_calendar_event_link,
-            consent_form,
-            consent_form_submitted_at,
-            encrypted_treatment_notes,
-            updated_at,
-            rescheduling_started_at,
-            previous_status,
-            appointment_window_start,
-            appointment_window_end
-          )
-          VALUES (
-            ${mongoId},
-            ${rmtId},
-            ${clientId},
-            ${date},
-            ${price},
-            ${treatment.paymentType || null},
-            ${treatment.status || "available"},
-            ${dateToISOString(treatment.createdAt) || new Date().toISOString()},
-            ${rmtLocationId},
-            ${appointmentBeginsAt},
-            ${appointmentEndsAt},
-            ${treatment.duration ? parseInt(treatment.duration, 10) : null},
-            ${treatment.location || null},
-            ${treatment.workplace || null},
-            ${treatment.googleCalendarEventId || null},
-            ${treatment.googleCalendarEventLink || null},
-            ${consentForm},
-            ${dateToISOString(treatment.consentFormSubmittedAt) || null},
-            ${treatment.treatmentNotes || null},
-            ${
-              dateToISOString(treatment.updatedAt) ||
-              dateToISOString(treatment.createdAt) ||
-              new Date().toISOString()
-            },
-            ${dateToISOString(treatment.reschedulingStartedAt) || null},
-            ${treatment.previousStatus || null},
-            ${treatment.appointmentWindowStart || null},
-            ${treatment.appointmentWindowEnd || null}
-          )
-          RETURNING id
-        `;
-
-        // Store the mapping between MongoDB ObjectId and PostgreSQL id
-        if (result.rows.length > 0) {
-          idMappings.treatments.set(mongoId, result.rows[0].id);
-
-          // Create income record if treatment is completed and has a price
-          if (treatment.status === "completed" && price) {
-            try {
-              const year = date
-                ? new Date(date).getFullYear().toString()
-                : new Date().getFullYear().toString();
-
-              await sql`
-                INSERT INTO incomes (
-                  mongodb_id,
-                  rmt_id,
-                  treatment_id,
-                  date,
-                  year,
-                  category,
-                  amount,
-                  total_price,
-                  details,
-                  created_at,
-                  updated_at
-                )
-                VALUES (
-                  ${mongoId + "_income"},
-                  ${rmtId},
-                  ${result.rows[0].id},
-                  ${date},
-                  ${year},
-                  ${"Massage Therapy"},
-                  ${price},
-                  ${price},
-                  ${"Income from treatment"},
-                  ${
-                    dateToISOString(treatment.createdAt) ||
-                    new Date().toISOString()
-                  },
-                  ${
-                    dateToISOString(treatment.updatedAt) ||
-                    dateToISOString(treatment.createdAt) ||
-                    new Date().toISOString()
-                  }
-                )
-              `;
-            } catch (incomeError) {
-              console.error(
-                `Error creating income record for treatment ${mongoId}:`,
-                incomeError
-              );
-            }
-          }
-
-          successCount++;
-        }
-      } catch (error) {
-        console.error(`Error migrating treatment ${treatment._id}:`, error);
-        errorCount++;
-        errors.push({
-          id: objectIdToString(treatment._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: treatments.length,
-      success: successCount,
-      skipped: skippedCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateTreatments:", error);
-    throw error;
-  }
-}
-
-// Migrate relationships (treatment plans to treatments)
-async function migrateRelationships(db) {
-  console.log("Migrating relationships...");
-
-  try {
-    const treatmentPlans = await db
-      .collection("migrateTreatmentPlans")
-      .find({})
-      .toArray();
-    console.log(
-      `Found ${treatmentPlans.length} treatment plans to process for relationships`
-    );
-
-    let successCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
-    const errors = [];
-
-    for (const plan of treatmentPlans) {
-      try {
-        const planMongoId = objectIdToString(plan._id);
-
-        // Skip if treatment plan doesn't exist in PostgreSQL
-        if (!idMappings.treatmentPlans.has(planMongoId)) {
-          console.warn(
-            `Skipping relationships for plan ${planMongoId} - plan not found in PostgreSQL`
-          );
-          skippedCount++;
-          continue;
-        }
-
-        const planId = idMappings.treatmentPlans.get(planMongoId);
-
-        // Process treatments array
-        if (plan.treatments && Array.isArray(plan.treatments)) {
-          for (const treatmentRef of plan.treatments) {
-            const treatmentMongoId = objectIdToString(treatmentRef);
-
-            if (
-              !treatmentMongoId ||
-              !idMappings.treatments.has(treatmentMongoId)
-            ) {
-              console.warn(
-                `Skipping treatment ${treatmentMongoId} for plan ${planMongoId} - treatment not found`
-              );
-              continue;
-            }
-
-            const treatmentId = idMappings.treatments.get(treatmentMongoId);
-
-            // Check if relationship already exists
-            const existingRelationship = await sql`
-              SELECT id FROM treatment_plan_treatments 
-              WHERE treatment_plan_id = ${planId} AND treatment_id = ${treatmentId}
-            `;
-
-            if (existingRelationship.rowCount > 0) {
-              continue;
-            }
-
-            // Insert relationship
-            await sql`
-              INSERT INTO treatment_plan_treatments (
-                treatment_plan_id,
-                treatment_id,
-                created_at
-              )
-              VALUES (
-                ${planId},
-                ${treatmentId},
-                ${new Date().toISOString()}
-              )
-            `;
-
-            // Update treatment with treatment plan id
-            await sql`
-              UPDATE treatments
-              SET treatment_plan_id = ${planId}
-              WHERE id = ${treatmentId}
-            `;
-
-            successCount++;
-          }
-        }
-      } catch (error) {
-        console.error(
-          `Error migrating relationships for plan ${plan._id}:`,
-          error
-        );
-        errorCount++;
-        errors.push({
-          id: objectIdToString(plan._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: treatmentPlans.length,
-      success: successCount,
-      skipped: skippedCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateRelationships:", error);
-    throw error;
-  }
-}
-
-// Migrate messages
-async function migrateMessages(db) {
-  console.log("Migrating messages...");
-
-  try {
-    const messages = await db.collection("messages").find({}).toArray();
-    console.log(`Found ${messages.length} messages to migrate`);
-
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
-
-    for (const message of messages) {
-      try {
-        const mongoId = objectIdToString(message._id);
-        const rmtMongoId = objectIdToString(message.rmtId);
-
-        // Check if message already exists in PostgreSQL
-        const existingMessage = await sql`
-          SELECT id FROM messages WHERE mongodb_id = ${mongoId}
-        `;
-
-        if (existingMessage.rowCount > 0) {
-          continue;
-        }
-
-        // Get RMT ID if available
-        const rmtId =
-          rmtMongoId && idMappings.users.has(rmtMongoId)
-            ? idMappings.users.get(rmtMongoId)
-            : null;
-
-        // Insert message into PostgreSQL
-        await sql`
-          INSERT INTO messages (
-            mongodb_id,
-            status,
-            email,
-            first_name,
-            last_name,
-            phone,
-            message,
-            created_at,
-            rmt_id
-          )
-          VALUES (
-            ${mongoId},
-            ${message.status || "new"},
-            ${message.email || ""},
-            ${message.firstName || message.first_name || ""},
-            ${message.lastName || message.last_name || ""},
-            ${message.phone || "N/A"},
-            ${message.message || ""},
-            ${dateToISOString(message.createdAt) || new Date().toISOString()},
-            ${rmtId}
-          )
-        `;
-
-        successCount++;
-      } catch (error) {
-        console.error(`Error migrating message ${message._id}:`, error);
-        errorCount++;
-        errors.push({
-          id: objectIdToString(message._id),
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      total: messages.length,
-      success: successCount,
-      errors: errorCount,
-      errorDetails: errors.length > 0 ? errors : null,
-    };
-  } catch (error) {
-    console.error("Error in migrateMessages:", error);
-    throw error;
-  }
-}
-
-export async function addAppointmentsForEightWeeks() {
-  try {
-    console.log("Starting addAppointmentsForEightWeeks function...");
-
-    const today = new Date();
-    console.log(`Starting date: ${today.toISOString().split("T")[0]}`);
-
-    // Fetch the specific RMT location
-    const mongodbId = "673a415085f1bd8631e7a426";
-
-    const { rows: locations } = await sql`
-      SELECT 
-        id, 
-        user_id
-      FROM rmt_locations
-      WHERE mongodb_id = ${mongodbId}
-    `;
-
-    if (!locations || locations.length === 0) {
-      console.log("Specified RMT location not found");
-      return { success: false, message: "RMT location not found" };
-    }
-
-    const location = locations[0];
-    console.log(`Found RMT location with ID: ${location.id}`);
-
-    // Get all work days for this location
-    const { rows: allWorkDays } = await sql`
-      SELECT 
-        id,
-        day
-      FROM work_days
-      WHERE location_id = ${location.id}
-    `;
-
-    if (!allWorkDays || allWorkDays.length === 0) {
-      console.log(`No work days found for the specified RMT location`);
-      return { success: false, message: "No work days found" };
-    }
-
-    console.log(`Found ${allWorkDays.length} work days`);
-
-    // Create a map of day name to work day ID for easier lookup
-    const workDayMap = {};
-    allWorkDays.forEach((workDay) => {
-      workDayMap[workDay.day] = workDay.id;
-    });
-
-    // Get all appointment times for all work days
-    const appointmentTimesByWorkDay = {};
-
-    for (const workDay of allWorkDays) {
-      const { rows: times } = await sql`
-        SELECT 
-          id,
-          start_time,
-          end_time
-        FROM appointment_times
-        WHERE work_day_id = ${workDay.id}
-      `;
-
-      appointmentTimesByWorkDay[workDay.id] = times;
-    }
-
-    // Loop through the next 8 weeks (56 days)
-    let totalInsertedCount = 0;
-    const insertedDates = [];
-    const dayNames = [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-    ];
-
-    for (let i = 0; i < 56; i++) {
-      // Calculate the date for this iteration
-      const appointmentDate = new Date(today);
-      appointmentDate.setDate(today.getDate() + i);
-
-      // Format date as YYYY-MM-DD
-      const formattedDate = appointmentDate.toISOString().split("T")[0];
-
-      // Get the day of the week - using a more reliable method
-      // Create a new Date object from the formatted date string to avoid timezone issues
-      const dateForDayCalc = new Date(formattedDate + "T12:00:00Z");
-      const dayOfWeek = dayNames[dateForDayCalc.getUTCDay()];
-
-      // Check if we have a work day for this day of the week
-      const workDayId = workDayMap[dayOfWeek];
-
-      if (!workDayId) {
-        console.log(
-          `No work day found for ${dayOfWeek}, skipping date ${formattedDate}`
-        );
-        continue;
-      }
-
-      // Get appointment times for this work day
-      const appointmentTimes = appointmentTimesByWorkDay[workDayId];
-
-      if (!appointmentTimes || appointmentTimes.length === 0) {
-        console.log(
-          `No appointment times found for ${dayOfWeek}, skipping date ${formattedDate}`
-        );
-        continue;
-      }
-
-      console.log(
-        `Creating appointments for date: ${formattedDate} (${dayOfWeek})`
-      );
-
-      // Insert appointments for each time slot
-      let insertedCount = 0;
-
-      for (const timeSlot of appointmentTimes) {
-        // Insert the appointment
-        await sql`
-          INSERT INTO treatments (
-            rmt_id,
-            rmt_location_id,
-            date,
-            appointment_window_start,
-            appointment_window_end,
-            status,
-            created_at
-          ) VALUES (
-            ${location.user_id},
-            ${location.id},
-            ${formattedDate},
-            ${timeSlot.start_time},
-            ${timeSlot.end_time},
-            'available',
-            CURRENT_TIMESTAMP
-          )
-        `;
-
-        insertedCount++;
-      }
-
-      console.log(
-        `Inserted ${insertedCount} appointments for date ${formattedDate}`
-      );
-      totalInsertedCount += insertedCount;
-      insertedDates.push(formattedDate);
-    }
-
-    return {
-      success: true,
-      message: `Inserted ${totalInsertedCount} appointments across ${insertedDates.length} days`,
-      dates: insertedDates,
-    };
-  } catch (error) {
-    console.error("Error in addAppointmentsForEightWeeks function:", error);
-    return {
-      success: false,
-      message: error.message,
-    };
-  }
-}
+// const idMappings = {
+//   users: new Map(),
+//   treatments: new Map(),
+//   healthHistories: new Map(),
+//   treatmentPlans: new Map(),
+//   rmtLocations: new Map(),
+// };
+
+// // Helper function to convert MongoDB ObjectId to string
+// function objectIdToString(id) {
+//   if (!id) return null;
+//   if (typeof id === "string") return id;
+//   if (id instanceof ObjectId) return id.toString();
+//   if (id.$oid) return id.$oid;
+//   return null;
+// }
+
+// // Helper function to convert MongoDB date to ISO string
+// function dateToISOString(date) {
+//   if (!date) return null;
+//   if (typeof date === "string") return date;
+//   if (date instanceof Date) return date.toISOString();
+//   if (date.$date) return new Date(date.$date).toISOString();
+//   return null;
+// }
+
+// // Main migration function
+// export async function migrateToPostgres() {
+//   console.log("Starting migration from MongoDB to PostgreSQL...");
+
+//   try {
+//     // Connect to MongoDB
+//     const db = await getDatabase();
+
+//     // Migration steps - order matters due to foreign key constraints
+//     const usersMigrated = await migrateUsers(db);
+//     const rmtLocationsMigrated = await migrateRmtLocations(db);
+//     const healthHistoriesMigrated = await migrateHealthHistories(db);
+//     const treatmentPlansMigrated = await migrateTreatmentPlans(db);
+//     const treatmentsMigrated = await migrateTreatments(db);
+//     const relationshipsMigrated = await migrateRelationships(db);
+//     const workDaysMigrated = await migrateWorkDays(db);
+//     const messagesMigrated = await migrateMessages(db);
+
+//     return {
+//       success: true,
+//       message: "Migration completed successfully",
+//       stats: {
+//         users: usersMigrated,
+//         rmtLocations: rmtLocationsMigrated,
+//         healthHistories: healthHistoriesMigrated,
+//         treatmentPlans: treatmentPlansMigrated,
+//         treatments: treatmentsMigrated,
+//         relationships: relationshipsMigrated,
+//         workDays: workDaysMigrated,
+//         messages: messagesMigrated,
+//       },
+//     };
+//   } catch (error) {
+//     console.error("Migration failed:", error);
+//     return {
+//       success: false,
+//       message: `Migration failed: ${error.message}`,
+//       error: error.message,
+//     };
+//   }
+// }
+
+// // Migrate users
+// async function migrateUsers(db) {
+//   console.log("Migrating users...");
+
+//   try {
+//     const users = await db.collection("migrateUsers").find({}).toArray();
+//     console.log(`Found ${users.length} users to migrate`);
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     const errors = [];
+
+//     for (const user of users) {
+//       try {
+//         const mongoId = objectIdToString(user._id);
+
+//         // Check if user already exists in PostgreSQL
+//         const existingUser = await sql`
+//           SELECT id FROM users WHERE mongodb_id = ${mongoId}
+//         `;
+
+//         if (existingUser.rowCount > 0) {
+//           // User already exists, store the mapping
+//           idMappings.users.set(mongoId, existingUser.rows[0].id);
+//           continue;
+//         }
+
+//         // Map user type
+//         let userType = "client";
+//         if (user.role === "rmt" || user.userType === "rmt") {
+//           userType = "rmt";
+//         } else if (user.role === "admin" || user.userType === "admin") {
+//           userType = "admin";
+//         }
+
+//         // Insert user into PostgreSQL
+//         const result = await sql`
+//           INSERT INTO users (
+//             mongodb_id,
+//             first_name,
+//             last_name,
+//             email,
+//             phone_number,
+//             password,
+//             user_type,
+//             rmt_id,
+//             created_at,
+//             preferred_name,
+//             pronouns,
+//             last_health_history_update,
+//             dns_count,
+//             reset_token,
+//             reset_token_expires,
+//             cancel_count,
+//             email_list
+//           )
+//           VALUES (
+//             ${mongoId},
+//             ${user.firstName || user.first_name || ""},
+//             ${user.lastName || user.last_name || ""},
+//             ${user.email || ""},
+//             ${user.phone || null},
+//             ${user.password || user.passwordHash || ""},
+//             ${userType},
+//             ${null}, -- Will update RMT relationships later
+//             ${dateToISOString(user.createdAt) || new Date().toISOString()},
+//             ${user.preferredName || null},
+//             ${user.pronouns || null},
+//             ${dateToISOString(user.lastHealthHistoryUpdate) || null},
+//             ${user.dnsCount || 0},
+//             ${user.resetToken || null},
+//             ${dateToISOString(user.resetTokenExpires) || null},
+//             ${user.cancelCount || 0},
+//             ${user.emailList === false ? false : true}
+//           )
+//           RETURNING id
+//         `;
+
+//         // Store the mapping between MongoDB ObjectId and PostgreSQL id
+//         if (result.rows.length > 0) {
+//           idMappings.users.set(mongoId, result.rows[0].id);
+//           successCount++;
+//         }
+//       } catch (error) {
+//         console.error(`Error migrating user ${user._id}:`, error);
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(user._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     // Update RMT relationships after all users are migrated
+//     console.log("Updating RMT relationships...");
+//     for (const user of users) {
+//       if (user.rmtId) {
+//         const userId = idMappings.users.get(objectIdToString(user._id));
+//         const rmtMongoId = objectIdToString(user.rmtId);
+
+//         if (userId && idMappings.users.has(rmtMongoId)) {
+//           const rmtId = idMappings.users.get(rmtMongoId);
+
+//           try {
+//             await sql`
+//               UPDATE users
+//               SET rmt_id = ${rmtId}
+//               WHERE id = ${userId}
+//             `;
+//           } catch (error) {
+//             console.error(
+//               `Error updating RMT relationship for user ${user._id}:`,
+//               error
+//             );
+//           }
+//         }
+//       }
+//     }
+
+//     return {
+//       total: users.length,
+//       success: successCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateUsers:", error);
+//     throw error;
+//   }
+// }
+
+// // Migrate RMT locations
+// async function migrateRmtLocations(db) {
+//   console.log("Migrating RMT locations...");
+
+//   try {
+//     const rmtLocations = await db.collection("rmtLocations").find({}).toArray();
+//     console.log(`Found ${rmtLocations.length} RMT locations to migrate`);
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     let skippedCount = 0;
+//     const errors = [];
+
+//     for (const location of rmtLocations) {
+//       try {
+//         const mongoId = objectIdToString(location._id);
+//         const userMongoId = objectIdToString(location.userId);
+
+//         // Check if location already exists in PostgreSQL
+//         const existingLocation = await sql`
+//           SELECT id FROM rmt_locations WHERE mongodb_id = ${mongoId}
+//         `;
+
+//         if (existingLocation.rowCount > 0) {
+//           // Location already exists, store the mapping
+//           idMappings.rmtLocations.set(mongoId, existingLocation.rows[0].id);
+//           continue;
+//         }
+
+//         // Skip if user doesn't exist in PostgreSQL
+//         if (!userMongoId || !idMappings.users.has(userMongoId)) {
+//           console.warn(
+//             `Skipping RMT location ${mongoId} - user ${userMongoId} not found`
+//           );
+//           skippedCount++;
+//           continue;
+//         }
+
+//         const userId = idMappings.users.get(userMongoId);
+
+//         // Extract address and contact info
+//         const formattedFormData = location.formattedFormData || {};
+//         const address = formattedFormData.address || {};
+//         const contactInfo = formattedFormData.contactInfo || {};
+
+//         // Insert RMT location into PostgreSQL
+//         const result = await sql`
+//           INSERT INTO rmt_locations (
+//             mongodb_id,
+//             user_id,
+//             location_name,
+//             street_address,
+//             city,
+//             province,
+//             country,
+//             postal_code,
+//             phone,
+//             email,
+//             workplace_type,
+//             description,
+//             what_to_wear,
+//             payment,
+//             url,
+//             created_at
+//           )
+//           VALUES (
+//             ${mongoId},
+//             ${userId},
+//             ${address.locationName || null},
+//             ${address.streetAddress || null},
+//             ${address.city || null},
+//             ${address.province || null},
+//             ${address.country || null},
+//             ${address.postalCode || null},
+//             ${contactInfo.phone || null},
+//             ${contactInfo.email || null},
+//             ${formattedFormData.workplaceType || null},
+//             ${formattedFormData.description || null},
+//             ${formattedFormData.whatToWear || null},
+//             ${formattedFormData.payment || null},
+//             ${formattedFormData.url || null},
+//             ${dateToISOString(location.createdAt) || new Date().toISOString()}
+//           )
+//           RETURNING id
+//         `;
+
+//         // Store the mapping between MongoDB ObjectId and PostgreSQL id
+//         if (result.rows.length > 0) {
+//           const locationId = result.rows[0].id;
+//           idMappings.rmtLocations.set(mongoId, locationId);
+
+//           // Create user_rmt_locations relationship
+//           await sql`
+//             INSERT INTO user_rmt_locations (
+//               user_id,
+//               rmt_location_id,
+//               is_primary
+//             )
+//             VALUES (
+//               ${userId},
+//               ${locationId},
+//               true
+//             )
+//           `;
+
+//           // Migrate massage services if available
+//           if (
+//             formattedFormData.massageServices &&
+//             Array.isArray(formattedFormData.massageServices)
+//           ) {
+//             for (const service of formattedFormData.massageServices) {
+//               await sql`
+//                 INSERT INTO massage_services (
+//                   rmt_location_id,
+//                   service,
+//                   duration,
+//                   price,
+//                   plus_hst
+//                 )
+//                 VALUES (
+//                   ${locationId},
+//                   ${service.service || "Massage Therapy"},
+//                   ${service.duration || 60},
+//                   ${service.price || 0},
+//                   ${service.plusHST || false}
+//                 )
+//               `;
+//             }
+//           }
+
+//           successCount++;
+//         }
+//       } catch (error) {
+//         console.error(`Error migrating RMT location ${location._id}:`, error);
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(location._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: rmtLocations.length,
+//       success: successCount,
+//       skipped: skippedCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateRmtLocations:", error);
+//     throw error;
+//   }
+// }
+
+// // Migrate work days and appointment times
+// async function migrateWorkDays(db) {
+//   console.log("Migrating work days and appointment times...");
+
+//   try {
+//     const rmtLocations = await db.collection("rmtLocations").find({}).toArray();
+//     console.log(
+//       `Found ${rmtLocations.length} RMT locations to process for work days`
+//     );
+
+//     let successCount = 0;
+//     let appointmentTimesCount = 0;
+//     let errorCount = 0;
+//     let skippedCount = 0;
+//     const errors = [];
+
+//     for (const location of rmtLocations) {
+//       try {
+//         const mongoId = objectIdToString(location._id);
+
+//         // Skip if location doesn't exist in PostgreSQL
+//         if (!idMappings.rmtLocations.has(mongoId)) {
+//           console.warn(
+//             `Skipping work days for location ${mongoId} - location not found in PostgreSQL`
+//           );
+//           skippedCount++;
+//           continue;
+//         }
+
+//         const locationId = idMappings.rmtLocations.get(mongoId);
+//         const formattedFormData = location.formattedFormData || {};
+
+//         // Process work days
+//         if (
+//           formattedFormData.workDays &&
+//           Array.isArray(formattedFormData.workDays)
+//         ) {
+//           for (const workDay of formattedFormData.workDays) {
+//             // Insert work day
+//             const workDayResult = await sql`
+//               INSERT INTO work_days (
+//                 location_id,
+//                 day,
+//                 schedule_type,
+//                 specific_date,
+//                 created_at
+//               )
+//               VALUES (
+//                 ${locationId},
+//                 ${workDay.day || null},
+//                 ${"weekly"}, -- Default to weekly schedule
+//                 ${null},
+//                 ${new Date().toISOString()}
+//               )
+//               RETURNING id
+//             `;
+
+//             if (workDayResult.rows.length > 0) {
+//               const workDayId = workDayResult.rows[0].id;
+//               successCount++;
+
+//               // Process appointment times
+//               if (
+//                 workDay.appointmentTimes &&
+//                 Array.isArray(workDay.appointmentTimes)
+//               ) {
+//                 for (const timeSlot of workDay.appointmentTimes) {
+//                   await sql`
+//                     INSERT INTO appointment_times (
+//                       work_day_id,
+//                       start_time,
+//                       end_time,
+//                       created_at
+//                     )
+//                     VALUES (
+//                       ${workDayId},
+//                       ${timeSlot.start || null},
+//                       ${timeSlot.end || null},
+//                       ${new Date().toISOString()}
+//                     )
+//                   `;
+//                   appointmentTimesCount++;
+//                 }
+//               }
+//             }
+//           }
+//         }
+//       } catch (error) {
+//         console.error(
+//           `Error migrating work days for location ${location._id}:`,
+//           error
+//         );
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(location._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: rmtLocations.length,
+//       workDaysSuccess: successCount,
+//       appointmentTimesSuccess: appointmentTimesCount,
+//       skipped: skippedCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateWorkDays:", error);
+//     throw error;
+//   }
+// }
+
+// // Migrate health histories
+// async function migrateHealthHistories(db) {
+//   console.log("Migrating health histories...");
+
+//   try {
+//     const healthHistories = await db
+//       .collection("migrateHealthHistories")
+//       .find({})
+//       .toArray();
+//     console.log(`Found ${healthHistories.length} health histories to migrate`);
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     let skippedCount = 0;
+//     const errors = [];
+
+//     for (const history of healthHistories) {
+//       try {
+//         const mongoId = objectIdToString(history._id);
+//         const userMongoId = objectIdToString(history.userId);
+
+//         // Check if health history already exists in PostgreSQL
+//         const existingHistory = await sql`
+//           SELECT id FROM health_histories WHERE mongodb_id = ${mongoId}
+//         `;
+
+//         if (existingHistory.rowCount > 0) {
+//           // Health history already exists, store the mapping
+//           idMappings.healthHistories.set(mongoId, existingHistory.rows[0].id);
+//           continue;
+//         }
+
+//         // Skip if user doesn't exist in PostgreSQL
+//         if (!userMongoId || !idMappings.users.has(userMongoId)) {
+//           console.warn(
+//             `Skipping health history ${mongoId} - user ${userMongoId} not found`
+//           );
+//           skippedCount++;
+//           continue;
+//         }
+
+//         const userId = idMappings.users.get(userMongoId);
+
+//         // Insert health history into PostgreSQL
+//         const result = await sql`
+//           INSERT INTO health_histories (
+//             mongodb_id,
+//             user_id,
+//             encrypted_data,
+//             created_at
+//           )
+//           VALUES (
+//             ${mongoId},
+//             ${userId},
+//             ${history.encryptedData || "{}"},
+//             ${dateToISOString(history.createdAt) || new Date().toISOString()}
+//           )
+//           RETURNING id
+//         `;
+
+//         // Store the mapping between MongoDB ObjectId and PostgreSQL id
+//         if (result.rows.length > 0) {
+//           idMappings.healthHistories.set(mongoId, result.rows[0].id);
+
+//           // Update user's last_health_history_update field
+//           await sql`
+//             UPDATE users
+//             SET last_health_history_update = ${
+//               dateToISOString(history.createdAt) || new Date().toISOString()
+//             }
+//             WHERE id = ${userId}
+//             AND (last_health_history_update IS NULL OR last_health_history_update < ${
+//               dateToISOString(history.createdAt) || new Date().toISOString()
+//             })
+//           `;
+
+//           successCount++;
+//         }
+//       } catch (error) {
+//         console.error(`Error migrating health history ${history._id}:`, error);
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(history._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: healthHistories.length,
+//       success: successCount,
+//       skipped: skippedCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateHealthHistories:", error);
+//     throw error;
+//   }
+// }
+
+// // Migrate treatment plans
+// async function migrateTreatmentPlans(db) {
+//   console.log("Migrating treatment plans...");
+
+//   try {
+//     const treatmentPlans = await db
+//       .collection("migrateTreatmentPlans")
+//       .find({})
+//       .toArray();
+//     console.log(`Found ${treatmentPlans.length} treatment plans to migrate`);
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     let skippedCount = 0;
+//     const errors = [];
+
+//     for (const plan of treatmentPlans) {
+//       try {
+//         const mongoId = objectIdToString(plan._id);
+//         const clientMongoId = objectIdToString(plan.clientId);
+//         const createdByMongoId = objectIdToString(plan.createdBy);
+
+//         // Check if treatment plan already exists in PostgreSQL
+//         const existingPlan = await sql`
+//           SELECT id FROM treatment_plans WHERE mongodb_id = ${mongoId}
+//         `;
+
+//         if (existingPlan.rowCount > 0) {
+//           // Treatment plan already exists, store the mapping
+//           idMappings.treatmentPlans.set(mongoId, existingPlan.rows[0].id);
+//           continue;
+//         }
+
+//         // Skip if client doesn't exist in PostgreSQL
+//         if (!clientMongoId || !idMappings.users.has(clientMongoId)) {
+//           console.warn(
+//             `Skipping treatment plan ${mongoId} - client ${clientMongoId} not found`
+//           );
+//           skippedCount++;
+//           continue;
+//         }
+
+//         const clientId = idMappings.users.get(clientMongoId);
+
+//         // Use client ID as created by if created by doesn't exist
+//         let createdById = null;
+//         if (createdByMongoId && idMappings.users.has(createdByMongoId)) {
+//           createdById = idMappings.users.get(createdByMongoId);
+//         } else {
+//           createdById = clientId;
+//         }
+
+//         // Parse start date if it exists
+//         let startDate = null;
+//         if (plan.startDate) {
+//           try {
+//             startDate = new Date(plan.startDate).toISOString().split("T")[0];
+//           } catch (e) {
+//             console.warn(
+//               `Invalid start date format for plan ${mongoId}: ${plan.startDate}`
+//             );
+//           }
+//         }
+
+//         // Insert treatment plan into PostgreSQL
+//         const result = await sql`
+//           INSERT INTO treatment_plans (
+//             mongodb_id,
+//             client_id,
+//             created_by,
+//             encrypted_data,
+//             start_date,
+//             created_at
+//           )
+//           VALUES (
+//             ${mongoId},
+//             ${clientId},
+//             ${createdById},
+//             ${plan.encryptedData || "{}"},
+//             ${startDate},
+//             ${dateToISOString(plan.createdAt) || new Date().toISOString()}
+//           )
+//           RETURNING id
+//         `;
+
+//         // Store the mapping between MongoDB ObjectId and PostgreSQL id
+//         if (result.rows.length > 0) {
+//           idMappings.treatmentPlans.set(mongoId, result.rows[0].id);
+//           successCount++;
+//         }
+//       } catch (error) {
+//         console.error(`Error migrating treatment plan ${plan._id}:`, error);
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(plan._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: treatmentPlans.length,
+//       success: successCount,
+//       skipped: skippedCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateTreatmentPlans:", error);
+//     throw error;
+//   }
+// }
+
+// async function migrateTreatments(db) {
+//   console.log("Migrating treatments...");
+
+//   try {
+//     const treatments = await db
+//       .collection("migrateTreatments")
+//       .find({})
+//       .toArray();
+//     console.log(`Found ${treatments.length} treatments to migrate`);
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     let skippedCount = 0;
+//     const errors = [];
+
+//     for (const treatment of treatments) {
+//       try {
+//         const mongoId = objectIdToString(treatment._id);
+//         const rmtMongoId = objectIdToString(treatment.RMTId);
+//         const userMongoId = objectIdToString(treatment.userId);
+//         const rmtLocationMongoId = objectIdToString(treatment.RMTLocationId);
+
+//         // Check if treatment already exists in PostgreSQL
+//         const existingTreatment = await sql`
+//           SELECT id FROM treatments WHERE mongodb_id = ${mongoId}
+//         `;
+
+//         if (existingTreatment.rowCount > 0) {
+//           // Treatment already exists, store the mapping
+//           idMappings.treatments.set(mongoId, existingTreatment.rows[0].id);
+//           continue;
+//         }
+
+//         // Skip if neither RMT nor user exists in PostgreSQL
+//         if (
+//           (!rmtMongoId || !idMappings.users.has(rmtMongoId)) &&
+//           (!userMongoId || !idMappings.users.has(userMongoId))
+//         ) {
+//           console.warn(
+//             `Skipping treatment ${mongoId} - neither RMT ${rmtMongoId} nor user ${userMongoId} found`
+//           );
+//           skippedCount++;
+//           continue;
+//         }
+
+//         const rmtId =
+//           rmtMongoId && idMappings.users.has(rmtMongoId)
+//             ? idMappings.users.get(rmtMongoId)
+//             : null;
+
+//         const clientId =
+//           userMongoId && idMappings.users.has(userMongoId)
+//             ? idMappings.users.get(userMongoId)
+//             : null;
+
+//         const rmtLocationId =
+//           rmtLocationMongoId && idMappings.rmtLocations.has(rmtLocationMongoId)
+//             ? idMappings.rmtLocations.get(rmtLocationMongoId)
+//             : null;
+
+//         // Parse time strings
+//         let appointmentBeginsAt =
+//           treatment.appointmentBeginsAt ||
+//           treatment.appointmentStartTime ||
+//           null;
+//         let appointmentEndsAt =
+//           treatment.appointmentEndsAt || treatment.appointmentEndTime || null;
+
+//         if (appointmentBeginsAt && !appointmentBeginsAt.includes(":")) {
+//           appointmentBeginsAt = `${appointmentBeginsAt.substring(
+//             0,
+//             2
+//           )}:${appointmentBeginsAt.substring(2, 4)}:00`;
+//         }
+
+//         if (appointmentEndsAt && !appointmentEndsAt.includes(":")) {
+//           appointmentEndsAt = `${appointmentEndsAt.substring(
+//             0,
+//             2
+//           )}:${appointmentEndsAt.substring(2, 4)}:00`;
+//         }
+
+//         // Parse price to decimal
+//         let price = null;
+//         if (treatment.price) {
+//           try {
+//             price = parseFloat(treatment.price);
+//           } catch (e) {
+//             console.warn(
+//               `Invalid price format for treatment ${mongoId}: ${treatment.price}`
+//             );
+//           }
+//         }
+
+//         // Parse date
+//         let date = null;
+//         if (treatment.appointmentDate || treatment.date) {
+//           date = treatment.appointmentDate || treatment.date;
+//         }
+
+//         // Parse consent form
+//         let consentForm = null;
+//         if (treatment.consentForm) {
+//           try {
+//             if (typeof treatment.consentForm === "string") {
+//               consentForm = JSON.parse(treatment.consentForm);
+//             } else {
+//               consentForm = treatment.consentForm;
+//             }
+//           } catch (e) {
+//             console.warn(
+//               `Invalid consent form format for treatment ${mongoId}`
+//             );
+//           }
+//         }
+
+//         // Insert treatment into PostgreSQL
+//         const result = await sql`
+//           INSERT INTO treatments (
+//             mongodb_id,
+//             rmt_id,
+//             client_id,
+//             date,
+//             price,
+//             payment_type,
+//             status,
+//             created_at,
+//             rmt_location_id,
+//             appointment_begins_at,
+//             appointment_ends_at,
+//             duration,
+//             location,
+//             workplace,
+//             google_calendar_event_id,
+//             google_calendar_event_link,
+//             consent_form,
+//             consent_form_submitted_at,
+//             encrypted_treatment_notes,
+//             updated_at,
+//             rescheduling_started_at,
+//             previous_status,
+//             appointment_window_start,
+//             appointment_window_end
+//           )
+//           VALUES (
+//             ${mongoId},
+//             ${rmtId},
+//             ${clientId},
+//             ${date},
+//             ${price},
+//             ${treatment.paymentType || null},
+//             ${treatment.status || "available"},
+//             ${dateToISOString(treatment.createdAt) || new Date().toISOString()},
+//             ${rmtLocationId},
+//             ${appointmentBeginsAt},
+//             ${appointmentEndsAt},
+//             ${treatment.duration ? parseInt(treatment.duration, 10) : null},
+//             ${treatment.location || null},
+//             ${treatment.workplace || null},
+//             ${treatment.googleCalendarEventId || null},
+//             ${treatment.googleCalendarEventLink || null},
+//             ${consentForm},
+//             ${dateToISOString(treatment.consentFormSubmittedAt) || null},
+//             ${treatment.treatmentNotes || null},
+//             ${
+//               dateToISOString(treatment.updatedAt) ||
+//               dateToISOString(treatment.createdAt) ||
+//               new Date().toISOString()
+//             },
+//             ${dateToISOString(treatment.reschedulingStartedAt) || null},
+//             ${treatment.previousStatus || null},
+//             ${treatment.appointmentWindowStart || null},
+//             ${treatment.appointmentWindowEnd || null}
+//           )
+//           RETURNING id
+//         `;
+
+//         // Store the mapping between MongoDB ObjectId and PostgreSQL id
+//         if (result.rows.length > 0) {
+//           idMappings.treatments.set(mongoId, result.rows[0].id);
+
+//           // Create income record if treatment is completed and has a price
+//           if (treatment.status === "completed" && price) {
+//             try {
+//               const year = date
+//                 ? new Date(date).getFullYear().toString()
+//                 : new Date().getFullYear().toString();
+
+//               await sql`
+//                 INSERT INTO incomes (
+//                   mongodb_id,
+//                   rmt_id,
+//                   treatment_id,
+//                   date,
+//                   year,
+//                   category,
+//                   amount,
+//                   total_price,
+//                   details,
+//                   created_at,
+//                   updated_at
+//                 )
+//                 VALUES (
+//                   ${mongoId + "_income"},
+//                   ${rmtId},
+//                   ${result.rows[0].id},
+//                   ${date},
+//                   ${year},
+//                   ${"Massage Therapy"},
+//                   ${price},
+//                   ${price},
+//                   ${"Income from treatment"},
+//                   ${
+//                     dateToISOString(treatment.createdAt) ||
+//                     new Date().toISOString()
+//                   },
+//                   ${
+//                     dateToISOString(treatment.updatedAt) ||
+//                     dateToISOString(treatment.createdAt) ||
+//                     new Date().toISOString()
+//                   }
+//                 )
+//               `;
+//             } catch (incomeError) {
+//               console.error(
+//                 `Error creating income record for treatment ${mongoId}:`,
+//                 incomeError
+//               );
+//             }
+//           }
+
+//           successCount++;
+//         }
+//       } catch (error) {
+//         console.error(`Error migrating treatment ${treatment._id}:`, error);
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(treatment._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: treatments.length,
+//       success: successCount,
+//       skipped: skippedCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateTreatments:", error);
+//     throw error;
+//   }
+// }
+
+// // Migrate relationships (treatment plans to treatments)
+// async function migrateRelationships(db) {
+//   console.log("Migrating relationships...");
+
+//   try {
+//     const treatmentPlans = await db
+//       .collection("migrateTreatmentPlans")
+//       .find({})
+//       .toArray();
+//     console.log(
+//       `Found ${treatmentPlans.length} treatment plans to process for relationships`
+//     );
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     let skippedCount = 0;
+//     const errors = [];
+
+//     for (const plan of treatmentPlans) {
+//       try {
+//         const planMongoId = objectIdToString(plan._id);
+
+//         // Skip if treatment plan doesn't exist in PostgreSQL
+//         if (!idMappings.treatmentPlans.has(planMongoId)) {
+//           console.warn(
+//             `Skipping relationships for plan ${planMongoId} - plan not found in PostgreSQL`
+//           );
+//           skippedCount++;
+//           continue;
+//         }
+
+//         const planId = idMappings.treatmentPlans.get(planMongoId);
+
+//         // Process treatments array
+//         if (plan.treatments && Array.isArray(plan.treatments)) {
+//           for (const treatmentRef of plan.treatments) {
+//             const treatmentMongoId = objectIdToString(treatmentRef);
+
+//             if (
+//               !treatmentMongoId ||
+//               !idMappings.treatments.has(treatmentMongoId)
+//             ) {
+//               console.warn(
+//                 `Skipping treatment ${treatmentMongoId} for plan ${planMongoId} - treatment not found`
+//               );
+//               continue;
+//             }
+
+//             const treatmentId = idMappings.treatments.get(treatmentMongoId);
+
+//             // Check if relationship already exists
+//             const existingRelationship = await sql`
+//               SELECT id FROM treatment_plan_treatments
+//               WHERE treatment_plan_id = ${planId} AND treatment_id = ${treatmentId}
+//             `;
+
+//             if (existingRelationship.rowCount > 0) {
+//               continue;
+//             }
+
+//             // Insert relationship
+//             await sql`
+//               INSERT INTO treatment_plan_treatments (
+//                 treatment_plan_id,
+//                 treatment_id,
+//                 created_at
+//               )
+//               VALUES (
+//                 ${planId},
+//                 ${treatmentId},
+//                 ${new Date().toISOString()}
+//               )
+//             `;
+
+//             // Update treatment with treatment plan id
+//             await sql`
+//               UPDATE treatments
+//               SET treatment_plan_id = ${planId}
+//               WHERE id = ${treatmentId}
+//             `;
+
+//             successCount++;
+//           }
+//         }
+//       } catch (error) {
+//         console.error(
+//           `Error migrating relationships for plan ${plan._id}:`,
+//           error
+//         );
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(plan._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: treatmentPlans.length,
+//       success: successCount,
+//       skipped: skippedCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateRelationships:", error);
+//     throw error;
+//   }
+// }
+
+// // Migrate messages
+// async function migrateMessages(db) {
+//   console.log("Migrating messages...");
+
+//   try {
+//     const messages = await db.collection("messages").find({}).toArray();
+//     console.log(`Found ${messages.length} messages to migrate`);
+
+//     let successCount = 0;
+//     let errorCount = 0;
+//     const errors = [];
+
+//     for (const message of messages) {
+//       try {
+//         const mongoId = objectIdToString(message._id);
+//         const rmtMongoId = objectIdToString(message.rmtId);
+
+//         // Check if message already exists in PostgreSQL
+//         const existingMessage = await sql`
+//           SELECT id FROM messages WHERE mongodb_id = ${mongoId}
+//         `;
+
+//         if (existingMessage.rowCount > 0) {
+//           continue;
+//         }
+
+//         // Get RMT ID if available
+//         const rmtId =
+//           rmtMongoId && idMappings.users.has(rmtMongoId)
+//             ? idMappings.users.get(rmtMongoId)
+//             : null;
+
+//         // Insert message into PostgreSQL
+//         await sql`
+//           INSERT INTO messages (
+//             mongodb_id,
+//             status,
+//             email,
+//             first_name,
+//             last_name,
+//             phone,
+//             message,
+//             created_at,
+//             rmt_id
+//           )
+//           VALUES (
+//             ${mongoId},
+//             ${message.status || "new"},
+//             ${message.email || ""},
+//             ${message.firstName || message.first_name || ""},
+//             ${message.lastName || message.last_name || ""},
+//             ${message.phone || "N/A"},
+//             ${message.message || ""},
+//             ${dateToISOString(message.createdAt) || new Date().toISOString()},
+//             ${rmtId}
+//           )
+//         `;
+
+//         successCount++;
+//       } catch (error) {
+//         console.error(`Error migrating message ${message._id}:`, error);
+//         errorCount++;
+//         errors.push({
+//           id: objectIdToString(message._id),
+//           error: error.message,
+//         });
+//       }
+//     }
+
+//     return {
+//       total: messages.length,
+//       success: successCount,
+//       errors: errorCount,
+//       errorDetails: errors.length > 0 ? errors : null,
+//     };
+//   } catch (error) {
+//     console.error("Error in migrateMessages:", error);
+//     throw error;
+//   }
+// }
+
+// export async function addAppointmentsForEightWeeks() {
+//   try {
+//     console.log("Starting addAppointmentsForEightWeeks function...");
+
+//     const today = new Date();
+//     console.log(`Starting date: ${today.toISOString().split("T")[0]}`);
+
+//     // Fetch the specific RMT location
+//     const mongodbId = "673a415085f1bd8631e7a426";
+
+//     const { rows: locations } = await sql`
+//       SELECT
+//         id,
+//         user_id
+//       FROM rmt_locations
+//       WHERE mongodb_id = ${mongodbId}
+//     `;
+
+//     if (!locations || locations.length === 0) {
+//       console.log("Specified RMT location not found");
+//       return { success: false, message: "RMT location not found" };
+//     }
+
+//     const location = locations[0];
+//     console.log(`Found RMT location with ID: ${location.id}`);
+
+//     // Get all work days for this location
+//     const { rows: allWorkDays } = await sql`
+//       SELECT
+//         id,
+//         day
+//       FROM work_days
+//       WHERE location_id = ${location.id}
+//     `;
+
+//     if (!allWorkDays || allWorkDays.length === 0) {
+//       console.log(`No work days found for the specified RMT location`);
+//       return { success: false, message: "No work days found" };
+//     }
+
+//     console.log(`Found ${allWorkDays.length} work days`);
+
+//     // Create a map of day name to work day ID for easier lookup
+//     const workDayMap = {};
+//     allWorkDays.forEach((workDay) => {
+//       workDayMap[workDay.day] = workDay.id;
+//     });
+
+//     // Get all appointment times for all work days
+//     const appointmentTimesByWorkDay = {};
+
+//     for (const workDay of allWorkDays) {
+//       const { rows: times } = await sql`
+//         SELECT
+//           id,
+//           start_time,
+//           end_time
+//         FROM appointment_times
+//         WHERE work_day_id = ${workDay.id}
+//       `;
+
+//       appointmentTimesByWorkDay[workDay.id] = times;
+//     }
+
+//     // Loop through the next 8 weeks (56 days)
+//     let totalInsertedCount = 0;
+//     const insertedDates = [];
+//     const dayNames = [
+//       "Sunday",
+//       "Monday",
+//       "Tuesday",
+//       "Wednesday",
+//       "Thursday",
+//       "Friday",
+//       "Saturday",
+//     ];
+
+//     for (let i = 0; i < 56; i++) {
+//       // Calculate the date for this iteration
+//       const appointmentDate = new Date(today);
+//       appointmentDate.setDate(today.getDate() + i);
+
+//       // Format date as YYYY-MM-DD
+//       const formattedDate = appointmentDate.toISOString().split("T")[0];
+
+//       // Get the day of the week - using a more reliable method
+//       // Create a new Date object from the formatted date string to avoid timezone issues
+//       const dateForDayCalc = new Date(formattedDate + "T12:00:00Z");
+//       const dayOfWeek = dayNames[dateForDayCalc.getUTCDay()];
+
+//       // Check if we have a work day for this day of the week
+//       const workDayId = workDayMap[dayOfWeek];
+
+//       if (!workDayId) {
+//         console.log(
+//           `No work day found for ${dayOfWeek}, skipping date ${formattedDate}`
+//         );
+//         continue;
+//       }
+
+//       // Get appointment times for this work day
+//       const appointmentTimes = appointmentTimesByWorkDay[workDayId];
+
+//       if (!appointmentTimes || appointmentTimes.length === 0) {
+//         console.log(
+//           `No appointment times found for ${dayOfWeek}, skipping date ${formattedDate}`
+//         );
+//         continue;
+//       }
+
+//       console.log(
+//         `Creating appointments for date: ${formattedDate} (${dayOfWeek})`
+//       );
+
+//       // Insert appointments for each time slot
+//       let insertedCount = 0;
+
+//       for (const timeSlot of appointmentTimes) {
+//         // Insert the appointment
+//         await sql`
+//           INSERT INTO treatments (
+//             rmt_id,
+//             rmt_location_id,
+//             date,
+//             appointment_window_start,
+//             appointment_window_end,
+//             status,
+//             created_at
+//           ) VALUES (
+//             ${location.user_id},
+//             ${location.id},
+//             ${formattedDate},
+//             ${timeSlot.start_time},
+//             ${timeSlot.end_time},
+//             'available',
+//             CURRENT_TIMESTAMP
+//           )
+//         `;
+
+//         insertedCount++;
+//       }
+
+//       console.log(
+//         `Inserted ${insertedCount} appointments for date ${formattedDate}`
+//       );
+//       totalInsertedCount += insertedCount;
+//       insertedDates.push(formattedDate);
+//     }
+
+//     return {
+//       success: true,
+//       message: `Inserted ${totalInsertedCount} appointments across ${insertedDates.length} days`,
+//       dates: insertedDates,
+//     };
+//   } catch (error) {
+//     console.error("Error in addAppointmentsForEightWeeks function:", error);
+//     return {
+//       success: false,
+//       message: error.message,
+//     };
+//   }
+// }

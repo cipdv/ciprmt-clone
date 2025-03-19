@@ -9,7 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@auth/mongodb-adapter": "^3.4.2",
     "@hookform/resolvers": "^3.9.0",
     "@vercel/postgres": "^0.10.0",
     "bcryptjs": "^2.4.3",
@@ -21,7 +20,6 @@
     "jose": "^5.3.0",
     "jspdf": "^2.5.1",
     "lucide-react": "^0.453.0",
-    "mongodb": "^6.6.1",
     "next": "14.2.3",
     "next-auth": "^5.0.0-beta.20",
     "nodemailer": "^6.9.15",

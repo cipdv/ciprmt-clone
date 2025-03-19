@@ -1,34 +1,34 @@
-import { NextResponse } from "next/server";
-import { getSession } from "@/app/_actions";
-import { getDatabase } from "@/app/lib/database/mongoDbConnection";
-import { ObjectId } from "mongodb";
+// import { NextResponse } from "next/server";
+// import { getSession } from "@/app/_actions";
+// import { getDatabase } from "@/app/lib/database/mongoDbConnection";
+// import { ObjectId } from "mongodb";
 
-export async function GET() {
-  const session = await getSession();
+// export async function GET() {
+//   const session = await getSession();
 
-  if (!session) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+//   if (!session) {
+//     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+//   }
 
-  try {
-    const db = await getDatabase();
-    const user = await db
-      .collection("users")
-      .findOne({ _id: new ObjectId(session.userId) });
+//   try {
+//     const db = await getDatabase();
+//     const user = await db
+//       .collection("users")
+//       .findOne({ _id: new ObjectId(session.userId) });
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+//     if (!user) {
+//       return NextResponse.json({ error: "User not found" }, { status: 404 });
+//     }
 
-    // Remove sensitive information
-    delete user.password;
+//     // Remove sensitive information
+//     delete user.password;
 
-    return NextResponse.json(user);
-  } catch (error) {
-    console.error("Error fetching user data:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
+//     return NextResponse.json(user);
+//   } catch (error) {
+//     console.error("Error fetching user data:", error);
+//     return NextResponse.json(
+//       { error: "Internal server error" },
+//       { status: 500 }
+//     );
+//   }
+// }
