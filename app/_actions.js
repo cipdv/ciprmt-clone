@@ -3098,8 +3098,7 @@ async function saveResetTokenToDatabase(email, token) {
       UPDATE users
       SET 
         reset_token = ${token},
-        reset_token_expires = ${tokenExpires.toISOString()},
-        updated_at = CURRENT_TIMESTAMP
+        reset_token_expires = ${tokenExpires.toISOString()}
       WHERE email = ${email}
     `;
 
