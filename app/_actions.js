@@ -129,8 +129,8 @@ export const getCurrentMember = async () => {
   return null;
 };
 
-const DEFAULT_RMT_ID = "bc509c91-74b7-49fb-9312-967d9cc15118";
-const DEFAULT_RMT_LOCATION_ID = "644fee83-bfeb-4418-935f-a094ad821766";
+const DEFAULT_RMT_ID = "508bfc5d-cc5a-4efe-a86d-c46336ccefd0";
+const DEFAULT_RMT_LOCATION_ID = "ea5fbe60-7d3c-44ff-9307-b97ea3bc10f9";
 
 export async function registerNewPatient(prevState, formData) {
   try {
