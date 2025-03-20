@@ -11,44 +11,32 @@ import AppointmentConsent from "./AppointmentConsentForm";
 const formatAppointment = (appointment) => {
   console.log("upcoming", appointment);
 
-  // Handle date whether it's a string or Date object
-  let appointmentDate;
+  // Create a date object that preserves the UTC date
+  const utcDate = new Date(appointment.date);
 
-  if (appointment.date instanceof Date) {
-    // If it's already a Date object, clone it to avoid mutations
-    appointmentDate = new Date(appointment.date);
-  } else if (typeof appointment.date === "string") {
-    // If it's a string, create a new Date object
-    appointmentDate = new Date(appointment.date);
-  } else {
-    // Fallback if date is in an unexpected format
-    console.error("Unexpected date format:", appointment.date);
-    appointmentDate = new Date(); // Use current date as fallback
-  }
+  // Format the date in UTC to avoid timezone conversion
+  const formattedDate = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC", // Force UTC interpretation
+  }).format(utcDate);
 
   // Parse the time from appointment_begins_at (format: "HH:MM:SS")
+  let formattedTime = "";
   if (appointment.appointment_begins_at) {
     const [hours, minutes] = appointment.appointment_begins_at
       .split(":")
       .map(Number);
 
-    // Set the time on the date object
-    appointmentDate.setHours(hours, minutes, 0);
+    // Format the time
+    const displayHours = hours % 12 || 12;
+    const ampm = hours >= 12 ? "PM" : "AM";
+    formattedTime = `${displayHours}:${minutes
+      .toString()
+      .padStart(2, "0")} ${ampm}`;
   }
-
-  const formattedDate = appointmentDate.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-  const displayHours = appointmentDate.getHours() % 12 || 12;
-  const displayMinutes = appointmentDate.getMinutes();
-  const ampm = appointmentDate.getHours() >= 12 ? "PM" : "AM";
-  const formattedTime = `${displayHours}:${displayMinutes
-    .toString()
-    .padStart(2, "0")} ${ampm}`;
 
   return {
     ...appointment,
@@ -238,9 +226,6 @@ const NoAppointments = () => (
 
 export default function UpcomingAppointments({ appointments, locations }) {
   // Filter and sort upcoming appointments using the new PostgreSQL data format
-
-  console.log("appointments", appointments);
-
   const upcomingAppointments = appointments
     ? appointments
         .filter((appointment) => {
@@ -248,62 +233,51 @@ export default function UpcomingAppointments({ appointments, locations }) {
             return false;
           }
 
-          // Create a date object from the appointment date and time
-          let appointmentDate;
+          // Create a date object from the appointment date
+          const appointmentDate = new Date(appointment.date);
 
-          if (appointment.date instanceof Date) {
-            appointmentDate = new Date(appointment.date);
-          } else if (typeof appointment.date === "string") {
-            appointmentDate = new Date(appointment.date);
-          } else {
-            console.error("Unexpected date format:", appointment.date);
-            return false;
-          }
-
+          // Parse the time from appointment_begins_at
           if (appointment.appointment_begins_at) {
             const [hours, minutes] = appointment.appointment_begins_at
               .split(":")
               .map(Number);
-            appointmentDate.setHours(hours, minutes, 0);
+
+            // Create a new date object with the appointment date and time in UTC
+            const appointmentDateTime = new Date(appointmentDate);
+            appointmentDateTime.setUTCHours(hours, minutes, 0);
+
+            // Compare with current date
+            return appointmentDateTime >= new Date();
           }
 
-          // Compare with current date
+          // If no time specified, just compare the dates
           return appointmentDate >= new Date();
         })
         .sort((a, b) => {
           // Sort by date and time
-          let dateA, dateB;
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
 
-          if (a.date instanceof Date) {
-            dateA = new Date(a.date);
-          } else if (typeof a.date === "string") {
-            dateA = new Date(a.date);
-          } else {
-            dateA = new Date();
-          }
-
-          if (b.date instanceof Date) {
-            dateB = new Date(b.date);
-          } else if (typeof b.date === "string") {
-            dateB = new Date(b.date);
-          } else {
-            dateB = new Date();
-          }
-
-          if (a.appointment_begins_at) {
+          // If times are available, use them for sorting
+          if (a.appointment_begins_at && b.appointment_begins_at) {
             const [hoursA, minutesA] = a.appointment_begins_at
               .split(":")
               .map(Number);
-            dateA.setHours(hoursA, minutesA, 0);
-          }
-
-          if (b.appointment_begins_at) {
             const [hoursB, minutesB] = b.appointment_begins_at
               .split(":")
               .map(Number);
-            dateB.setHours(hoursB, minutesB, 0);
+
+            // Create date objects with the times
+            const dateTimeA = new Date(dateA);
+            dateTimeA.setUTCHours(hoursA, minutesA, 0);
+
+            const dateTimeB = new Date(dateB);
+            dateTimeB.setUTCHours(hoursB, minutesB, 0);
+
+            return dateTimeA - dateTimeB;
           }
 
+          // Otherwise just sort by date
           return dateA - dateB;
         })
         .map(formatAppointment)
