@@ -15,6 +15,8 @@ export default async function PatientDashboardPage() {
   const appointments = await getUsersAppointments(currentUser.resultObj.id);
   const locations = await getRMTSetup(currentUser.resultObj.rmtId);
 
+  console.log("patient dashboard", appointments);
+
   return (
     <Suspense fallback={<LoadingFallback />}>
       <UpcomingAppointments appointments={appointments} locations={locations} />

@@ -238,6 +238,9 @@ const NoAppointments = () => (
 
 export default function UpcomingAppointments({ appointments, locations }) {
   // Filter and sort upcoming appointments using the new PostgreSQL data format
+
+  console.log("appointments", appointments);
+
   const upcomingAppointments = appointments
     ? appointments
         .filter((appointment) => {

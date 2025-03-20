@@ -1391,6 +1391,8 @@ export async function getUsersAppointments(id) {
     //   },
     // });
 
+    console.log("_actions", treatments);
+
     return treatments;
   } catch (error) {
     console.error("Error fetching user treatments:", error);

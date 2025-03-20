@@ -34,7 +34,6 @@ const NotesToComplete = ({ appointments }) => {
     }
   };
 
-  // Format date for display without date-fns
   const formatAppointmentDate = (date) => {
     try {
       const dateObj = new Date(date);
