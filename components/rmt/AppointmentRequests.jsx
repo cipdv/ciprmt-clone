@@ -23,6 +23,29 @@ function SubmitButton({ children }) {
 
 const AppointmentRequests = ({ requestedAppointments }) => {
   console.log(requestedAppointments);
+
+  // Function to format date in UTC to avoid timezone issues
+  const formatDateInUTC = (dateString) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC", // Force UTC interpretation
+    }).format(date);
+  };
+
+  // Function to format time from HH:MM:SS format
+  const formatTime = (timeString) => {
+    if (!timeString) return "";
+
+    const [hours, minutes] = timeString.split(":").map(Number);
+    const displayHours = hours % 12 || 12;
+    const ampm = hours >= 12 ? "PM" : "AM";
+    return `${displayHours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">Appointment Requests</h2>
@@ -47,17 +70,10 @@ const AppointmentRequests = ({ requestedAppointments }) => {
                 <div className="space-y-1 text-sm text-gray-600">
                   <p>
                     {appointment.appointmentDate
-                      ? new Date(
-                          appointment.appointmentDate
-                        ).toLocaleDateString("en-US", {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })
+                      ? formatDateInUTC(appointment.appointmentDate)
                       : "No date specified"}
                     {appointment.appointmentBeginsAt &&
-                      ` at ${appointment.appointmentBeginsAt}`}
+                      ` at ${formatTime(appointment.appointmentBeginsAt)}`}
                   </p>
                   {/* <p>for {appointment.duration} minutes</p>
                   <p>

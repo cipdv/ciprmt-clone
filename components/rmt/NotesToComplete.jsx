@@ -39,26 +39,13 @@ const NotesToComplete = ({ appointments }) => {
       const dateObj = new Date(date);
       if (isNaN(dateObj.getTime())) return date; // Return original if invalid
 
-      const months = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-      ];
-
-      const month = months[dateObj.getMonth()];
-      const day = dateObj.getDate();
-      const year = dateObj.getFullYear();
-
-      return `${month} ${day}, ${year}`;
+      // Format the date in UTC to avoid timezone issues
+      return new Intl.DateTimeFormat("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        timeZone: "UTC", // Force UTC interpretation
+      }).format(dateObj);
     } catch (e) {
       console.error("Error formatting date:", e);
       return date;
@@ -68,6 +55,8 @@ const NotesToComplete = ({ appointments }) => {
   // Format time for display
   const formatAppointmentTime = (time) => {
     try {
+      if (!time) return "";
+
       const [hours, minutes] = time.split(":");
       const hour = Number.parseInt(hours, 10);
       const ampm = hour >= 12 ? "PM" : "AM";

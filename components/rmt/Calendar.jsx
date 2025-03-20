@@ -129,21 +129,29 @@ const Calendar = ({ appointments }) => {
     // Check if we have both date and time
     if (appointment.appointmentDate && appointment.appointmentBeginsAt) {
       try {
-        // Try to create a date with both date and time
-        const dateTimeStr = `${appointment.appointmentDate}T${appointment.appointmentBeginsAt}`;
-        const dateObj = new Date(dateTimeStr);
+        // Create a date object from the appointment date
+        const dateObj = new Date(appointment.appointmentDate);
 
-        // Check if the date is valid
-        if (!isNaN(dateObj.getTime())) {
-          return dateObj.toLocaleString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-            hour: "numeric",
-            minute: "numeric",
-          });
-        }
+        // Format the date in UTC to avoid timezone issues
+        const formattedDate = new Intl.DateTimeFormat("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          timeZone: "UTC", // Force UTC interpretation
+        }).format(dateObj);
+
+        // Format the time separately
+        const [hours, minutes] = appointment.appointmentBeginsAt
+          .split(":")
+          .map(Number);
+        const ampm = hours >= 12 ? "PM" : "AM";
+        const displayHours = hours % 12 || 12;
+        const formattedTime = `${displayHours}:${minutes
+          .toString()
+          .padStart(2, "0")} ${ampm}`;
+
+        return `${formattedDate} at ${formattedTime}`;
       } catch (e) {
         console.error("Error formatting date:", e);
       }
@@ -152,12 +160,15 @@ const Calendar = ({ appointments }) => {
     // If we can't create a valid date with time, format them separately
     try {
       const dateObj = new Date(appointment.appointmentDate);
-      const dateStr = dateObj.toLocaleDateString("en-US", {
+
+      // Format the date in UTC
+      const dateStr = new Intl.DateTimeFormat("en-US", {
         weekday: "long",
         year: "numeric",
         month: "long",
         day: "numeric",
-      });
+        timeZone: "UTC", // Force UTC interpretation
+      }).format(dateObj);
 
       // Format the time separately if it exists
       if (appointment.appointmentBeginsAt) {
@@ -271,6 +282,7 @@ const Calendar = ({ appointments }) => {
                                 <Image
                                   src={
                                     appointment.consentForm.signature ||
+                                    "/placeholder.svg" ||
                                     "/placeholder.svg" ||
                                     "/placeholder.svg"
                                   }
