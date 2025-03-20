@@ -9,8 +9,6 @@ import { CancelAppointmentForm } from "./CancelAppointmentButton";
 import AppointmentConsent from "./AppointmentConsentForm";
 
 const formatAppointment = (appointment) => {
-  console.log("upcoming", appointment);
-
   // Create a date object that preserves the UTC date
   const utcDate = new Date(appointment.date);
 
@@ -52,7 +50,6 @@ const formatAppointment = (appointment) => {
 };
 
 const AppointmentItem = ({ appointment, locations }) => {
-  console.log("item", appointment);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
   const router = useRouter();

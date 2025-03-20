@@ -61,26 +61,10 @@ const calendar = google.calendar({
   auth: jwtClient,
 });
 
-// Helper function to serialize MongoDB documents
-// function serializeDocument(doc) {
-//   return JSON.parse(
-//     JSON.stringify(doc, (key, value) => {
-//       if (value instanceof ObjectId) {
-//         return value.toString();
-//       }
-//       if (value instanceof Date) {
-//         return value.toISOString();
-//       }
-//       return value;
-//     })
-//   );
-// }
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //AUTH/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//postgres auth
 export async function encrypt(payload) {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
@@ -1354,6 +1338,7 @@ export async function getRMTSetupById(id) {
 }
 
 export async function getUsersAppointments(id) {
+  console.log("get users appointments function running");
   try {
     const session = await getSession();
 
@@ -1361,14 +1346,28 @@ export async function getUsersAppointments(id) {
       throw new Error("Unauthorized: User not logged in");
     }
 
+    // Safely access session properties
+    const userId = session.resultObj.id;
+    const userType = session.resultObj.userType;
+    const firstName = session.resultObj.firstName || "";
+    const lastName = session.resultObj.lastName || "";
+    const fullName = `${firstName} ${lastName}`;
+
     // Check if the user has permission to access these appointments
-    const canAccess =
-      session.resultObj.userType === "rmt" || session.resultObj.id === id;
+    const canAccess = userType === "rmt" || userId === id;
 
     if (!canAccess) {
       throw new Error(
         "Unauthorized: User does not have permission to access these appointments"
       );
+    }
+
+    // Determine reason for access based on user type and relationship
+    let reasonForAccess = "Self-access";
+    if (userType === "rmt") {
+      reasonForAccess = "Provider accessing patient data";
+    } else if (userId !== id) {
+      reasonForAccess = "Administrative access";
     }
 
     // Fetch appointments using PostgreSQL
@@ -1378,21 +1377,43 @@ export async function getUsersAppointments(id) {
       ORDER BY date ASC, appointment_begins_at ASC
     `;
 
-    // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "user treatments",
-    //   actionPerformed: "viewed",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: id, // This is the user ID whose treatments were accessed
-    //   additionalDetails: {
-    //     accessedByUserId: session.resultObj.id.toString(),
-    //     accessedByUserType: session.resultObj.userType,
-    //     numberOftreatments: treatments.length,
-    //   },
-    // });
+    // Get patient name for the log (if different from current user)
+    let patientName = fullName;
+    if (userId !== id) {
+      try {
+        const { rows } = await sql`
+          SELECT first_name, last_name FROM users WHERE id = ${id}
+        `;
+        if (rows.length > 0) {
+          patientName = `${rows[0].first_name} ${rows[0].last_name}`;
+        }
+      } catch (nameError) {
+        console.error("Error fetching patient name:", nameError);
+      }
+    }
+
+    // Log the audit event - wrapped in try/catch to prevent it from breaking the main function
+    try {
+      await logAuditEvent({
+        typeOfInfo: "user treatments",
+        actionPerformed: "viewed",
+        accessedById: userId, // Changed from accessedBy to accessedById
+        whoseInfoId: id, // Changed from whoseInfo to whoseInfoId
+        reasonForAccess, // Added reason for access
+        additionalDetails: {
+          accessedByUserType: userType,
+          accessedByName: fullName, // Moved name to additionalDetails
+          whoseInfoName: patientName, // Added patient name
+          numberOfTreatments: treatments.length,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     console.log("_actions", treatments);
-
     return treatments;
   } catch (error) {
     console.error("Error fetching user treatments:", error);
