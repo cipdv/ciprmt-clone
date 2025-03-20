@@ -460,8 +460,6 @@ export async function getAllUsers() {
 }
 
 export async function getReceipts(id) {
-  console.log("getReceipts called for id:", id);
-
   try {
     // Get the current user session
     const session = await getSession();
@@ -469,14 +467,28 @@ export async function getReceipts(id) {
       throw new Error("Unauthorized: User not logged in");
     }
 
+    // Safely access session properties
+    const userId = session.resultObj.id;
+    const userType = session.resultObj.userType;
+    const firstName = session.resultObj.firstName || "";
+    const lastName = session.resultObj.lastName || "";
+    const fullName = `${firstName} ${lastName}`;
+
     // Check if the user has permission to access these treatments
-    const canAccess =
-      session.resultObj.userType === "rmt" || session.resultObj.id === id;
+    const canAccess = userType === "rmt" || userId === id;
 
     if (!canAccess) {
       throw new Error(
         "Unauthorized: User does not have permission to access these treatments"
       );
+    }
+
+    // Determine reason for access based on user type and relationship
+    let reasonForAccess = "Self-access to treatment history";
+    if (userType === "rmt") {
+      reasonForAccess = "Provider accessing patient treatment history";
+    } else if (userId !== id) {
+      reasonForAccess = "Administrative access to treatment history";
     }
 
     const today = new Date();
@@ -492,18 +504,41 @@ export async function getReceipts(id) {
       ORDER BY date DESC, appointment_begins_at DESC
     `;
 
-    // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatments",
-    //   actionPerformed: "viewed",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: id, // This is the user ID whose treatments were accessed
-    //   additionalDetails: {
-    //     accessedByUserId: session.resultObj.id,
-    //     accessedByUserType: session.resultObj.userType,
-    //     numberOfTreatments: rows.length,
-    //   },
-    // });
+    // Get patient name for the log (if different from current user)
+    let patientName = fullName;
+    if (userId !== id) {
+      try {
+        const { rows: userRows } = await sql`
+          SELECT first_name, last_name FROM users WHERE id = ${id}
+        `;
+        if (userRows.length > 0) {
+          patientName = `${userRows[0].first_name} ${userRows[0].last_name}`;
+        }
+      } catch (nameError) {
+        console.error("Error fetching patient name:", nameError);
+      }
+    }
+
+    // Log the audit event - wrapped in try/catch
+    try {
+      await logAuditEvent({
+        typeOfInfo: "treatment receipts",
+        actionPerformed: "viewed",
+        accessedById: userId,
+        whoseInfoId: id,
+        reasonForAccess,
+        additionalDetails: {
+          accessedByUserType: userType,
+          accessedByName: fullName,
+          whoseInfoName: patientName,
+          numberOfTreatments: rows.length,
+          dateRange: `Up to ${today.toISOString().split("T")[0]}`,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      console.error("Error logging audit event:", logError);
+    }
 
     // Process the results to match the expected format
     const treatments = rows.map((treatment) => ({
@@ -524,14 +559,19 @@ export async function getReceipts(id) {
 }
 
 export async function getReceiptById(id) {
-  console.log("getReceiptById called for id:", id);
-
   try {
     // Get the current user session for authorization
     const session = await getSession();
     if (!session || !session.resultObj) {
       throw new Error("Unauthorized: User not logged in");
     }
+
+    // Safely access session properties
+    const userId = session.resultObj.id;
+    const userType = session.resultObj.userType;
+    const firstName = session.resultObj.firstName || "";
+    const lastName = session.resultObj.lastName || "";
+    const fullName = `${firstName} ${lastName}`;
 
     console.log(`Looking for receipt with ID: ${id}`);
 
@@ -557,9 +597,7 @@ export async function getReceiptById(id) {
     const receipt = rows[0];
 
     // Check if the user has permission to access this receipt
-    const canAccess =
-      session.resultObj.userType === "rmt" ||
-      session.resultObj.id === receipt.client_id;
+    const canAccess = userType === "rmt" || userId === receipt.client_id;
 
     if (!canAccess) {
       throw new Error(
@@ -567,18 +605,50 @@ export async function getReceiptById(id) {
       );
     }
 
-    // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatment",
-    //   actionPerformed: "viewed",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: receipt.client_id,
-    //   additionalDetails: {
-    //     accessedByUserId: session.resultObj.id,
-    //     accessedByUserType: session.resultObj.userType,
-    //     treatmentId: receipt.id,
-    //   },
-    // });
+    // Determine reason for access based on user type and relationship
+    let reasonForAccess = "Self-access to treatment receipt";
+    if (userType === "rmt") {
+      reasonForAccess = "Provider accessing patient treatment receipt";
+    } else if (userId !== receipt.client_id) {
+      reasonForAccess = "Administrative access to treatment receipt";
+    }
+
+    // Get patient name for the log (if different from current user)
+    let patientName = fullName;
+    if (userId !== receipt.client_id) {
+      try {
+        const { rows: userRows } = await sql`
+          SELECT first_name, last_name FROM users WHERE id = ${receipt.client_id}
+        `;
+        if (userRows.length > 0) {
+          patientName = `${userRows[0].first_name} ${userRows[0].last_name}`;
+        }
+      } catch (nameError) {
+        console.error("Error fetching patient name:", nameError);
+      }
+    }
+
+    // Log the audit event - wrapped in try/catch
+    try {
+      await logAuditEvent({
+        typeOfInfo: "treatment receipt",
+        actionPerformed: "viewed",
+        accessedById: userId,
+        whoseInfoId: receipt.client_id,
+        reasonForAccess,
+        additionalDetails: {
+          accessedByUserType: userType,
+          accessedByName: fullName,
+          whoseInfoName: patientName,
+          treatmentId: receipt.id,
+          treatmentDate: receipt.date,
+          treatmentType: receipt.treatment_type || "Not specified",
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      console.error("Error logging audit event:", logError);
+    }
 
     // Process the result to match the expected format
     const formattedReceipt = {
@@ -1753,21 +1823,30 @@ export async function bookAppointment({
 
     // Log the audit event
     console.log("Logging audit event");
-    // await logAuditEvent({
-    //   typeOfInfo: "appointment booking",
-    //   actionPerformed: "appointment booked",
-    //   accessedBy: `${firstName} ${lastName}`,
-    //   whoseInfo: `${firstName} ${lastName}`,
-    //   additionalDetails: {
-    //     userId: id,
-    //     appointmentId: appointmentId,
-    //     appointmentDate: formattedDate,
-    //     appointmentTime: formattedStartTime,
-    //     duration: duration,
-    //     location: location,
-    //     workplace: workplace,
-    //   },
-    // });
+    try {
+      await logAuditEvent({
+        typeOfInfo: "appointment booking",
+        actionPerformed: "created",
+        accessedById: id,
+        whoseInfoId: id, // Self-booking
+        reasonForAccess: "Self-scheduling appointment",
+        additionalDetails: {
+          accessedByName: `${firstName} ${lastName}`,
+          whoseInfoName: `${firstName} ${lastName}`,
+          appointmentId: appointmentId,
+          appointmentDate: formattedDate,
+          appointmentTime: formattedStartTime,
+          duration: duration,
+          location: location,
+          workplace: workplace,
+          accessMethod: "web application",
+          googleCalendarEventId: createdEvent.data.id,
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     // Send email notification
     console.log("Sending email notification");
@@ -1893,19 +1972,26 @@ export const cancelAppointment = async (prevState, formData) => {
     if (updateResult.rowCount > 0) {
       console.log("Appointment cancelled successfully.");
 
-      // Log the audit event
-      // await logAuditEvent({
-      //   typeOfInfo: "appointment cancellation",
-      //   actionPerformed: "cancelled",
-      //   accessedBy: `${firstName} ${lastName}`,
-      //   whoseInfo: `${firstName} ${lastName}`,
-      //   additionalDetails: {
-      //     userId: id,
-      //     appointmentId: appointmentId,
-      //     appointmentDate: appointment.date,
-      //     appointmentTime: appointment.appointment_begins_at,
-      //   },
-      // });
+      try {
+        await logAuditEvent({
+          typeOfInfo: "appointment cancellation",
+          actionPerformed: "cancelled",
+          accessedById: id,
+          whoseInfoId: id,
+          reasonForAccess: "Self-cancelling appointment",
+          additionalDetails: {
+            accessedByName: `${firstName} ${lastName}`,
+            whoseInfoName: `${firstName} ${lastName}`,
+            appointmentId: appointmentId,
+            appointmentDate: appointment.date,
+            appointmentTime: appointment.appointment_begins_at,
+            accessMethod: "web application",
+          },
+        });
+      } catch (logError) {
+        // Just log the error but don't let it break the main function
+        console.error("Error logging audit event:", logError);
+      }
 
       revalidatePath("/dashboard/patient");
       return {
@@ -1989,19 +2075,26 @@ export async function submitConsentForm(data) {
     `;
 
     if (result.rows.length === 1) {
-      // Log the audit event
-      // await logAuditEvent({
-      //   typeOfInfo: "consent form",
-      //   actionPerformed: "submitted",
-      //   accessedBy: `${firstName} ${lastName}`,
-      //   whoseInfo: `${firstName} ${lastName}`,
-      //   additionalDetails: {
-      //     userId: userId,
-      //     appointmentId: id,
-      //     appointmentDate: appointment.date,
-      //     appointmentTime: appointment.appointment_begins_at,
-      //   },
-      // });
+      try {
+        await logAuditEvent({
+          typeOfInfo: "consent form",
+          actionPerformed: "submitted",
+          accessedById: userId,
+          whoseInfoId: userId,
+          reasonForAccess: "Self-submitting consent form",
+          additionalDetails: {
+            accessedByName: `${firstName} ${lastName}`,
+            whoseInfoName: `${firstName} ${lastName}`,
+            appointmentId: id,
+            appointmentDate: appointment.date,
+            appointmentTime: appointment.appointment_begins_at,
+            accessMethod: "web application",
+          },
+        });
+      } catch (logError) {
+        // Just log the error but don't let it break the main function
+        console.error("Error logging audit event:", logError);
+      }
 
       revalidatePath("/dashboard/patient");
       return { success: true };
@@ -2516,23 +2609,30 @@ export async function rescheduleAppointment(
         "Appointment rescheduled successfully with consent form data transferred."
       );
 
-      // Log the audit event
-      // await logAuditEvent({
-      //   typeOfInfo: "appointment rescheduling",
-      //   actionPerformed: "rescheduled",
-      //   accessedBy: `${firstName} ${lastName}`,
-      //   whoseInfo: `${firstName} ${lastName}`,
-      //   additionalDetails: {
-      //     userId: id,
-      //     oldAppointmentId: currentAppointmentId,
-      //     newAppointmentDate: formattedDate,
-      //     newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
-      //     location,
-      //     duration,
-      //     workplace,
-      //     consentFormTransferred: consentForm ? true : false,
-      //   },
-      // });
+      try {
+        await logAuditEvent({
+          typeOfInfo: "appointment rescheduling",
+          actionPerformed: "rescheduled",
+          accessedById: id,
+          whoseInfoId: id,
+          reasonForAccess: "Self-rescheduling appointment",
+          additionalDetails: {
+            accessedByName: `${firstName} ${lastName}`,
+            whoseInfoName: `${firstName} ${lastName}`,
+            oldAppointmentId: currentAppointmentId,
+            newAppointmentDate: formattedDate,
+            newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+            location,
+            duration,
+            workplace,
+            consentFormTransferred: consentForm ? true : false,
+            accessMethod: "web application",
+          },
+        });
+      } catch (logError) {
+        // Just log the error but don't let it break the main function
+        console.error("Error logging audit event:", logError);
+      }
 
       // Send email notification
       await sendRescheduleNotificationEmail(
@@ -2765,17 +2865,25 @@ export async function addHealthHistory(data) {
       });
 
       // Log the audit event
-      // await logAuditEvent({
-      //   typeOfInfo: "health history",
-      //   actionPerformed: "added",
-      //   accessedBy: `${updatedUser.first_name} ${updatedUser.last_name}`,
-      //   whoseInfo: `${updatedUser.first_name} ${updatedUser.last_name}`,
-      //   additionalDetails: {
-      //     userId: userId,
-      //     healthHistoryId: newHealthHistory.id,
-      //     createdAt: newHealthHistory.created_at,
-      //   },
-      // });
+      try {
+        await logAuditEvent({
+          typeOfInfo: "health history",
+          actionPerformed: "added",
+          accessedById: userId,
+          whoseInfoId: userId,
+          reasonForAccess: "Self-adding health history",
+          additionalDetails: {
+            accessedByName: `${updatedUser.first_name} ${updatedUser.last_name}`,
+            whoseInfoName: `${updatedUser.first_name} ${updatedUser.last_name}`,
+            healthHistoryId: newHealthHistory.id,
+            createdAt: newHealthHistory.created_at,
+            accessMethod: "web application",
+          },
+        });
+      } catch (logError) {
+        // Just log the error but don't let it break the main function
+        console.error("Error logging audit event:", logError);
+      }
 
       revalidatePath("/dashboard/patient");
       return { success: true, id: newHealthHistory.id };
@@ -2854,20 +2962,28 @@ export async function getClientHealthHistories(id) {
     const user = userRows[0];
 
     // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "health histories",
-    //   actionPerformed: "viewed",
-    //   accessedBy: `${user.first_name} ${user.last_name}`,
-    //   whoseInfo: `${user.first_name} ${user.last_name}`,
-    //   additionalDetails: {
-    //     userId: authenticatedUserId,
-    //     numberOfHistories: decryptedHealthHistories.length,
-    //     oldestHistoryDate:
-    //       decryptedHealthHistories[decryptedHealthHistories.length - 1]
-    //         ?.createdAt,
-    //     newestHistoryDate: decryptedHealthHistories[0]?.createdAt,
-    //   },
-    // });
+    try {
+      await logAuditEvent({
+        typeOfInfo: "health histories",
+        actionPerformed: "viewed",
+        accessedById: authenticatedUserId,
+        whoseInfoId: authenticatedUserId,
+        reasonForAccess: "Self-viewing health history records",
+        additionalDetails: {
+          accessedByName: `${user.first_name} ${user.last_name}`,
+          whoseInfoName: `${user.first_name} ${user.last_name}`,
+          numberOfHistories: decryptedHealthHistories.length,
+          oldestHistoryDate:
+            decryptedHealthHistories[decryptedHealthHistories.length - 1]
+              ?.createdAt,
+          newestHistoryDate: decryptedHealthHistories[0]?.createdAt,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     return decryptedHealthHistories;
   } catch (error) {
@@ -3556,18 +3672,33 @@ export async function getTreatmentPlansForUser(userId) {
     );
 
     // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatment plans",
-    //   actionPerformed: "viewed",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: userId,
-    //   additionalDetails: {
-    //     accessedByUserId: session.resultObj.id.toString(),
-    //     accessedByUserType: session.resultObj.userType,
-    //     numberOfPlans: plansWithTreatments.length,
-    //     planIds: plansWithTreatments.map((plan) => plan.id),
-    //   },
-    // });
+    try {
+      // Determine reason for access based on user type and relationship
+      let reasonForAccess = "Self-viewing treatment plans";
+      if (session.resultObj.userType === "rmt") {
+        reasonForAccess = "Provider accessing patient treatment plans";
+      } else if (session.resultObj.id.toString() !== userId) {
+        reasonForAccess = "Administrative access to treatment plans";
+      }
+
+      await logAuditEvent({
+        typeOfInfo: "treatment plans",
+        actionPerformed: "viewed",
+        accessedById: session.resultObj.id,
+        whoseInfoId: userId,
+        reasonForAccess,
+        additionalDetails: {
+          accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+          accessedByUserType: session.resultObj.userType,
+          numberOfPlans: plansWithTreatments.length,
+          planIds: plansWithTreatments.map((plan) => plan.id),
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     console.log("Treatment plans fetched:", plansWithTreatments.length);
     return { success: true, data: plansWithTreatments };
@@ -3642,17 +3773,37 @@ export async function getTreatmentById(id) {
     }
 
     // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatment details",
-    //   actionPerformed: "viewed",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: `${treatment.firstName} ${treatment.lastName}`,
-    //   additionalDetails: {
-    //     treatmentId: id,
-    //     accessedByUserId: session.resultObj.id.toString(),
-    //     accessedByUserType: session.resultObj.userType,
-    //   },
-    // });
+    try {
+      // Determine reason for access based on user type and relationship
+      let reasonForAccess = "Self-viewing treatment details";
+      if (session.resultObj.userType === "rmt") {
+        reasonForAccess = "Provider accessing patient treatment details";
+      } else if (
+        treatment.clientId.toString() !== session.resultObj.id.toString()
+      ) {
+        reasonForAccess = "Administrative access to treatment details";
+      }
+
+      await logAuditEvent({
+        typeOfInfo: "treatment details",
+        actionPerformed: "viewed",
+        accessedById: session.resultObj.id,
+        whoseInfoId: treatment.clientId,
+        reasonForAccess,
+        additionalDetails: {
+          accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+          whoseInfoName: `${treatment.firstName} ${treatment.lastName}`,
+          treatmentId: id,
+          treatmentDate: treatment.appointmentDate,
+          treatmentTime: treatment.appointmentBeginsAt,
+          accessedByUserType: session.resultObj.userType,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     // If the treatment has encrypted notes, decrypt them
     if (treatment.treatmentNotes) {
@@ -3827,21 +3978,28 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     const rmt = rmtInfo[0];
 
     // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatment notes",
-    //   actionPerformed: "saved",
-    //   accessedBy: `${rmt.first_name} ${rmt.last_name}`,
-    //   whoseInfo: `${client.first_name} ${client.last_name}`,
-    //   additionalDetails: {
-    //     rmtId: rmt.id.toString(),
-    //     patientId: client.id.toString(),
-    //     treatmentId: treatmentId,
-    //     treatmentPlanId: treatmentPlanId,
-    //     appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
-    //     price: notes.price,
-    //     paymentType: notes.paymentType,
-    //   },
-    // });
+    try {
+      await logAuditEvent({
+        typeOfInfo: "treatment notes",
+        actionPerformed: "saved",
+        accessedById: rmt.id,
+        whoseInfoId: client.id,
+        reasonForAccess: "Provider documenting patient treatment",
+        additionalDetails: {
+          accessedByName: `${rmt.first_name} ${rmt.last_name}`,
+          whoseInfoName: `${client.first_name} ${client.last_name}`,
+          treatmentId: treatmentId,
+          treatmentPlanId: treatmentPlanId,
+          appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
+          price: notes.price,
+          paymentType: notes.paymentType,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     // Send email to the client
     const transporter = getEmailTransporter();
@@ -3948,18 +4106,25 @@ export async function setDNSTreatmentStatusAttachment(treatmentId) {
     const rmt = rmtInfo[0];
 
     // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatment status",
-    //   actionPerformed: "marked as DNS",
-    //   accessedBy: `${rmt.first_name} ${rmt.last_name}`,
-    //   whoseInfo: `${client.first_name} ${client.last_name}`,
-    //   additionalDetails: {
-    //     rmtId: rmt.id.toString(),
-    //     patientId: client.id.toString(),
-    //     treatmentId: treatmentId,
-    //     newDnsCount: newDnsCount,
-    //   },
-    // });
+    try {
+      await logAuditEvent({
+        typeOfInfo: "treatment status",
+        actionPerformed: "marked as DNS",
+        accessedById: rmt.id,
+        whoseInfoId: client.id,
+        reasonForAccess: "Provider updating patient appointment status",
+        additionalDetails: {
+          accessedByName: `${rmt.first_name} ${rmt.last_name}`,
+          whoseInfoName: `${client.first_name} ${client.last_name}`,
+          treatmentId: treatmentId,
+          newDnsCount: newDnsCount,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     revalidatePath("/dashboard/rmt");
     return { success: true, message: "Treatment marked as DNS successfully" };
@@ -4060,19 +4225,26 @@ export async function createTreatmentPlan(planData, clientId) {
     `;
 
     // Log the audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "treatment plan",
-    //   actionPerformed: "created",
-    //   accessedBy: `${rmt.firstName} ${rmt.lastName}`,
-    //   whoseInfo: `${client.firstName} ${client.lastName}`,
-    //   additionalDetails: {
-    //     rmtId: rmt.id,
-    //     clientId: clientId,
-    //     treatmentPlanId: newPlan.id,
-    //     startDate: newPlan.start_date,
-    //     createdAt: newPlan.created_at,
-    //   },
-    // });
+    try {
+      await logAuditEvent({
+        typeOfInfo: "treatment plan",
+        actionPerformed: "created",
+        accessedById: rmt.id,
+        whoseInfoId: clientId,
+        reasonForAccess: "Provider creating patient treatment plan",
+        additionalDetails: {
+          accessedByName: `${rmt.firstName} ${rmt.lastName}`,
+          whoseInfoName: `${client.firstName} ${client.lastName}`,
+          treatmentPlanId: newPlan.id,
+          startDate: newPlan.start_date,
+          createdAt: newPlan.created_at,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     revalidatePath("/dashboard/rmt");
 
@@ -4307,7 +4479,6 @@ export async function getClientWithHealthHistory(clientId) {
 }
 
 export async function bookAppointmentForClient(clientId, appointmentData) {
-  console.log(appointmentData);
   try {
     const session = await getSession();
     if (!session || !session.resultObj) {
@@ -4349,9 +4520,6 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       minute: "2-digit",
     });
 
-    console.log("formatted date", formattedDate);
-    console.log("formatted start time", formattedStartTime);
-
     // Calculate end time
     const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
     const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
@@ -4359,8 +4527,6 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       hour: "2-digit",
       minute: "2-digit",
     });
-
-    console.log("formatted end time", formattedEndTime);
 
     // Create Google Calendar event
     const calendar = google.calendar({ version: "v3", auth: jwtClient });
@@ -4427,20 +4593,27 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     const appointmentId = insertedTreatment[0].id;
 
     // Log audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "appointment booking",
-    //   actionPerformed: "booked",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: `${client.first_name} ${client.last_name}`,
-    //   additionalDetails: {
-    //     appointmentId: appointmentId,
-    //     appointmentDate: formattedDate,
-    //     appointmentTime: formattedStartTime,
-    //     duration: duration,
-    //     rmtId: session.resultObj.id,
-    //     clientId: clientId,
-    //   },
-    // });
+    try {
+      await logAuditEvent({
+        typeOfInfo: "appointment booking",
+        actionPerformed: "booked",
+        accessedById: session.resultObj.id,
+        whoseInfoId: clientId,
+        reasonForAccess: "Provider scheduling appointment for patient",
+        additionalDetails: {
+          accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+          whoseInfoName: `${client.first_name} ${client.last_name}`,
+          appointmentId: appointmentId,
+          appointmentDate: formattedDate,
+          appointmentTime: formattedStartTime,
+          duration: duration,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
 
     // Send email notification
     const transporter = getEmailTransporter();
@@ -4536,17 +4709,33 @@ export async function deleteAppointment(appointmentId) {
     `;
 
     // Log audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "appointment",
-    //   actionPerformed: "deleted",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
-    //   additionalDetails: {
-    //     appointmentId: appointmentId,
-    //     appointmentDate: appointment.date,
-    //     rmtId: session.resultObj.id.toString(),
-    //   },
-    // });
+    try {
+      // Determine if this is a patient appointment or just a time slot
+      const hasPatient = appointment.client_id !== null;
+
+      await logAuditEvent({
+        typeOfInfo: "appointment",
+        actionPerformed: "deleted",
+        accessedById: session.resultObj.id,
+        whoseInfoId: appointment.client_id || session.resultObj.id, // If no client, use RMT's ID
+        reasonForAccess: hasPatient
+          ? "Provider deleting patient appointment"
+          : "Provider managing schedule",
+        additionalDetails: {
+          accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+          whoseInfoName: hasPatient
+            ? `${appointment.firstName} ${appointment.lastName}`
+            : "N/A",
+          appointmentId: appointmentId,
+          appointmentDate: appointment.date,
+          appointmentStatus: appointment.status,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
   } catch (error) {
     console.error("Error in deleteAppointment:", error);
     throw new Error("Failed to delete appointment. Please try again.");
@@ -4565,8 +4754,6 @@ export async function clearAppointment(appointmentId) {
     ) {
       throw new Error("Unauthorized: Only RMTs can clear appointments");
     }
-
-    console.log(session);
 
     await checkRateLimit(session.resultObj.id, "clearAppointment", 10, 60);
 
@@ -4621,17 +4808,33 @@ export async function clearAppointment(appointmentId) {
     `;
 
     // Log audit event
-    // await logAuditEvent({
-    //   typeOfInfo: "appointment",
-    //   actionPerformed: "cleared",
-    //   accessedBy: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-    //   whoseInfo: `${appointment.firstName} ${appointment.lastName}`,
-    //   additionalDetails: {
-    //     appointmentId: appointmentId,
-    //     appointmentDate: appointment.date,
-    //     rmtId: session.resultObj.id,
-    //   },
-    // });
+    try {
+      // Determine if this is a patient appointment or just a time slot
+      const hasPatient = appointment.client_id !== null;
+
+      await logAuditEvent({
+        typeOfInfo: "appointment",
+        actionPerformed: "cleared",
+        accessedById: session.resultObj.id,
+        whoseInfoId: appointment.client_id || session.resultObj.id, // If no client, use RMT's ID
+        reasonForAccess: hasPatient
+          ? "Provider clearing patient appointment"
+          : "Provider managing schedule",
+        additionalDetails: {
+          accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+          whoseInfoName: hasPatient
+            ? `${appointment.firstName} ${appointment.lastName}`
+            : "N/A",
+          appointmentId: appointmentId,
+          appointmentDate: appointment.date,
+          previousStatus: appointment.status,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
   } catch (error) {
     console.error("Error in clearAppointment:", error);
     throw new Error("Failed to clear appointment. Please try again.");
