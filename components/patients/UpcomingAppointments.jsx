@@ -221,101 +221,98 @@ const NoAppointments = () => (
   </div>
 );
 
-// Helper function to check if an appointment is in the future
-const isAppointmentInFuture = (appointment) => {
-  try {
-    if (!appointment || !appointment.date) {
-      console.log("Appointment missing date:", appointment);
-      return false;
-    }
-
-    // Get current date and time
-    const now = new Date();
-    console.log("Current time:", now.toISOString());
-    console.log("Current local time:", now.toString());
-
-    // Ensure appointment.date is a Date object
-    const appointmentDate = new Date(appointment.date);
-    console.log("Appointment date:", appointmentDate.toISOString());
-
-    // Check if the appointment is today
-    const isToday =
-      now.getFullYear() === appointmentDate.getFullYear() &&
-      now.getMonth() === appointmentDate.getMonth() &&
-      now.getDate() === appointmentDate.getDate();
-
-    console.log(`Appointment ${appointment.id} is today:`, isToday);
-
-    if (!isToday) {
-      // If appointment is in the future, return true
-      const isFutureDate = appointmentDate > now;
-      console.log(
-        `Appointment ${appointment.id} is future date:`,
-        isFutureDate
-      );
-      return isFutureDate;
-    }
-
-    // If appointment is today, check the time
-    if (appointment.appointment_begins_at) {
-      const [hours, minutes] = appointment.appointment_begins_at
-        .split(":")
-        .map(Number);
-
-      // Get current hours and minutes
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
-
-      console.log(
-        `Appointment time: ${hours}:${minutes}, Current time: ${currentHours}:${currentMinutes}`
-      );
-
-      // If hours are greater, or hours are equal but minutes are greater
-      const isFutureTime =
-        hours > currentHours ||
-        (hours === currentHours && minutes > currentMinutes);
-      console.log(
-        `Appointment ${appointment.id} is future time:`,
-        isFutureTime
-      );
-      return isFutureTime;
-    }
-
-    // If no time specified but it's today, include it
-    return true;
-  } catch (error) {
-    console.error("Error checking if appointment is in future:", error);
-    console.log("Appointment that caused error:", JSON.stringify(appointment));
-    // Include it for debugging
-    return true;
-  }
-};
-
 export default function UpcomingAppointments({ appointments, locations }) {
-  // For debugging, log all appointments
-  console.log("All appointments:", appointments);
-
-  // Filter and sort upcoming appointments
+  // Filter and sort upcoming appointments using the new PostgreSQL data format
   const upcomingAppointments = appointments
     ? appointments
-        .filter(isAppointmentInFuture)
-        .sort((a, b) => {
-          // Sort by date
-          const dateA = new Date(a.date);
-          const dateB = new Date(b.date);
-
-          if (dateA.getTime() !== dateB.getTime()) {
-            return dateA - dateB;
+        .filter((appointment) => {
+          if (!appointment || !appointment.date) {
+            return false;
           }
 
-          // If same date, sort by time
-          if (a.appointment_begins_at && b.appointment_begins_at) {
-            return a.appointment_begins_at.localeCompare(
-              b.appointment_begins_at
+          try {
+            // Get current date and time
+            const now = new Date();
+            console.log("Current time:", now.toISOString());
+            console.log("Current local time:", now.toString());
+
+            // IMPORTANT: We need to combine the appointment date with the time
+            // and compare the combined datetime with now
+
+            // First, parse the time components
+            if (!appointment.appointment_begins_at) {
+              console.log(`Appointment ${appointment.id} has no time`);
+              return false;
+            }
+
+            const [hours, minutes, seconds] = appointment.appointment_begins_at
+              .split(":")
+              .map(Number);
+
+            // Create a new Date object for the appointment
+            // We'll use the UTC date but set the time in local timezone
+            const appointmentDateTime = new Date(appointment.date);
+
+            // Log the initial date from DB
+            console.log(
+              `Appointment ${appointment.id} initial date:`,
+              appointmentDateTime.toString()
             );
-          }
 
-          return 0;
+            // Reset the hours/minutes/seconds to the appointment time
+            // This is critical - we're setting the time in the local timezone
+            appointmentDateTime.setHours(hours, minutes, seconds || 0);
+
+            console.log(
+              `Appointment ${appointment.id} with time set:`,
+              appointmentDateTime.toString()
+            );
+
+            // Now we can directly compare with the current time
+            const isInFuture = appointmentDateTime > now;
+            console.log(
+              `Appointment ${appointment.id} is in future:`,
+              isInFuture
+            );
+
+            // For completed appointments, always return false
+            if (appointment.status === "completed") {
+              console.log(
+                `Appointment ${appointment.id} is completed, excluding`
+              );
+              return false;
+            }
+
+            return isInFuture;
+          } catch (error) {
+            console.error("Error comparing appointment dates:", error);
+            console.log(
+              "Appointment that caused error:",
+              JSON.stringify(appointment)
+            );
+            return false;
+          }
+        })
+        .sort((a, b) => {
+          try {
+            // Create date objects with the appointment times
+            const dateTimeA = new Date(a.date);
+            const [hoursA, minutesA] = a.appointment_begins_at
+              .split(":")
+              .map(Number);
+            dateTimeA.setHours(hoursA, minutesA, 0);
+
+            const dateTimeB = new Date(b.date);
+            const [hoursB, minutesB] = b.appointment_begins_at
+              .split(":")
+              .map(Number);
+            dateTimeB.setHours(hoursB, minutesB, 0);
+
+            return dateTimeA - dateTimeB;
+          } catch (error) {
+            console.error("Error sorting appointments:", error);
+            return 0;
+          }
         })
         .map(formatAppointment)
     : [];
