@@ -8,7 +8,8 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "CipRMT.com",
-  description: "Massage therapy in Toronto, Ontario",
+  description:
+    "Gay & LGBTQ+ Registered Massage Therapist (RMT) in Toronto offering thai massage therapy focused on relaxation, relieving muscle tension, headache relief, and holistic wellbeing.",
 };
 
 function HealthHistoryUpdateAlert() {

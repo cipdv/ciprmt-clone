@@ -1,6 +1,4 @@
 const AppointmentNeedToKnow = ({ location }) => {
-  console.log(location);
-
   if (!location) {
     return (
       <div className="text-center">

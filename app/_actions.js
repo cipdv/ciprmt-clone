@@ -1272,6 +1272,7 @@ export async function getDataForReschedulePage(appointmentId, userId) {
     `;
 
     if (appointmentData.length === 0) {
+      console.log("appointment data", appointmentData);
       throw new Error(`Appointment not found with id: ${appointmentId}`);
     }
 
@@ -2604,10 +2605,6 @@ export async function rescheduleAppointment(
           consent_form_submitted_at = ${consentFormSubmittedAt}
         WHERE id = ${newAppointmentId}
       `;
-
-      console.log(
-        "Appointment rescheduled successfully with consent form data transferred."
-      );
 
       try {
         await logAuditEvent({

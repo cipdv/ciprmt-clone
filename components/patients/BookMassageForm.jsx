@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { getAvailableAppointments, bookAppointment } from "@/app/_actions";
 
 function BookMassageForm({ rmtSetup, user }) {
-  console.log(user);
-
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [appointmentTimes, setAppointmentTimes] = useState([]);
