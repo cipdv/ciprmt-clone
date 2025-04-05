@@ -233,125 +233,86 @@ export default function UpcomingAppointments({ appointments, locations }) {
           try {
             // Get current date and time
             const now = new Date();
-
-            // For debugging in production
             console.log("Current time:", now.toISOString());
+            console.log("Current local time:", now.toString());
 
-            // Extract appointment date and time components
-            const appointmentDate = new Date(appointment.date);
-            console.log(
-              "Appointment date from DB:",
-              appointmentDate.toISOString()
-            );
+            // Simple string-based comparison approach
+            // Get today's date as YYYY-MM-DD
+            const todayStr = now.toISOString().split("T")[0];
 
-            // Get appointment date components in local time
-            const appointmentYear = appointmentDate.getFullYear();
-            const appointmentMonth = appointmentDate.getMonth();
-            const appointmentDay = appointmentDate.getDate();
+            // Get appointment date as YYYY-MM-DD
+            const appointmentDateStr = appointment.date.split("T")[0];
 
-            // Parse the time from appointment_begins_at
-            if (appointment.appointment_begins_at) {
-              const timeComponents =
-                appointment.appointment_begins_at.split(":");
-              const hours = Number.parseInt(timeComponents[0], 10);
-              const minutes = Number.parseInt(timeComponents[1], 10);
-              const seconds =
-                timeComponents.length > 2
-                  ? Number.parseInt(timeComponents[2], 10)
-                  : 0;
-
-              console.log(
-                "Appointment time components:",
-                hours,
-                minutes,
-                seconds
-              );
-
-              // Create a new date object with the appointment date and time
-              // Using a completely fresh date object to avoid any timezone issues
-              const appointmentDateTime = new Date(
-                appointmentYear,
-                appointmentMonth,
-                appointmentDay,
-                hours,
-                minutes,
-                seconds
-              );
-
-              console.log(
-                "Combined appointment date/time:",
-                appointmentDateTime.toISOString()
-              );
-              console.log(
-                "Is appointment in future?",
-                appointmentDateTime > now
-              );
-
-              // Simple date comparison - if the appointment is today, check the time
-              if (
-                appointmentYear === now.getFullYear() &&
-                appointmentMonth === now.getMonth() &&
-                appointmentDay === now.getDate()
-              ) {
-                // Same day - compare hours and minutes
-                const nowHours = now.getHours();
-                const nowMinutes = now.getMinutes();
-
-                // If hours are greater, or hours are equal but minutes are greater
-                return (
-                  hours > nowHours ||
-                  (hours === nowHours && minutes > nowMinutes)
-                );
-              }
-
-              // Different day - compare full dates
-              return appointmentDateTime > now;
+            // If appointment is for a future date, it's definitely upcoming
+            if (appointmentDateStr > todayStr) {
+              console.log(`Appointment ${appointment.id} is on a future date`);
+              return true;
             }
 
-            // If no time specified, just compare the dates
-            const appointmentDateOnly = new Date(
-              appointmentYear,
-              appointmentMonth,
-              appointmentDay
-            );
-            const nowDateOnly = new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate()
-            );
+            // If appointment is for a past date, it's definitely not upcoming
+            if (appointmentDateStr < todayStr) {
+              console.log(`Appointment ${appointment.id} is on a past date`);
+              return false;
+            }
 
-            return appointmentDateOnly >= nowDateOnly;
+            // If we're here, the appointment is for today
+            // Parse the appointment time
+            if (appointment.appointment_begins_at) {
+              const [hours, minutes] = appointment.appointment_begins_at
+                .split(":")
+                .map(Number);
+
+              // Get current hours and minutes
+              const currentHours = now.getHours();
+              const currentMinutes = now.getMinutes();
+
+              console.log(
+                `Appointment time: ${hours}:${minutes}, Current time: ${currentHours}:${currentMinutes}`
+              );
+
+              // Compare times
+              if (
+                hours > currentHours ||
+                (hours === currentHours && minutes > currentMinutes)
+              ) {
+                console.log(`Appointment ${appointment.id} is later today`);
+                return true;
+              } else {
+                console.log(`Appointment ${appointment.id} is earlier today`);
+                return false;
+              }
+            }
+
+            // If no time specified, include it if it's today
+            return true;
           } catch (error) {
-            console.error("Error comparing appointment dates:", error);
-            return false;
+            console.error(
+              "Error comparing appointment dates:",
+              error,
+              appointment
+            );
+            // Force include this appointment for debugging
+            console.log("Including appointment despite error:", appointment);
+            return true;
           }
         })
         .sort((a, b) => {
-          // Sort by date and time
+          // Sort by date
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
 
-          // If times are available, use them for sorting
-          if (a.appointment_begins_at && b.appointment_begins_at) {
-            const [hoursA, minutesA] = a.appointment_begins_at
-              .split(":")
-              .map(Number);
-            const [hoursB, minutesB] = b.appointment_begins_at
-              .split(":")
-              .map(Number);
-
-            // Create date objects with the times
-            const dateTimeA = new Date(dateA);
-            dateTimeA.setHours(hoursA, minutesA, 0);
-
-            const dateTimeB = new Date(dateB);
-            dateTimeB.setHours(hoursB, minutesB, 0);
-
-            return dateTimeA - dateTimeB;
+          if (dateA.toDateString() !== dateB.toDateString()) {
+            return dateA - dateB;
           }
 
-          // Otherwise just sort by date
-          return dateA - dateB;
+          // If same date, sort by time
+          if (a.appointment_begins_at && b.appointment_begins_at) {
+            const timeA = a.appointment_begins_at;
+            const timeB = b.appointment_begins_at;
+            return timeA.localeCompare(timeB);
+          }
+
+          return 0;
         })
         .map(formatAppointment)
     : [];
@@ -359,6 +320,42 @@ export default function UpcomingAppointments({ appointments, locations }) {
   // For debugging in production
   console.log("Total appointments:", appointments?.length || 0);
   console.log("Upcoming appointments:", upcomingAppointments.length);
+
+  // Force include all appointments for debugging
+  if (
+    upcomingAppointments.length === 0 &&
+    appointments &&
+    appointments.length > 0
+  ) {
+    console.log("DEBUG MODE: Forcing display of all appointments");
+    const debugAppointments = appointments.map(formatAppointment);
+
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-14">
+        <div className="flex flex-col items-start space-y-8">
+          <div className="space-y-4 flex-grow w-full">
+            <h1 className="text-3xl mb-6">
+              DEBUG MODE: All appointments (none were detected as upcoming)
+            </h1>
+            {debugAppointments.map((appointment) => (
+              <div
+                key={appointment.id}
+                className="mb-6 p-4 border border-red-600 rounded-lg shadow-sm"
+              >
+                <h2 className="text-xl mb-2">
+                  {appointment.formattedDate} at {appointment.formattedTime} for{" "}
+                  {appointment.duration} minutes.
+                </h2>
+                <p>Status: {appointment.status}</p>
+                <p>Date from DB: {appointment.date}</p>
+                <p>Time: {appointment.appointment_begins_at}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-14">
