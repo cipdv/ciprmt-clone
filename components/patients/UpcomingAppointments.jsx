@@ -221,95 +221,98 @@ const NoAppointments = () => (
   </div>
 );
 
+// Helper function to check if an appointment is in the future
+const isAppointmentInFuture = (appointment) => {
+  try {
+    if (!appointment || !appointment.date) {
+      console.log("Appointment missing date:", appointment);
+      return false;
+    }
+
+    // Get current date and time
+    const now = new Date();
+    console.log("Current time:", now.toISOString());
+    console.log("Current local time:", now.toString());
+
+    // Ensure appointment.date is a Date object
+    const appointmentDate = new Date(appointment.date);
+    console.log("Appointment date:", appointmentDate.toISOString());
+
+    // Check if the appointment is today
+    const isToday =
+      now.getFullYear() === appointmentDate.getFullYear() &&
+      now.getMonth() === appointmentDate.getMonth() &&
+      now.getDate() === appointmentDate.getDate();
+
+    console.log(`Appointment ${appointment.id} is today:`, isToday);
+
+    if (!isToday) {
+      // If appointment is in the future, return true
+      const isFutureDate = appointmentDate > now;
+      console.log(
+        `Appointment ${appointment.id} is future date:`,
+        isFutureDate
+      );
+      return isFutureDate;
+    }
+
+    // If appointment is today, check the time
+    if (appointment.appointment_begins_at) {
+      const [hours, minutes] = appointment.appointment_begins_at
+        .split(":")
+        .map(Number);
+
+      // Get current hours and minutes
+      const currentHours = now.getHours();
+      const currentMinutes = now.getMinutes();
+
+      console.log(
+        `Appointment time: ${hours}:${minutes}, Current time: ${currentHours}:${currentMinutes}`
+      );
+
+      // If hours are greater, or hours are equal but minutes are greater
+      const isFutureTime =
+        hours > currentHours ||
+        (hours === currentHours && minutes > currentMinutes);
+      console.log(
+        `Appointment ${appointment.id} is future time:`,
+        isFutureTime
+      );
+      return isFutureTime;
+    }
+
+    // If no time specified but it's today, include it
+    return true;
+  } catch (error) {
+    console.error("Error checking if appointment is in future:", error);
+    console.log("Appointment that caused error:", JSON.stringify(appointment));
+    // Include it for debugging
+    return true;
+  }
+};
+
 export default function UpcomingAppointments({ appointments, locations }) {
-  // Filter and sort upcoming appointments using the new PostgreSQL data format
+  // For debugging, log all appointments
+  console.log("All appointments:", appointments);
+
+  // Filter and sort upcoming appointments
   const upcomingAppointments = appointments
     ? appointments
-        .filter((appointment) => {
-          if (!appointment || !appointment.date) {
-            return false;
-          }
-
-          try {
-            // Get current date and time
-            const now = new Date();
-            console.log("Current time:", now.toISOString());
-            console.log("Current local time:", now.toString());
-
-            // Simple string-based comparison approach
-            // Get today's date as YYYY-MM-DD
-            const todayStr = now.toISOString().split("T")[0];
-
-            // Get appointment date as YYYY-MM-DD
-            const appointmentDateStr = appointment.date.split("T")[0];
-
-            // If appointment is for a future date, it's definitely upcoming
-            if (appointmentDateStr > todayStr) {
-              console.log(`Appointment ${appointment.id} is on a future date`);
-              return true;
-            }
-
-            // If appointment is for a past date, it's definitely not upcoming
-            if (appointmentDateStr < todayStr) {
-              console.log(`Appointment ${appointment.id} is on a past date`);
-              return false;
-            }
-
-            // If we're here, the appointment is for today
-            // Parse the appointment time
-            if (appointment.appointment_begins_at) {
-              const [hours, minutes] = appointment.appointment_begins_at
-                .split(":")
-                .map(Number);
-
-              // Get current hours and minutes
-              const currentHours = now.getHours();
-              const currentMinutes = now.getMinutes();
-
-              console.log(
-                `Appointment time: ${hours}:${minutes}, Current time: ${currentHours}:${currentMinutes}`
-              );
-
-              // Compare times
-              if (
-                hours > currentHours ||
-                (hours === currentHours && minutes > currentMinutes)
-              ) {
-                console.log(`Appointment ${appointment.id} is later today`);
-                return true;
-              } else {
-                console.log(`Appointment ${appointment.id} is earlier today`);
-                return false;
-              }
-            }
-
-            // If no time specified, include it if it's today
-            return true;
-          } catch (error) {
-            console.error(
-              "Error comparing appointment dates:",
-              error,
-              appointment
-            );
-            // Force include this appointment for debugging
-            console.log("Including appointment despite error:", appointment);
-            return true;
-          }
-        })
+        .filter(isAppointmentInFuture)
         .sort((a, b) => {
           // Sort by date
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
 
-          if (dateA.toDateString() !== dateB.toDateString()) {
+          if (dateA.getTime() !== dateB.getTime()) {
             return dateA - dateB;
           }
 
           // If same date, sort by time
           if (a.appointment_begins_at && b.appointment_begins_at) {
-            const timeA = a.appointment_begins_at;
-            const timeB = b.appointment_begins_at;
-            return timeA.localeCompare(timeB);
+            return a.appointment_begins_at.localeCompare(
+              b.appointment_begins_at
+            );
           }
 
           return 0;
@@ -321,7 +324,7 @@ export default function UpcomingAppointments({ appointments, locations }) {
   console.log("Total appointments:", appointments?.length || 0);
   console.log("Upcoming appointments:", upcomingAppointments.length);
 
-  // Force include all appointments for debugging
+  // Force include all appointments for debugging if none are upcoming
   if (
     upcomingAppointments.length === 0 &&
     appointments &&
@@ -347,8 +350,9 @@ export default function UpcomingAppointments({ appointments, locations }) {
                   {appointment.duration} minutes.
                 </h2>
                 <p>Status: {appointment.status}</p>
-                <p>Date from DB: {appointment.date}</p>
+                <p>Date from DB: {String(appointment.date)}</p>
                 <p>Time: {appointment.appointment_begins_at}</p>
+                <p>ID: {appointment.id}</p>
               </div>
             ))}
           </div>
