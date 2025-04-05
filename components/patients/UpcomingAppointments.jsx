@@ -240,48 +240,100 @@ export default function UpcomingAppointments({ appointments, locations }) {
           }
 
           try {
-            // Get current date and time
+            // Get current date and time in local timezone
             const now = new Date();
-            console.log("Current time:", now.toISOString());
+            console.log("Current time (local):", now.toString());
 
-            // IMPORTANT: We need to compare the appointment date and time with the current date and time
-            // The appointment date is stored as midnight UTC on the appointment day
-            // The appointment_begins_at is the local time of the appointment
-
-            // Get the appointment date in UTC
+            // Get the appointment date from the database (in UTC)
             const appointmentDateUTC = new Date(appointment.date);
+            console.log(
+              `Appointment ${appointment.id} date from DB:`,
+              appointmentDateUTC.toISOString()
+            );
 
-            // Extract the date parts (year, month, day) from the UTC date
-            // This gives us the correct date regardless of timezone
-            const year = appointmentDateUTC.getUTCFullYear();
-            const month = appointmentDateUTC.getUTCMonth();
-            const day = appointmentDateUTC.getUTCDate();
-
-            // Parse the time from appointment_begins_at
+            // Parse the appointment time
             const [hours, minutes, seconds] = appointment.appointment_begins_at
               .split(":")
               .map(Number);
-
-            // Create a new Date object in UTC with the correct date and time
-            // This is the key step - we're creating a date in UTC that represents
-            // the local time of the appointment
-            const appointmentDateTime = new Date(
-              Date.UTC(year, month, day, hours, minutes, seconds || 0)
-            );
-
-            console.log(`Appointment ${appointment.id}:`);
-            console.log(`- Date from DB: ${appointmentDateUTC.toISOString()}`);
-            console.log(`- Time: ${appointment.appointment_begins_at}`);
             console.log(
-              `- Combined datetime (UTC): ${appointmentDateTime.toISOString()}`
+              `Appointment ${appointment.id} time:`,
+              `${hours}:${minutes}:${seconds || 0}`
             );
-            console.log(`- Current time (UTC): ${now.toISOString()}`);
 
-            // Compare with current time
-            const isInFuture = appointmentDateTime > now;
-            console.log(`- Is in future: ${isInFuture}`);
+            // DIRECT COMPARISON APPROACH
+            // Compare the current local time with the appointment local time
 
-            return isInFuture;
+            // Get current date components in local time
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth(); // 0-11
+            const currentDay = now.getDate();
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+
+            // Get appointment date components in local time
+            // Note: We need to convert the UTC date to local date
+            const appointmentLocalDate = new Date(appointmentDateUTC);
+            const appointmentYear = appointmentLocalDate.getFullYear();
+            const appointmentMonth = appointmentLocalDate.getMonth(); // 0-11
+            const appointmentDay = appointmentLocalDate.getDate();
+
+            console.log(
+              `Current date: ${currentYear}-${currentMonth + 1}-${currentDay}`
+            );
+            console.log(
+              `Appointment date: ${appointmentYear}-${
+                appointmentMonth + 1
+              }-${appointmentDay}`
+            );
+
+            // Compare dates
+            if (appointmentYear > currentYear) {
+              console.log(`Appointment ${appointment.id} is in a future year`);
+              return true;
+            }
+
+            if (
+              appointmentYear === currentYear &&
+              appointmentMonth > currentMonth
+            ) {
+              console.log(`Appointment ${appointment.id} is in a future month`);
+              return true;
+            }
+
+            if (
+              appointmentYear === currentYear &&
+              appointmentMonth === currentMonth &&
+              appointmentDay > currentDay
+            ) {
+              console.log(`Appointment ${appointment.id} is in a future day`);
+              return true;
+            }
+
+            if (
+              appointmentYear === currentYear &&
+              appointmentMonth === currentMonth &&
+              appointmentDay === currentDay
+            ) {
+              // Same day - compare hours and minutes
+              console.log(
+                `Appointment ${appointment.id} is today, comparing times`
+              );
+              console.log(`Current time: ${currentHour}:${currentMinute}`);
+              console.log(`Appointment time: ${hours}:${minutes}`);
+
+              // If hours are greater, or hours are equal but minutes are greater
+              const isLaterToday =
+                hours > currentHour ||
+                (hours === currentHour && minutes > currentMinute);
+              console.log(
+                `Appointment ${appointment.id} is later today: ${isLaterToday}`
+              );
+              return isLaterToday;
+            }
+
+            // If we get here, the appointment is in the past
+            console.log(`Appointment ${appointment.id} is in the past`);
+            return false;
           } catch (error) {
             console.error("Error comparing appointment dates:", error);
             return false;
@@ -293,16 +345,12 @@ export default function UpcomingAppointments({ appointments, locations }) {
             const dateA = new Date(a.date);
             const dateB = new Date(b.date);
 
-            // Extract date parts
-            const yearA = dateA.getUTCFullYear();
-            const monthA = dateA.getUTCMonth();
-            const dayA = dateA.getUTCDate();
+            // If dates are different, sort by date
+            if (dateA.toDateString() !== dateB.toDateString()) {
+              return dateA - dateB;
+            }
 
-            const yearB = dateB.getUTCFullYear();
-            const monthB = dateB.getUTCMonth();
-            const dayB = dateB.getUTCDate();
-
-            // Parse times
+            // If same date, sort by time
             const [hoursA, minutesA] = a.appointment_begins_at
               .split(":")
               .map(Number);
@@ -310,15 +358,11 @@ export default function UpcomingAppointments({ appointments, locations }) {
               .split(":")
               .map(Number);
 
-            // Create comparable date objects
-            const dateTimeA = new Date(
-              Date.UTC(yearA, monthA, dayA, hoursA, minutesA, 0)
-            );
-            const dateTimeB = new Date(
-              Date.UTC(yearB, monthB, dayB, hoursB, minutesB, 0)
-            );
+            if (hoursA !== hoursB) {
+              return hoursA - hoursB;
+            }
 
-            return dateTimeA - dateTimeB;
+            return minutesA - minutesB;
           } catch (error) {
             console.error("Error sorting appointments:", error);
             return 0;
