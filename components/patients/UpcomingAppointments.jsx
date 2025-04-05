@@ -222,11 +222,20 @@ const NoAppointments = () => (
 );
 
 export default function UpcomingAppointments({ appointments, locations }) {
-  // Filter and sort upcoming appointments using the new PostgreSQL data format
+  // Filter and sort upcoming appointments
   const upcomingAppointments = appointments
     ? appointments
         .filter((appointment) => {
-          if (!appointment || !appointment.date) {
+          if (
+            !appointment ||
+            !appointment.date ||
+            !appointment.appointment_begins_at
+          ) {
+            return false;
+          }
+
+          // Skip completed appointments
+          if (appointment.status === "completed") {
             return false;
           }
 
@@ -234,79 +243,80 @@ export default function UpcomingAppointments({ appointments, locations }) {
             // Get current date and time
             const now = new Date();
             console.log("Current time:", now.toISOString());
-            console.log("Current local time:", now.toString());
 
-            // IMPORTANT: We need to combine the appointment date with the time
-            // and compare the combined datetime with now
+            // IMPORTANT: We need to compare the appointment date and time with the current date and time
+            // The appointment date is stored as midnight UTC on the appointment day
+            // The appointment_begins_at is the local time of the appointment
 
-            // First, parse the time components
-            if (!appointment.appointment_begins_at) {
-              console.log(`Appointment ${appointment.id} has no time`);
-              return false;
-            }
+            // Get the appointment date in UTC
+            const appointmentDateUTC = new Date(appointment.date);
 
+            // Extract the date parts (year, month, day) from the UTC date
+            // This gives us the correct date regardless of timezone
+            const year = appointmentDateUTC.getUTCFullYear();
+            const month = appointmentDateUTC.getUTCMonth();
+            const day = appointmentDateUTC.getUTCDate();
+
+            // Parse the time from appointment_begins_at
             const [hours, minutes, seconds] = appointment.appointment_begins_at
               .split(":")
               .map(Number);
 
-            // Create a new Date object for the appointment
-            // We'll use the UTC date but set the time in local timezone
-            const appointmentDateTime = new Date(appointment.date);
-
-            // Log the initial date from DB
-            console.log(
-              `Appointment ${appointment.id} initial date:`,
-              appointmentDateTime.toString()
+            // Create a new Date object in UTC with the correct date and time
+            // This is the key step - we're creating a date in UTC that represents
+            // the local time of the appointment
+            const appointmentDateTime = new Date(
+              Date.UTC(year, month, day, hours, minutes, seconds || 0)
             );
 
-            // Reset the hours/minutes/seconds to the appointment time
-            // This is critical - we're setting the time in the local timezone
-            appointmentDateTime.setHours(hours, minutes, seconds || 0);
-
+            console.log(`Appointment ${appointment.id}:`);
+            console.log(`- Date from DB: ${appointmentDateUTC.toISOString()}`);
+            console.log(`- Time: ${appointment.appointment_begins_at}`);
             console.log(
-              `Appointment ${appointment.id} with time set:`,
-              appointmentDateTime.toString()
+              `- Combined datetime (UTC): ${appointmentDateTime.toISOString()}`
             );
+            console.log(`- Current time (UTC): ${now.toISOString()}`);
 
-            // Now we can directly compare with the current time
+            // Compare with current time
             const isInFuture = appointmentDateTime > now;
-            console.log(
-              `Appointment ${appointment.id} is in future:`,
-              isInFuture
-            );
-
-            // For completed appointments, always return false
-            if (appointment.status === "completed") {
-              console.log(
-                `Appointment ${appointment.id} is completed, excluding`
-              );
-              return false;
-            }
+            console.log(`- Is in future: ${isInFuture}`);
 
             return isInFuture;
           } catch (error) {
             console.error("Error comparing appointment dates:", error);
-            console.log(
-              "Appointment that caused error:",
-              JSON.stringify(appointment)
-            );
             return false;
           }
         })
         .sort((a, b) => {
           try {
-            // Create date objects with the appointment times
-            const dateTimeA = new Date(a.date);
+            // Sort by date and time
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+
+            // Extract date parts
+            const yearA = dateA.getUTCFullYear();
+            const monthA = dateA.getUTCMonth();
+            const dayA = dateA.getUTCDate();
+
+            const yearB = dateB.getUTCFullYear();
+            const monthB = dateB.getUTCMonth();
+            const dayB = dateB.getUTCDate();
+
+            // Parse times
             const [hoursA, minutesA] = a.appointment_begins_at
               .split(":")
               .map(Number);
-            dateTimeA.setHours(hoursA, minutesA, 0);
-
-            const dateTimeB = new Date(b.date);
             const [hoursB, minutesB] = b.appointment_begins_at
               .split(":")
               .map(Number);
-            dateTimeB.setHours(hoursB, minutesB, 0);
+
+            // Create comparable date objects
+            const dateTimeA = new Date(
+              Date.UTC(yearA, monthA, dayA, hoursA, minutesA, 0)
+            );
+            const dateTimeB = new Date(
+              Date.UTC(yearB, monthB, dayB, hoursB, minutesB, 0)
+            );
 
             return dateTimeA - dateTimeB;
           } catch (error) {
