@@ -230,35 +230,101 @@ export default function UpcomingAppointments({ appointments, locations }) {
             return false;
           }
 
-          // Get current date and time
-          const now = new Date();
+          try {
+            // Get current date and time
+            const now = new Date();
 
-          // Create a date object from the appointment date (keeping it in UTC)
-          const appointmentDate = new Date(appointment.date);
+            // For debugging in production
+            console.log("Current time:", now.toISOString());
 
-          // Parse the time from appointment_begins_at
-          if (appointment.appointment_begins_at) {
-            const [hours, minutes, seconds] = appointment.appointment_begins_at
-              .split(":")
-              .map(Number);
-
-            // Create a date object for the appointment in local time
-            // First get the date part in local time format
-            const localAppointmentDate = new Date(
-              appointmentDate.toDateString()
+            // Extract appointment date and time components
+            const appointmentDate = new Date(appointment.date);
+            console.log(
+              "Appointment date from DB:",
+              appointmentDate.toISOString()
             );
 
-            // Then set the time components
-            localAppointmentDate.setHours(hours, minutes, seconds || 0);
+            // Get appointment date components in local time
+            const appointmentYear = appointmentDate.getFullYear();
+            const appointmentMonth = appointmentDate.getMonth();
+            const appointmentDay = appointmentDate.getDate();
 
-            // Compare with current date
-            return localAppointmentDate > now;
+            // Parse the time from appointment_begins_at
+            if (appointment.appointment_begins_at) {
+              const timeComponents =
+                appointment.appointment_begins_at.split(":");
+              const hours = Number.parseInt(timeComponents[0], 10);
+              const minutes = Number.parseInt(timeComponents[1], 10);
+              const seconds =
+                timeComponents.length > 2
+                  ? Number.parseInt(timeComponents[2], 10)
+                  : 0;
+
+              console.log(
+                "Appointment time components:",
+                hours,
+                minutes,
+                seconds
+              );
+
+              // Create a new date object with the appointment date and time
+              // Using a completely fresh date object to avoid any timezone issues
+              const appointmentDateTime = new Date(
+                appointmentYear,
+                appointmentMonth,
+                appointmentDay,
+                hours,
+                minutes,
+                seconds
+              );
+
+              console.log(
+                "Combined appointment date/time:",
+                appointmentDateTime.toISOString()
+              );
+              console.log(
+                "Is appointment in future?",
+                appointmentDateTime > now
+              );
+
+              // Simple date comparison - if the appointment is today, check the time
+              if (
+                appointmentYear === now.getFullYear() &&
+                appointmentMonth === now.getMonth() &&
+                appointmentDay === now.getDate()
+              ) {
+                // Same day - compare hours and minutes
+                const nowHours = now.getHours();
+                const nowMinutes = now.getMinutes();
+
+                // If hours are greater, or hours are equal but minutes are greater
+                return (
+                  hours > nowHours ||
+                  (hours === nowHours && minutes > nowMinutes)
+                );
+              }
+
+              // Different day - compare full dates
+              return appointmentDateTime > now;
+            }
+
+            // If no time specified, just compare the dates
+            const appointmentDateOnly = new Date(
+              appointmentYear,
+              appointmentMonth,
+              appointmentDay
+            );
+            const nowDateOnly = new Date(
+              now.getFullYear(),
+              now.getMonth(),
+              now.getDate()
+            );
+
+            return appointmentDateOnly >= nowDateOnly;
+          } catch (error) {
+            console.error("Error comparing appointment dates:", error);
+            return false;
           }
-
-          // If no time specified, just compare the dates
-          // Convert UTC date to local date for comparison
-          const localAppointmentDate = new Date(appointmentDate.toDateString());
-          return localAppointmentDate >= now;
         })
         .sort((a, b) => {
           // Sort by date and time
@@ -276,10 +342,10 @@ export default function UpcomingAppointments({ appointments, locations }) {
 
             // Create date objects with the times
             const dateTimeA = new Date(dateA);
-            dateTimeA.setUTCHours(hoursA, minutesA, 0);
+            dateTimeA.setHours(hoursA, minutesA, 0);
 
             const dateTimeB = new Date(dateB);
-            dateTimeB.setUTCHours(hoursB, minutesB, 0);
+            dateTimeB.setHours(hoursB, minutesB, 0);
 
             return dateTimeA - dateTimeB;
           }
@@ -289,6 +355,10 @@ export default function UpcomingAppointments({ appointments, locations }) {
         })
         .map(formatAppointment)
     : [];
+
+  // For debugging in production
+  console.log("Total appointments:", appointments?.length || 0);
+  console.log("Upcoming appointments:", upcomingAppointments.length);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-14">
