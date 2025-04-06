@@ -27,9 +27,9 @@ const Intro = () => {
               <p className="text-sm sm:text-base">
                 I'm very passionate about health and well-being. I love taking
                 care of myself with exercise, good foods, and spending time with
-                friends and family. My favourite activities include volleyball,
-                rock climbing, swimming, skating, and just being outdoors with
-                nature.
+                friends and family. My favourite activities include beach
+                volleyball, rock climbing, swimming, and just being outdoors
+                with nature.
               </p>
               <p className="text-sm sm:text-base">
                 As your <strong>Registered Massage Therapist</strong>, I promise
