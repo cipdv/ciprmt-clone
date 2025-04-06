@@ -221,97 +221,75 @@ const NoAppointments = () => (
   </div>
 );
 
+// Helper function to check if an appointment is in the future
+const isAppointmentInFuture = (appointment) => {
+  if (!appointment || !appointment.date || !appointment.appointment_begins_at) {
+    return false;
+  }
+
+  try {
+    // Skip completed appointments
+    if (appointment.status === "completed") {
+      console.log(`Appointment ${appointment.id} is completed, excluding`);
+      return false;
+    }
+
+    // Get current date and time
+    const now = new Date();
+
+    // Get the appointment date in UTC
+    const appointmentDateUTC = new Date(appointment.date);
+
+    // Parse the time from appointment_begins_at
+    const [hours, minutes, seconds] = appointment.appointment_begins_at
+      .split(":")
+      .map(Number);
+
+    // First, get the UTC date components
+    const utcYear = appointmentDateUTC.getUTCFullYear();
+    const utcMonth = appointmentDateUTC.getUTCMonth();
+    const utcDay = appointmentDateUTC.getUTCDate();
+
+    // Create a new date object using the UTC date components but in local time
+    const appointmentLocalDate = new Date(
+      utcYear,
+      utcMonth,
+      utcDay,
+      hours,
+      minutes,
+      seconds || 0
+    );
+
+    // Compare with current time
+    const isInFuture = appointmentLocalDate > now;
+
+    return isInFuture;
+  } catch (error) {
+    console.error("Error comparing appointment dates:", error);
+    return false;
+  }
+};
+
+// Format date for display in a consistent way that won't cause hydration issues
+const formatDateForDisplay = (date) => {
+  if (!date) return "N/A";
+
+  // Use Intl.DateTimeFormat for consistent formatting
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(date));
+};
+
 export default function UpcomingAppointments({ appointments, locations }) {
-  // TEMPORARY SOLUTION: Hardcode the April 5th appointment to be included
+  // Filter and sort upcoming appointments
   const upcomingAppointments = appointments
     ? appointments
-        .filter((appointment) => {
-          // Skip completed appointments
-          if (appointment.status === "completed") {
-            console.log(
-              `Appointment ${appointment.id} is completed, excluding`
-            );
-            return false;
-          }
-
-          // Include the April 5th appointment with ID 2c3781b3-e3c8-40fe-a9f5-eb540d262893
-          if (appointment.id === "2c3781b3-e3c8-40fe-a9f5-eb540d262893") {
-            console.log("Including April 5th appointment by ID");
-            return true;
-          }
-
-          if (
-            !appointment ||
-            !appointment.date ||
-            !appointment.appointment_begins_at
-          ) {
-            return false;
-          }
-
-          try {
-            // Get current date and time
-            const now = new Date();
-            console.log("Current time:", now.toISOString());
-            console.log("Current local time:", now.toString());
-
-            // Get the appointment date in UTC
-            const appointmentDateUTC = new Date(appointment.date);
-            console.log(
-              `Appointment ${appointment.id} UTC date:`,
-              appointmentDateUTC.toISOString()
-            );
-
-            // Parse the time from appointment_begins_at
-            const [hours, minutes, seconds] = appointment.appointment_begins_at
-              .split(":")
-              .map(Number);
-            console.log(
-              `Appointment ${appointment.id} time:`,
-              `${hours}:${minutes}:${seconds || 0}`
-            );
-
-            // Create a date object for the appointment in local time
-            // This is the key part - we need to use the UTC date but interpret the time in local timezone
-
-            // First, get the UTC date components
-            const utcYear = appointmentDateUTC.getUTCFullYear();
-            const utcMonth = appointmentDateUTC.getUTCMonth();
-            const utcDay = appointmentDateUTC.getUTCDate();
-
-            console.log(
-              `Appointment ${appointment.id} UTC date components:`,
-              utcYear,
-              utcMonth + 1,
-              utcDay
-            );
-
-            // Create a new date object using the UTC date components but in local time
-            const appointmentLocalDate = new Date(
-              utcYear,
-              utcMonth,
-              utcDay,
-              hours,
-              minutes,
-              seconds || 0
-            );
-            console.log(
-              `Appointment ${appointment.id} local datetime:`,
-              appointmentLocalDate.toString()
-            );
-
-            // Compare with current time
-            const isInFuture = appointmentLocalDate > now;
-            console.log(
-              `Appointment ${appointment.id} is in future:`,
-              isInFuture
-            );
-
-            return isInFuture;
-          } catch (error) {
-            console.error("Error comparing appointment dates:", error);
-            return false;
-          }
-        })
+        .filter(isAppointmentInFuture)
         .sort((a, b) => {
           try {
             // Sort by date and time
@@ -347,43 +325,6 @@ export default function UpcomingAppointments({ appointments, locations }) {
   // For debugging in production
   console.log("Total appointments:", appointments?.length || 0);
   console.log("Upcoming appointments:", upcomingAppointments.length);
-
-  // Force include all appointments for debugging if none are upcoming
-  if (
-    upcomingAppointments.length === 0 &&
-    appointments &&
-    appointments.length > 0
-  ) {
-    console.log("DEBUG MODE: Forcing display of all appointments");
-    const debugAppointments = appointments.map(formatAppointment);
-
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-14">
-        <div className="flex flex-col items-start space-y-8">
-          <div className="space-y-4 flex-grow w-full">
-            <h1 className="text-3xl mb-6">
-              DEBUG MODE: All appointments (none were detected as upcoming)
-            </h1>
-            {debugAppointments.map((appointment) => (
-              <div
-                key={appointment.id}
-                className="mb-6 p-4 border border-red-600 rounded-lg shadow-sm"
-              >
-                <h2 className="text-xl mb-2">
-                  {appointment.formattedDate} at {appointment.formattedTime} for{" "}
-                  {appointment.duration} minutes.
-                </h2>
-                <p>Status: {appointment.status}</p>
-                <p>Date from DB: {String(appointment.date)}</p>
-                <p>Time: {appointment.appointment_begins_at}</p>
-                <p>ID: {appointment.id}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-14">
@@ -627,41 +568,108 @@ export default function UpcomingAppointments({ appointments, locations }) {
 // );
 
 // export default function UpcomingAppointments({ appointments, locations }) {
-//   // Filter and sort upcoming appointments using the new PostgreSQL data format
+//   // TEMPORARY SOLUTION: Hardcode the April 5th appointment to be included
 //   const upcomingAppointments = appointments
 //     ? appointments
 //         .filter((appointment) => {
-//           if (!appointment || !appointment.date) {
+//           // Skip completed appointments
+//           if (appointment.status === "completed") {
+//             console.log(
+//               `Appointment ${appointment.id} is completed, excluding`
+//             );
 //             return false;
 //           }
 
-//           // Create a date object from the appointment date
-//           const appointmentDate = new Date(appointment.date);
-
-//           // Parse the time from appointment_begins_at
-//           if (appointment.appointment_begins_at) {
-//             const [hours, minutes] = appointment.appointment_begins_at
-//               .split(":")
-//               .map(Number);
-
-//             // Create a new date object with the appointment date and time in UTC
-//             const appointmentDateTime = new Date(appointmentDate);
-//             appointmentDateTime.setUTCHours(hours, minutes, 0);
-
-//             // Compare with current date
-//             return appointmentDateTime >= new Date();
+//           // Include the April 5th appointment with ID 2c3781b3-e3c8-40fe-a9f5-eb540d262893
+//           if (appointment.id === "2c3781b3-e3c8-40fe-a9f5-eb540d262893") {
+//             console.log("Including April 5th appointment by ID");
+//             return true;
 //           }
 
-//           // If no time specified, just compare the dates
-//           return appointmentDate >= new Date();
+//           if (
+//             !appointment ||
+//             !appointment.date ||
+//             !appointment.appointment_begins_at
+//           ) {
+//             return false;
+//           }
+
+//           try {
+//             // Get current date and time
+//             const now = new Date();
+//             console.log("Current time:", now.toISOString());
+//             console.log("Current local time:", now.toString());
+
+//             // Get the appointment date in UTC
+//             const appointmentDateUTC = new Date(appointment.date);
+//             console.log(
+//               `Appointment ${appointment.id} UTC date:`,
+//               appointmentDateUTC.toISOString()
+//             );
+
+//             // Parse the time from appointment_begins_at
+//             const [hours, minutes, seconds] = appointment.appointment_begins_at
+//               .split(":")
+//               .map(Number);
+//             console.log(
+//               `Appointment ${appointment.id} time:`,
+//               `${hours}:${minutes}:${seconds || 0}`
+//             );
+
+//             // Create a date object for the appointment in local time
+//             // This is the key part - we need to use the UTC date but interpret the time in local timezone
+
+//             // First, get the UTC date components
+//             const utcYear = appointmentDateUTC.getUTCFullYear();
+//             const utcMonth = appointmentDateUTC.getUTCMonth();
+//             const utcDay = appointmentDateUTC.getUTCDate();
+
+//             console.log(
+//               `Appointment ${appointment.id} UTC date components:`,
+//               utcYear,
+//               utcMonth + 1,
+//               utcDay
+//             );
+
+//             // Create a new date object using the UTC date components but in local time
+//             const appointmentLocalDate = new Date(
+//               utcYear,
+//               utcMonth,
+//               utcDay,
+//               hours,
+//               minutes,
+//               seconds || 0
+//             );
+//             console.log(
+//               `Appointment ${appointment.id} local datetime:`,
+//               appointmentLocalDate.toString()
+//             );
+
+//             // Compare with current time
+//             const isInFuture = appointmentLocalDate > now;
+//             console.log(
+//               `Appointment ${appointment.id} is in future:`,
+//               isInFuture
+//             );
+
+//             return isInFuture;
+//           } catch (error) {
+//             console.error("Error comparing appointment dates:", error);
+//             return false;
+//           }
 //         })
 //         .sort((a, b) => {
-//           // Sort by date and time
-//           const dateA = new Date(a.date);
-//           const dateB = new Date(b.date);
+//           try {
+//             // Sort by date and time
+//             const dateA = new Date(a.date);
+//             const dateB = new Date(b.date);
 
-//           // If times are available, use them for sorting
-//           if (a.appointment_begins_at && b.appointment_begins_at) {
+//             // If dates are different, sort by date
+//             if (dateA.toDateString() !== dateB.toDateString()) {
+//               return dateA - dateB;
+//             }
+
+//             // If same date, sort by time
 //             const [hoursA, minutesA] = a.appointment_begins_at
 //               .split(":")
 //               .map(Number);
@@ -669,21 +677,59 @@ export default function UpcomingAppointments({ appointments, locations }) {
 //               .split(":")
 //               .map(Number);
 
-//             // Create date objects with the times
-//             const dateTimeA = new Date(dateA);
-//             dateTimeA.setUTCHours(hoursA, minutesA, 0);
+//             if (hoursA !== hoursB) {
+//               return hoursA - hoursB;
+//             }
 
-//             const dateTimeB = new Date(dateB);
-//             dateTimeB.setUTCHours(hoursB, minutesB, 0);
-
-//             return dateTimeA - dateTimeB;
+//             return minutesA - minutesB;
+//           } catch (error) {
+//             console.error("Error sorting appointments:", error);
+//             return 0;
 //           }
-
-//           // Otherwise just sort by date
-//           return dateA - dateB;
 //         })
 //         .map(formatAppointment)
 //     : [];
+
+//   // For debugging in production
+//   console.log("Total appointments:", appointments?.length || 0);
+//   console.log("Upcoming appointments:", upcomingAppointments.length);
+
+//   // Force include all appointments for debugging if none are upcoming
+//   if (
+//     upcomingAppointments.length === 0 &&
+//     appointments &&
+//     appointments.length > 0
+//   ) {
+//     console.log("DEBUG MODE: Forcing display of all appointments");
+//     const debugAppointments = appointments.map(formatAppointment);
+
+//     return (
+//       <div className="mx-auto max-w-4xl px-4 py-14">
+//         <div className="flex flex-col items-start space-y-8">
+//           <div className="space-y-4 flex-grow w-full">
+//             <h1 className="text-3xl mb-6">
+//               DEBUG MODE: All appointments (none were detected as upcoming)
+//             </h1>
+//             {debugAppointments.map((appointment) => (
+//               <div
+//                 key={appointment.id}
+//                 className="mb-6 p-4 border border-red-600 rounded-lg shadow-sm"
+//               >
+//                 <h2 className="text-xl mb-2">
+//                   {appointment.formattedDate} at {appointment.formattedTime} for{" "}
+//                   {appointment.duration} minutes.
+//                 </h2>
+//                 <p>Status: {appointment.status}</p>
+//                 <p>Date from DB: {String(appointment.date)}</p>
+//                 <p>Time: {appointment.appointment_begins_at}</p>
+//                 <p>ID: {appointment.id}</p>
+//               </div>
+//             ))}
+//           </div>
+//         </div>
+//       </div>
+//     );
+//   }
 
 //   return (
 //     <div className="mx-auto max-w-4xl px-4 py-14">
