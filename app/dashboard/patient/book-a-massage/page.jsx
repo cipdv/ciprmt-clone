@@ -5,9 +5,6 @@ const page = async () => {
   // Use the consolidated function to get both user and RMT setup data
   const { user, rmtSetup } = await getDataForBookAppointmentsForm();
 
-  console.log(rmtSetup);
-  console.log("user", user);
-
   // Ensure rmtSetup is a plain object
   const plainRmtSetup = JSON.parse(JSON.stringify(rmtSetup));
 

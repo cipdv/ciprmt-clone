@@ -63,5 +63,4 @@ export function decryptData(encryptedData) {
 
 export async function logAuditEvent(event) {
   // Implement audit logging (e.g., write to a secure database or send to a logging service)
-  console.log("Audit event:", event);
 }

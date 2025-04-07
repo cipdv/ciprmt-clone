@@ -21,13 +21,6 @@ export default async function Dashboard() {
   const appointmentData = await getDashboardAppointments(userId);
   const messages = await getAllMessagesByRMTId(userId);
 
-  // Log the data for debugging
-  console.log("Dashboard received appointment data:", {
-    requested: appointmentData.requested?.length || 0,
-    upcoming: appointmentData.upcoming?.length || 0,
-    past: appointmentData.past?.length || 0,
-  });
-
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <section className="space-y-8">

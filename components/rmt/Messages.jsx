@@ -36,8 +36,6 @@ function formatDate(dateString) {
 }
 
 const Messages = ({ messages }) => {
-  console.log(messages);
-
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [replyText, setReplyText] = useState("");
 

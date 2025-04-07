@@ -230,7 +230,6 @@ const isAppointmentInFuture = (appointment) => {
   try {
     // Skip completed appointments
     if (appointment.status === "completed") {
-      console.log(`Appointment ${appointment.id} is completed, excluding`);
       return false;
     }
 
@@ -321,10 +320,6 @@ export default function UpcomingAppointments({ appointments, locations }) {
         })
         .map(formatAppointment)
     : [];
-
-  // For debugging in production
-  console.log("Total appointments:", appointments?.length || 0);
-  console.log("Upcoming appointments:", upcomingAppointments.length);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-14">

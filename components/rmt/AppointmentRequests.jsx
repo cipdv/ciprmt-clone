@@ -22,8 +22,6 @@ function SubmitButton({ children }) {
 }
 
 const AppointmentRequests = ({ requestedAppointments }) => {
-  console.log(requestedAppointments);
-
   // Function to format date in UTC to avoid timezone issues
   const formatDateInUTC = (dateString) => {
     const date = new Date(dateString);

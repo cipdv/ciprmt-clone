@@ -426,7 +426,6 @@ export const verifyAuth = async (token) => {
 };
 
 export async function submitScheduleSetup(prevState, formData) {
-  console.log(formData);
   return;
 }
 
@@ -549,8 +548,6 @@ export async function getReceipts(id) {
       _id: treatment.mongodb_id || treatment.id,
     }));
 
-    console.log(treatments);
-
     return treatments;
   } catch (error) {
     console.error("Error fetching completed treatments:", error);
@@ -572,8 +569,6 @@ export async function getReceiptById(id) {
     const firstName = session.resultObj.firstName || "";
     const lastName = session.resultObj.lastName || "";
     const fullName = `${firstName} ${lastName}`;
-
-    console.log(`Looking for receipt with ID: ${id}`);
 
     // Query the treatments table for the record with the given ID
     // First try to find by UUID (primary key)
@@ -1272,7 +1267,6 @@ export async function getDataForReschedulePage(appointmentId, userId) {
     `;
 
     if (appointmentData.length === 0) {
-      console.log("appointment data", appointmentData);
       throw new Error(`Appointment not found with id: ${appointmentId}`);
     }
 
@@ -1400,7 +1394,6 @@ export async function getRMTSetupById(id) {
       return null;
     }
 
-    console.log("RMT setup:", rows[0]);
     return rows[0];
   } catch (error) {
     console.error("Error fetching RMT setup:", error);
@@ -1409,7 +1402,6 @@ export async function getRMTSetupById(id) {
 }
 
 export async function getUsersAppointments(id) {
-  console.log("get users appointments function running");
   try {
     const session = await getSession();
 
@@ -1484,7 +1476,6 @@ export async function getUsersAppointments(id) {
       console.error("Error logging audit event:", logError);
     }
 
-    console.log("_actions", treatments);
     return treatments;
   } catch (error) {
     console.error("Error fetching user treatments:", error);
@@ -1685,7 +1676,6 @@ export async function bookAppointment({
   });
 
   const session = await getSession();
-  console.log("Session:", session);
 
   if (!session || !session.resultObj) {
     console.error("No session or resultObj found");
@@ -1696,11 +1686,9 @@ export async function bookAppointment({
   }
 
   const { id, firstName, lastName, email, phoneNumber } = session.resultObj;
-  console.log("User data:", { id, firstName, lastName, email, phoneNumber });
 
   // Ensure appointmentDate is in "YYYY-MM-DD" format
   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
-  console.log("Formatted date:", formattedDate);
 
   // Convert appointmentTime to "HH:MM" (24-hour format)
   const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
@@ -1709,7 +1697,6 @@ export async function bookAppointment({
     hour: "2-digit",
     minute: "2-digit",
   });
-  console.log("Formatted start time:", formattedStartTime);
 
   // Calculate end time
   const endDateTime = new Date(
@@ -1720,7 +1707,6 @@ export async function bookAppointment({
     hour: "2-digit",
     minute: "2-digit",
   });
-  console.log("Formatted end time:", formattedEndTime);
 
   try {
     console.log("Searching for available appointment with criteria:", {
@@ -1742,8 +1728,6 @@ export async function bookAppointment({
       LIMIT 1
     `;
 
-    console.log("Available appointments found:", availableAppointments);
-
     if (availableAppointments.length === 0) {
       console.error("No matching appointment found");
       return {
@@ -1754,10 +1738,8 @@ export async function bookAppointment({
     }
 
     const appointmentId = availableAppointments[0].id;
-    console.log("Selected appointment ID:", appointmentId);
 
     // Create Google Calendar event
-    console.log("Creating Google Calendar event");
     const event = {
       summary: `[Requested] Mx ${firstName} ${lastName}`,
       location: location,
@@ -1773,8 +1755,6 @@ export async function bookAppointment({
       colorId: "6", // tangerine color
     };
 
-    console.log("Google Calendar event data:", event);
-
     const createdEvent = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
       resource: event,
@@ -1786,7 +1766,6 @@ export async function bookAppointment({
     });
 
     // Update the appointment
-    console.log("Updating appointment with ID:", appointmentId);
     const updateResult = await sql`
       UPDATE treatments
       SET 
@@ -1803,13 +1782,10 @@ export async function bookAppointment({
       RETURNING id, status, client_id
     `;
 
-    console.log("Update result:", updateResult);
-
     if (updateResult.rowCount === 0) {
       console.error("Failed to update appointment");
 
       // If update failed, delete the Google Calendar event
-      console.log("Deleting Google Calendar event due to failed update");
       await calendar.events.delete({
         calendarId: GOOGLE_CALENDAR_ID,
         eventId: createdEvent.data.id,
@@ -1823,7 +1799,6 @@ export async function bookAppointment({
     }
 
     // Log the audit event
-    console.log("Logging audit event");
     try {
       await logAuditEvent({
         typeOfInfo: "appointment booking",
@@ -1874,9 +1849,6 @@ export async function bookAppointment({
       `,
     });
 
-    console.log("Email sent successfully");
-    console.log("Appointment booking completed successfully");
-
     revalidatePath("/dashboard/patient");
     redirect("/dashboard/patient");
   } catch (error) {
@@ -1906,11 +1878,9 @@ export const cancelAppointment = async (prevState, formData) => {
   }
 
   const { id, firstName, lastName } = session.resultObj;
-  console.log("Cancelling appointment for user:", { id, firstName, lastName });
 
   try {
     const appointmentId = formData.get("id");
-    console.log("Appointment ID to cancel:", appointmentId);
 
     // First, fetch the appointment to get the Google Calendar event ID
     const { rows } = await sql`
@@ -1934,7 +1904,6 @@ export const cancelAppointment = async (prevState, formData) => {
     }
 
     const appointment = rows[0];
-    console.log("Found appointment:", appointment);
 
     // If there's a Google Calendar event ID, delete the event
     if (appointment.google_calendar_event_id) {
@@ -2245,7 +2214,6 @@ export const getAllAvailableAppointments = async (
   });
 
   let filteredBusyTimes = busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy;
-  console.log("Total busy times before filtering:", filteredBusyTimes.length);
 
   // Only filter out the current event if currentEventGoogleId is provided
   let currentEventStart = null;
@@ -2334,8 +2302,6 @@ export const getAllAvailableAppointments = async (
     })
     .filter((period) => period !== null); // Remove null entries (current event)
 
-  console.log("Processed busy periods:", busyPeriods.length);
-
   // Filter out conflicting times
   const filteredAvailableTimes = availableTimes.filter((available) => {
     // If this is the current event's time slot, always include it
@@ -2409,8 +2375,6 @@ export const getAllAvailableAppointments = async (
       uniqueTimes.push(time);
     }
   });
-
-  console.log("Final unique available times:", uniqueTimes.length);
 
   return uniqueTimes;
 };
@@ -2789,8 +2753,6 @@ export async function addHealthHistory(data) {
   try {
     const userId = await checkAuth();
 
-    console.log("Adding health history for user:", userId);
-
     // Server-side validation
     const validatedData = healthHistorySchema.parse(data);
 
@@ -3034,7 +2996,6 @@ export async function sendMessageToCip(prevState, formData) {
     }
 
     const messageId = result.rows[0].id;
-    console.log(`Message saved with ID: ${messageId}`);
 
     const transporter = await getEmailTransporter();
 
@@ -3130,8 +3091,6 @@ export async function getAllMessagesByRMTId(rmtId) {
       WHERE rmt_id = ${rmtId}
       ORDER BY created_at DESC
     `;
-
-    console.log(messages);
 
     return messages;
   } catch (error) {
@@ -3239,8 +3198,6 @@ async function saveResetTokenToDatabase(email, token) {
     if (rowCount === 0) {
       throw new Error("No user found with that email address.");
     }
-
-    console.log(`Reset token saved for user: ${email}`);
   } catch (error) {
     console.error("Error in saveResetTokenToDatabase:", error);
     throw error;
@@ -3272,7 +3229,6 @@ export async function resetPassword(email) {
       `,
     });
 
-    console.log(`Reset email sent to ${email}`);
     return {
       message:
         "Password reset link sent to your email. Check your inbox (and spam folder).",
@@ -3697,7 +3653,6 @@ export async function getTreatmentPlansForUser(userId) {
       console.error("Error logging audit event:", logError);
     }
 
-    console.log("Treatment plans fetched:", plansWithTreatments.length);
     return { success: true, data: plansWithTreatments };
   } catch (error) {
     console.error("Error fetching treatment plans:", error);
@@ -3831,15 +3786,6 @@ export async function getTreatmentAndPlans(treatmentId) {
 
     // Then get the treatment plans for the user
     const treatmentPlans = await getTreatmentPlansForUser(treatment.userId);
-
-    // Add debug logging
-    console.log("Treatment fetched:", treatment.id);
-    console.log(
-      "Treatment plans result:",
-      treatmentPlans.success,
-      "Count:",
-      treatmentPlans.data ? treatmentPlans.data.length : 0
-    );
 
     return {
       success: true,
@@ -4287,9 +4233,6 @@ export async function searchUsers(query) {
     // Use ILIKE for case-insensitive search in Postgres
     const searchPattern = `%${query}%`;
 
-    // Debug the query
-    console.log("Executing search query with pattern:", searchPattern);
-
     // First, let's check what tables exist in the database
     try {
       const { rows: tables } = await sql`
@@ -4312,10 +4255,6 @@ export async function searchUsers(query) {
         FROM information_schema.columns 
         WHERE table_name = 'users'
       `;
-      console.log(
-        "Users table columns:",
-        columns.map((c) => `${c.column_name} (${c.data_type})`)
-      );
     } catch (columnError) {
       console.error("Error listing columns:", columnError);
     }
@@ -4324,7 +4263,6 @@ export async function searchUsers(query) {
     try {
       // Try a simpler query first to see if we get any results
       const testResult = await sql`SELECT * FROM users LIMIT 1`;
-      console.log("Test query result:", testResult.rows);
 
       // Now try the actual search query with the correct column names based on what we found
       const result = await sql`
@@ -4339,8 +4277,6 @@ export async function searchUsers(query) {
       // With @vercel/postgres, results are in the rows property
       users = result.rows;
 
-      // Debug the result
-      console.log("Search results count:", users.length);
       if (users.length > 0) {
         console.log("First result sample:", users[0]);
       } else {
@@ -4410,7 +4346,6 @@ export async function getClientWithHealthHistory(clientId) {
     }
 
     const client = userRows[0];
-    console.log("Client found:", client);
 
     // Query health histories using the correct column names
     const { rows: healthHistories } = await sql`
@@ -4427,10 +4362,6 @@ export async function getClientWithHealthHistory(clientId) {
       ORDER BY 
         created_at DESC
     `;
-
-    console.log(
-      `Found ${healthHistories.length} health history records for client ${clientId}`
-    );
 
     // Process health histories if they're encrypted
     const processedHistories = healthHistories.map((history) => {
@@ -4859,10 +4790,6 @@ export async function resetStaleReschedulingAppointments() {
       WHERE status = 'rescheduling'
     `;
 
-    console.log(
-      `Found ${staleAppointments.length} appointments in rescheduling status`
-    );
-
     // Process each stale appointment
     for (const appointment of staleAppointments) {
       // Update the appointment status
@@ -4915,8 +4842,6 @@ export async function addAppointments() {
       "Saturday",
     ][today.getDay()];
 
-    console.log(`Current day: ${currentDay}`);
-
     // Fetch the specific RMT location
     // Note: Using the MongoDB ID from the original function
     const mongodbId = "673a415085f1bd8631e7a426";
@@ -4935,7 +4860,6 @@ export async function addAppointments() {
     }
 
     const location = locations[0];
-    console.log(`Found RMT location with ID: ${location.id}`);
 
     // Get work day for the current day of the week
     const { rows: workDays } = await sql`
@@ -4955,7 +4879,6 @@ export async function addAppointments() {
     }
 
     const workDay = workDays[0];
-    console.log(`Found work day with ID: ${workDay.id}`);
 
     // Get appointment times for this work day
     const { rows: appointmentTimes } = await sql`
@@ -4972,14 +4895,10 @@ export async function addAppointments() {
       return { success: false, message: "No appointment times found" };
     }
 
-    console.log(`Found ${appointmentTimes.length} appointment times`);
-
     // Calculate the date 8 weeks from today
     const appointmentDate = new Date(today);
     appointmentDate.setDate(today.getDate() + 56); // 8 weeks from today
     const formattedDate = appointmentDate.toISOString().split("T")[0]; // Format as "YYYY-MM-DD"
-
-    console.log(`Creating appointments for date: ${formattedDate}`);
 
     // Insert appointments for each time slot
     let insertedCount = 0;
@@ -5417,14 +5336,11 @@ export async function unsubscribeEmail(email) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export async function migrateTreatmentsWithTimeWindows() {
-  console.log("Starting migration of treatments with time window support...");
-
   try {
     // Connect to MongoDB
     const db = await getDatabase();
 
     // Step 1: Migrate treatment plans (unchanged from your original function)
-    console.log("Migrating treatment plans...");
     const treatmentPlansCollection = db.collection("treatmentPlans");
     const treatmentPlans = await treatmentPlansCollection.find({}).toArray();
 
@@ -5511,8 +5427,6 @@ export async function migrateTreatmentsWithTimeWindows() {
     console.log("Migrating treatments with time window support...");
     const treatmentsCollection = db.collection("tomigrateTreatments");
     const treatments = await treatmentsCollection.find({}).toArray();
-
-    console.log(`Found ${treatments.length} treatments to migrate`);
 
     // Map to store MongoDB ID to PostgreSQL UUID mapping
     const treatmentIdMap = new Map();
@@ -5861,7 +5775,6 @@ export async function migrateTreatmentsWithTimeWindows() {
 if (require.main === module) {
   migrateTreatmentsWithTimeWindows()
     .then((result) => {
-      console.log("Migration result:", result);
       process.exit(result.success ? 0 : 1);
     })
     .catch((error) => {
@@ -5882,7 +5795,6 @@ export async function consolidateUsers() {
       .listCollections({ name: "migrateUsers" })
       .toArray();
     if (collections.length > 0) {
-      console.log("migrateUsers collection already exists, dropping it...");
       await db.collection("migrateUsers").drop();
     }
 
@@ -5936,7 +5848,6 @@ export async function consolidateUsers() {
     // Check for any missing fields in the migrated collection
     const sampleUser = await db.collection("migrateUsers").findOne();
     const fields = Object.keys(sampleUser).filter((key) => key !== "_id");
-    console.log("Fields in migrated collection:", fields);
 
     return {
       success: true,

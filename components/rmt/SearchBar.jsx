@@ -19,7 +19,6 @@ export default function SearchBar() {
     setError(null);
     try {
       const searchResults = await searchUsers(query);
-      console.log(searchResults);
       setResults(searchResults);
     } catch (error) {
       console.error("Error searching users:", error);

@@ -15,9 +15,6 @@ const TreatmentPlanDetails = ({
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
 
-  // Debug logging to see what data we're receiving
-  console.log("Treatment Plans received:", treatmentPlans);
-
   const handleDragOver = (e) => {
     e.preventDefault();
   };
@@ -40,8 +37,6 @@ const TreatmentPlanDetails = ({
   };
 
   const handleSaveTreatmentNotes = async (formData) => {
-    console.log("Treatment Notes:", formData);
-    console.log("Treatment Plan ID:", selectedPlan.id || selectedPlan._id);
     setShowNotesModal(false);
     // You might want to refresh the treatment plans list here
   };

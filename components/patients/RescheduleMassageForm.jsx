@@ -30,7 +30,6 @@ export default function RescheduleMassageForm({
   });
 
   useEffect(() => {
-    console.log(rmtSetup);
     const fetchAppointments = async () => {
       if (formData.RMTLocationId && formData.duration) {
         setLoading(true);
