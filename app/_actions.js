@@ -2203,15 +2203,8 @@ export const getAllAvailableAppointments = async (
   duration,
   currentEventGoogleId
 ) => {
-  console.log(
-    `DEBUG: getAllAvailableAppointments - rmtLocationId: ${rmtLocationId}, duration: ${duration}, currentEventGoogleId: ${currentEventGoogleId}`
-  );
-
   // Convert duration to an integer
   const durationMinutes = parseInt(duration, 10);
-  console.log(
-    `DEBUG: getAllAvailableAppointments - durationMinutes: ${durationMinutes}`
-  );
 
   // Fetch the RMT location details
   const { rows: rmtLocations } = await sql`
@@ -2221,18 +2214,12 @@ export const getAllAvailableAppointments = async (
     FROM rmt_locations
     WHERE id = ${rmtLocationId}
   `;
-  console.log(
-    `DEBUG: getAllAvailableAppointments - rmtLocations found: ${rmtLocations.length}`
-  );
 
   if (rmtLocations.length === 0) {
     throw new Error("RMT location not found");
   }
 
   const { workplace_type: workplaceType } = rmtLocations[0];
-  console.log(
-    `DEBUG: getAllAvailableAppointments - workplaceType: ${workplaceType}`
-  );
 
   let availableTimes = [];
 
@@ -2250,17 +2237,6 @@ export const getAllAvailableAppointments = async (
     WHERE rmt_location_id = ${rmtLocationId}
     AND status IN ('available', 'rescheduling')
   `;
-  console.log(
-    `DEBUG: getAllAvailableAppointments - Number of appointments found: ${appointments.length}`
-  );
-
-  if (appointments.length > 0) {
-    console.log(
-      `DEBUG: getAllAvailableAppointments - Sample appointment: ${JSON.stringify(
-        appointments[0]
-      )}`
-    );
-  }
 
   if (workplaceType === "irregular") {
     // For irregular workplaces, use the stored appointment times without adding breaks
@@ -2303,10 +2279,6 @@ export const getAllAvailableAppointments = async (
         `${appointmentDate}T${appointment.appointment_window_end}`
       );
 
-      console.log(
-        `DEBUG: getAllAvailableAppointments - Processing appointment: date=${appointmentDate}, start=${appointment.appointment_window_start}, end=${appointment.appointment_window_end}`
-      );
-
       let currentTime = new Date(startTime);
 
       while (currentTime <= endTime) {
@@ -2326,25 +2298,10 @@ export const getAllAvailableAppointments = async (
     });
   }
 
-  console.log(
-    `DEBUG: getAllAvailableAppointments - Number of availableTimes after processing appointments: ${availableTimes.length}`
-  );
-  if (availableTimes.length > 0) {
-    console.log(
-      `DEBUG: getAllAvailableAppointments - Sample available time: ${JSON.stringify(
-        availableTimes[0]
-      )}`
-    );
-  }
-
   // Fetch busy times from Google Calendar
   const now = new Date();
   const oneMonthLater = new Date();
   oneMonthLater.setMonth(now.getMonth() + 2.5);
-
-  console.log(
-    `DEBUG: getAllAvailableAppointments - TimeMin: ${now.toISOString()}, TimeMax: ${oneMonthLater.toISOString()}`
-  );
 
   const busyTimes = await calendar.freebusy.query({
     requestBody: {
@@ -2355,10 +2312,6 @@ export const getAllAvailableAppointments = async (
     },
   });
 
-  console.log(
-    `DEBUG: getAllAvailableAppointments - Google Calendar busy periods count: ${busyTimes.data.calendars[GOOGLE_CALENDAR_ID].busy.length}`
-  );
-
   // Fetch the event with the currentEventGoogleId
   let event;
   try {
@@ -2367,14 +2320,9 @@ export const getAllAvailableAppointments = async (
         calendarId: GOOGLE_CALENDAR_ID,
         eventId: currentEventGoogleId,
       });
-      console.log(
-        `DEBUG: getAllAvailableAppointments - Current event found: ${event.data.summary}`
-      );
     }
   } catch (error) {
-    console.warn(
-      `DEBUG: getAllAvailableAppointments - Error fetching current event: ${error.message}`
-    );
+    console.log(error);
   }
 
   // Filter out the event with the currentEventGoogleId from the busyTimes
@@ -2388,10 +2336,6 @@ export const getAllAvailableAppointments = async (
       event.data.end.dateTime || event.data.end.date
     ).toISOString();
 
-    console.log(
-      `DEBUG: getAllAvailableAppointments - Excluding event: start=${eventStart}, end=${eventEnd}`
-    );
-
     filteredBusyTimes = busyTimes.data.calendars[
       GOOGLE_CALENDAR_ID
     ].busy.filter((busyTime) => {
@@ -2399,10 +2343,6 @@ export const getAllAvailableAppointments = async (
       const busyEnd = new Date(busyTime.end).toISOString();
       return !(busyStart === eventStart && busyEnd === eventEnd);
     });
-
-    console.log(
-      `DEBUG: getAllAvailableAppointments - Busy periods after filtering: ${filteredBusyTimes.length}`
-    );
   }
 
   const busyPeriods = filteredBusyTimes.map((period) => {
@@ -2442,17 +2382,6 @@ export const getAllAvailableAppointments = async (
     };
   });
 
-  console.log(
-    `DEBUG: getAllAvailableAppointments - busyPeriods count after processing: ${busyPeriods.length}`
-  );
-  if (busyPeriods.length > 0) {
-    console.log(
-      `DEBUG: getAllAvailableAppointments - Sample busy period: ${JSON.stringify(
-        busyPeriods[0]
-      )}`
-    );
-  }
-
   // Filter out conflicting times
   const filteredAvailableTimes = availableTimes.filter((available) => {
     return !busyPeriods.some((busy) => {
@@ -2465,54 +2394,21 @@ export const getAllAvailableAppointments = async (
           (available.startTime <= busy.startTime &&
             available.endTime >= busy.endTime));
 
-      if (isConflict) {
-        console.log(
-          `DEBUG: getAllAvailableAppointments - Conflict found: available=${JSON.stringify(
-            available
-          )}, busy=${JSON.stringify(busy)}`
-        );
-      }
-
       return isConflict;
     });
   });
 
-  console.log(
-    `DEBUG: getAllAvailableAppointments - Number of availableTimes after filtering conflicts: ${filteredAvailableTimes.length}`
-  );
-
   // Filter out dates that are not greater than today
   const today = new Date().toISOString().split("T")[0];
-  console.log(`DEBUG: getAllAvailableAppointments - Today's date: ${today}`);
 
   const futureAvailableTimes = filteredAvailableTimes.filter(
     (available) => available.date > today
-  );
-
-  console.log(
-    `DEBUG: getAllAvailableAppointments - Number of availableTimes after filtering future dates: ${futureAvailableTimes.length}`
   );
 
   // Sort the results by date
   const sortedAvailableTimes = futureAvailableTimes.sort(
     (a, b) => new Date(a.date) - new Date(b.date)
   );
-
-  console.log(
-    `DEBUG: getAllAvailableAppointments - Final number of available times: ${sortedAvailableTimes.length}`
-  );
-  if (sortedAvailableTimes.length > 0) {
-    console.log(
-      `DEBUG: getAllAvailableAppointments - First available time: ${JSON.stringify(
-        sortedAvailableTimes[0]
-      )}`
-    );
-    console.log(
-      `DEBUG: getAllAvailableAppointments - Last available time: ${JSON.stringify(
-        sortedAvailableTimes[sortedAvailableTimes.length - 1]
-      )}`
-    );
-  }
 
   return sortedAvailableTimes;
 };
