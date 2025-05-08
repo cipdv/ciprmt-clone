@@ -69,7 +69,7 @@ export async function encrypt(payload) {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("6d")
+    .setExpirationTime("12h")
     .sign(key);
 }
 
@@ -357,8 +357,8 @@ export async function login(prevState, formData) {
     dns_count: result.dns_count,
   };
 
-  const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
-  const session = await encrypt({ resultObj, expires });
+  const expires = new Date(Date.now() + 12 * 60 * 60 * 1000);
+  const session = await encrypt({ resultObj });
 
   cookies().set("session", session, {
     expires,
@@ -1097,152 +1097,6 @@ export async function getDataForBookAppointmentsForm() {
   }
 }
 
-// export async function getDataForReschedulePage(appointmentId, userId) {
-//   try {
-//     // Get the appointment and related user data
-//     const { rows: appointmentData } = await sql`
-//       SELECT
-//         t.*,
-//         u_client.first_name AS client_first_name,
-//         u_client.last_name AS client_last_name,
-//         u_client.email AS client_email,
-//         u_rmt.id AS rmt_id,
-//         u_rmt.first_name AS rmt_first_name,
-//         u_rmt.last_name AS rmt_last_name
-//       FROM
-//         treatments t
-//       JOIN
-//         users u_client ON t.client_id = u_client.id
-//       JOIN
-//         users u_rmt ON t.rmt_id = u_rmt.id
-//       WHERE
-//         t.id = ${appointmentId}
-//     `;
-
-//     if (appointmentData.length === 0) {
-//       throw new Error(`Appointment not found with id: ${appointmentId}`);
-//     }
-
-//     const appointment = appointmentData[0];
-//     const rmtId = appointment.rmt_id;
-
-//     // Get all RMT locations that the user can book at
-//     const { rows: locationData } = await sql`
-//       SELECT
-//         rl.*
-//       FROM
-//         rmt_locations rl
-//       JOIN
-//         user_rmt_locations url ON rl.id = url.rmt_location_id
-//       WHERE
-//         url.user_id = ${userId}
-//         AND rl.user_id = ${rmtId}
-//     `;
-
-//     // Get the list of location IDs the user can book at
-//     const { rows: userRmtLocations } = await sql`
-//       SELECT rmt_location_id
-//       FROM user_rmt_locations
-//       WHERE user_id = ${userId}
-//     `;
-
-//     const canBookAtIds = userRmtLocations.map((row) => row.rmt_location_id);
-
-//     // Get massage services for each location individually
-//     const massageServicesByLocation = {};
-
-//     // Process each location one by one to avoid using IN with arrays
-//     for (const location of locationData) {
-//       const { rows: services } = await sql`
-//         SELECT
-//           service,
-//           duration,
-//           price,
-//           plus_hst
-//         FROM
-//           massage_services
-//         WHERE
-//           rmt_location_id = ${location.id}
-//         ORDER BY
-//           duration
-//       `;
-
-//       // Format the services
-//       massageServicesByLocation[location.id] = services.map((service) => ({
-//         service: service.service,
-//         duration: service.duration.toString(),
-//         price: service.price.toString(),
-//         plusHst: service.plus_hst,
-//       }));
-//     }
-
-//     // Transform the location data to match expected format
-//     const formattedLocations = locationData.map((location) => {
-//       // Get massage services for this location or use default if none found
-//       const locationServices = massageServicesByLocation[location.id] || [
-//         {
-//           service: "Massage Therapy",
-//           duration: "60",
-//           price: "100",
-//           plusHst: true,
-//         },
-//         {
-//           service: "Massage Therapy",
-//           duration: "90",
-//           price: "150",
-//           plusHst: true,
-//         },
-//       ];
-
-//       // Create the expected structure with formattedFormData
-//       return {
-//         _id: location.id,
-//         id: location.id,
-//         formattedFormData: {
-//           address: {
-//             streetAddress: location.street_address,
-//             locationName: location.location_name || location.street_address,
-//             city: location.city,
-//             province: location.province,
-//             country: location.country,
-//             postalCode: location.postal_code,
-//           },
-//           massageServices: locationServices,
-//           // Add other expected fields
-//           whatToWear: location.what_to_wear,
-//           description: location.description,
-//           payment: location.payment,
-//         },
-//       };
-//     });
-
-//     // Format the appointment to match expected structure
-//     const formattedAppointment = {
-//       ...appointment,
-//       _id: appointment.id,
-//       appointmentDate: appointment.date,
-//       appointmentBeginsAt: appointment.appointment_begins_at,
-//       RMTLocationId: appointment.rmt_location_id,
-//     };
-
-//     // Return all the data needed for the page
-//     return {
-//       currentUser: {
-//         id: userId,
-//         resultObj: {
-//           id: userId,
-//           rmtId: rmtId,
-//           canBookAtIds: canBookAtIds,
-//         },
-//       },
-//       appointment: formattedAppointment,
-//       rmtLocations: formattedLocations,
-//     };
-//   } catch (error) {
-//     console.error("Error fetching data for reschedule page:", error);
-//     throw new Error("Failed to fetch data for reschedule page");
-//   }
-// }
 export async function getDataForReschedulePage(appointmentId, userId) {
   try {
     // Get the appointment and related user data
@@ -1266,26 +1120,84 @@ export async function getDataForReschedulePage(appointmentId, userId) {
         t.id = ${appointmentId}
     `;
 
+    console.log("appointment data", appointmentData);
+
     if (appointmentData.length === 0) {
       throw new Error(`Appointment not found with id: ${appointmentId}`);
     }
 
     const appointment = appointmentData[0];
     const rmtId = appointment.rmt_id;
+    const clientId = appointment.client_id;
 
-    // Get can_book_at_ids directly from the appointment data
-    const canBookAtIds = appointment.can_book_at_ids || [];
+    // Initialize canBookAtIds
+    let canBookAtIds = [];
+
+    // Check if can_book_at_ids array is populated in the appointment data
+    if (appointment.can_book_at_ids && appointment.can_book_at_ids.length > 0) {
+      // Use the array directly if it's populated
+      canBookAtIds = appointment.can_book_at_ids;
+      console.log("Using can_book_at_ids from user table:", canBookAtIds);
+    } else {
+      // Otherwise, fetch from the junction table
+      console.log(
+        "Fetching can_book_at_ids from junction table for client:",
+        clientId
+      );
+      const { rows: userLocations } = await sql`
+        SELECT rmt_location_id
+        FROM user_rmt_locations
+        WHERE user_id = ${clientId}
+      `;
+
+      canBookAtIds = userLocations.map((loc) => loc.rmt_location_id);
+      console.log("Fetched can_book_at_ids from junction table:", canBookAtIds);
+    }
+
+    // If canBookAtIds is still empty, get all locations for this RMT as a fallback
+    if (canBookAtIds.length === 0) {
+      console.log(
+        "No can_book_at_ids found, fetching all locations for RMT:",
+        rmtId
+      );
+      const { rows: allRmtLocations } = await sql`
+        SELECT id
+        FROM rmt_locations
+        WHERE user_id = ${rmtId}
+      `;
+
+      canBookAtIds = allRmtLocations.map((loc) => loc.id);
+      console.log("Using all RMT locations as fallback:", canBookAtIds);
+    }
 
     // Get all RMT locations that the user can book at
-    const { rows: locationData } = await sql`
-      SELECT 
-        rl.*
-      FROM 
-        rmt_locations rl
-      WHERE 
-        rl.user_id = ${rmtId}
-        AND rl.id = ANY(${canBookAtIds})
-    `;
+    let locationData;
+
+    // Use different queries based on whether canBookAtIds has values
+    if (canBookAtIds.length > 0) {
+      // If we have specific locations, filter by them
+      const { rows } = await sql`
+        SELECT 
+          rl.*
+        FROM 
+          rmt_locations rl
+        WHERE 
+          rl.user_id = ${rmtId}
+          AND rl.id = ANY(${canBookAtIds})
+      `;
+      locationData = rows;
+    } else {
+      // If no specific locations, get all locations for this RMT
+      const { rows } = await sql`
+        SELECT 
+          rl.*
+        FROM 
+          rmt_locations rl
+        WHERE 
+          rl.user_id = ${rmtId}
+      `;
+      locationData = rows;
+    }
 
     // Get massage services for each location individually
     const massageServicesByLocation = {};
@@ -1382,6 +1294,149 @@ export async function getDataForReschedulePage(appointmentId, userId) {
     throw new Error("Failed to fetch data for reschedule page");
   }
 }
+// export async function getDataForReschedulePage(appointmentId, userId) {
+//   try {
+//     // Get the appointment and related user data
+//     const { rows: appointmentData } = await sql`
+//       SELECT
+//         t.*,
+//         u_client.first_name AS client_first_name,
+//         u_client.last_name AS client_last_name,
+//         u_client.email AS client_email,
+//         u_rmt.id AS rmt_id,
+//         u_rmt.first_name AS rmt_first_name,
+//         u_rmt.last_name AS rmt_last_name,
+//         u_client.can_book_at_ids  -- Get can_book_at_ids directly from the users table
+//       FROM
+//         treatments t
+//       JOIN
+//         users u_client ON t.client_id = u_client.id
+//       JOIN
+//         users u_rmt ON t.rmt_id = u_rmt.id
+//       WHERE
+//         t.id = ${appointmentId}
+//     `;
+
+//     console.log("appointment data", appointmentData);
+
+//     if (appointmentData.length === 0) {
+//       throw new Error(`Appointment not found with id: ${appointmentId}`);
+//     }
+
+//     const appointment = appointmentData[0];
+//     const rmtId = appointment.rmt_id;
+
+//     // Get can_book_at_ids directly from the appointment data
+//     const canBookAtIds = appointment.can_book_at_ids || [];
+
+//     console.log("can book at ids", canBookAtIds);
+
+//     // Get all RMT locations that the user can book at
+//     const { rows: locationData } = await sql`
+//       SELECT
+//         rl.*
+//       FROM
+//         rmt_locations rl
+//       WHERE
+//         rl.user_id = ${rmtId}
+//         AND rl.id = ANY(${canBookAtIds})
+//     `;
+
+//     // Get massage services for each location individually
+//     const massageServicesByLocation = {};
+
+//     // Process each location one by one to avoid using IN with arrays
+//     for (const location of locationData) {
+//       const { rows: services } = await sql`
+//         SELECT
+//           service,
+//           duration,
+//           price,
+//           plus_hst
+//         FROM
+//           massage_services
+//         WHERE
+//           rmt_location_id = ${location.id}
+//         ORDER BY
+//           duration
+//       `;
+
+//       // Format the services
+//       massageServicesByLocation[location.id] = services.map((service) => ({
+//         service: service.service,
+//         duration: service.duration.toString(),
+//         price: service.price.toString(),
+//         plusHst: service.plus_hst,
+//       }));
+//     }
+
+//     // Transform the location data to match expected format
+//     const formattedLocations = locationData.map((location) => {
+//       // Get massage services for this location or use default if none found
+//       const locationServices = massageServicesByLocation[location.id] || [
+//         {
+//           service: "Massage Therapy",
+//           duration: "60",
+//           price: "100",
+//           plusHst: true,
+//         },
+//         {
+//           service: "Massage Therapy",
+//           duration: "90",
+//           price: "150",
+//           plusHst: true,
+//         },
+//       ];
+
+//       // Create the expected structure with formattedFormData
+//       return {
+//         _id: location.id,
+//         id: location.id,
+//         formattedFormData: {
+//           address: {
+//             streetAddress: location.street_address,
+//             locationName: location.location_name || location.street_address,
+//             city: location.city,
+//             province: location.province,
+//             country: location.country,
+//             postalCode: location.postal_code,
+//           },
+//           massageServices: locationServices,
+//           // Add other expected fields
+//           whatToWear: location.what_to_wear,
+//           description: location.description,
+//           payment: location.payment,
+//         },
+//       };
+//     });
+
+//     // Format the appointment to match expected structure
+//     const formattedAppointment = {
+//       ...appointment,
+//       _id: appointment.id,
+//       appointmentDate: appointment.date,
+//       appointmentBeginsAt: appointment.appointment_begins_at,
+//       RMTLocationId: appointment.rmt_location_id,
+//     };
+
+//     // Return all the data needed for the page
+//     return {
+//       currentUser: {
+//         id: userId,
+//         resultObj: {
+//           id: userId,
+//           rmtId: rmtId,
+//           canBookAtIds: canBookAtIds,
+//         },
+//       },
+//       appointment: formattedAppointment,
+//       rmtLocations: formattedLocations,
+//     };
+//   } catch (error) {
+//     console.error("Error fetching data for reschedule page:", error);
+//     throw new Error("Failed to fetch data for reschedule page");
+//   }
+// }
 
 export async function getRMTSetupById(id) {
   try {

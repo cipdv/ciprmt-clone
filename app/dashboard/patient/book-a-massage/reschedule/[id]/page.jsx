@@ -11,6 +11,9 @@ export default async function ReschedulePage({ params }) {
   const { currentUser, appointment, rmtLocations } =
     await getDataForReschedulePage(params.id, userId);
 
+  console.log(rmtLocations);
+  console.log(appointment);
+
   return (
     <section className="container mx-auto px-4 py-8">
       <RescheduleMassageForm
