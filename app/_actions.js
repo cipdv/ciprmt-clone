@@ -3677,10 +3677,18 @@ export async function updateAppointmentStatus(formData) {
   const status = formData.get("status");
 
   try {
-    // Get the appointment
+    // Get the appointment with consistent property naming
     const { rows } = await sql`
       SELECT 
-        t.*,
+        t.id,
+        t.date,
+        t.appointment_begins_at,
+        t.appointment_ends_at,
+        t.location,
+        t.duration,
+        t.status,
+        t.google_calendar_event_id,
+        t.workplace,
         u.first_name AS "firstName",
         u.last_name AS "lastName",
         u.email
@@ -3698,7 +3706,26 @@ export async function updateAppointmentStatus(formData) {
 
     const appointment = rows[0];
 
-    let updateFields = {};
+    // Transform the appointment object to include formatted date and time
+    const formattedAppointment = {
+      ...appointment,
+      appointmentDate: formatDateForDisplay(appointment.date),
+      appointmentBeginsAt: formatTimeForDisplay(
+        appointment.appointment_begins_at
+      ),
+    };
+
+    // Log the formatted appointment data
+    console.log("Formatted appointment data for email:", {
+      id: appointment.id,
+      firstName: appointment.firstName,
+      lastName: appointment.lastName,
+      email: appointment.email,
+      date: appointment.date,
+      formattedDate: formattedAppointment.appointmentDate,
+      time: appointment.appointment_begins_at,
+      formattedTime: formattedAppointment.appointmentBeginsAt,
+    });
 
     if (status === "available") {
       // Deny request
@@ -3733,7 +3760,7 @@ export async function updateAppointmentStatus(formData) {
           id = ${appointmentId}
       `;
 
-      await sendDenialEmail(appointment);
+      await sendDenialEmail(formattedAppointment);
     } else if (status === "booked") {
       // Accept request
       if (appointment.google_calendar_event_id) {
@@ -3759,7 +3786,7 @@ export async function updateAppointmentStatus(formData) {
         WHERE id = ${appointmentId}
       `;
 
-      await sendApprovalEmail(appointment);
+      await sendApprovalEmail(formattedAppointment);
     }
 
     revalidatePath("/dashboard/rmt");
@@ -3777,6 +3804,111 @@ export async function updateAppointmentStatus(formData) {
     };
   }
 }
+// export async function updateAppointmentStatus(formData) {
+//   const appointmentId = formData.get("appointmentId");
+//   const status = formData.get("status");
+
+//   try {
+//     // Get the appointment
+//     const { rows } = await sql`
+//       SELECT
+//         t.*,
+//         u.first_name AS "firstName",
+//         u.last_name AS "lastName",
+//         u.email
+//       FROM
+//         treatments t
+//       LEFT JOIN
+//         users u ON t.client_id = u.id
+//       WHERE
+//         t.id = ${appointmentId}
+//     `;
+
+//     if (rows.length === 0) {
+//       return { success: false, message: "Appointment not found" };
+//     }
+
+//     const appointment = rows[0];
+
+//     let updateFields = {};
+
+//     if (status === "available") {
+//       // Deny request
+//       if (appointment.google_calendar_event_id) {
+//         try {
+//           await calendar.events.delete({
+//             calendarId: GOOGLE_CALENDAR_ID,
+//             eventId: appointment.google_calendar_event_id,
+//           });
+//           console.log("Google Calendar event deleted successfully.");
+//         } catch (calendarError) {
+//           console.error("Error deleting Google Calendar event:", calendarError);
+//         }
+//       }
+
+//       // Clear all user-related fields
+//       await sql`
+//         UPDATE treatments
+//         SET
+//           status = ${status},
+//           client_id = NULL,
+//           duration = NULL,
+//           workplace = NULL,
+//           consent_form = NULL,
+//           consent_form_submitted_at = NULL,
+//           google_calendar_event_id = NULL,
+//           google_calendar_event_link = NULL,
+//           appointment_begins_at = NULL,
+//           appointment_ends_at = NULL,
+//           location = NULL
+//         WHERE
+//           id = ${appointmentId}
+//       `;
+
+//       await sendDenialEmail(appointment);
+//     } else if (status === "booked") {
+//       // Accept request
+//       if (appointment.google_calendar_event_id) {
+//         try {
+//           await calendar.events.patch({
+//             calendarId: GOOGLE_CALENDAR_ID,
+//             eventId: appointment.google_calendar_event_id,
+//             resource: {
+//               colorId: "2", // "2" corresponds to "sage" in Google Calendar
+//               summary: `[Confirmed]: Mx ${appointment.firstName} ${appointment.lastName}`,
+//             },
+//           });
+//           console.log("Google Calendar event updated successfully.");
+//         } catch (calendarError) {
+//           console.error("Error updating Google Calendar event:", calendarError);
+//         }
+//       }
+
+//       // Update status to booked
+//       await sql`
+//         UPDATE treatments
+//         SET status = ${status}
+//         WHERE id = ${appointmentId}
+//       `;
+
+//       await sendApprovalEmail(appointment);
+//     }
+
+//     revalidatePath("/dashboard/rmt");
+//     return {
+//       success: true,
+//       message: `Appointment ${
+//         status === "booked" ? "accepted" : "denied"
+//       } successfully`,
+//     };
+//   } catch (error) {
+//     console.error("Error updating appointment status:", error);
+//     return {
+//       success: false,
+//       message: "An error occurred while updating the appointment status",
+//     };
+//   }
+// }
 
 async function sendDenialEmail(appointment) {
   const transporter = getEmailTransporter();
