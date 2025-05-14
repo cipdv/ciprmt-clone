@@ -13,6 +13,13 @@ import { google } from "googleapis";
 import { randomBytes } from "crypto";
 import he from "he";
 
+//helpers
+import { formatDateForDisplay, formatTimeForDisplay } from "./lib/date-utils";
+import {
+  getConsentFormReminderEmail,
+  getStandardReminderEmail,
+} from "./lib/email-templates";
+
 // Next.js specific imports
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
@@ -4352,22 +4359,22 @@ export async function setDNSTreatmentStatusAttachment(treatmentId) {
 }
 
 // Helper function to format dates for display
-function formatDateForDisplay(dateValue) {
-  if (!dateValue) return "Not specified";
+// function formatDateForDisplay(dateValue) {
+//   if (!dateValue) return "Not specified";
 
-  try {
-    // If it's already a Date object, format it
-    if (dateValue instanceof Date) {
-      return dateValue.toLocaleDateString();
-    }
+//   try {
+//     // If it's already a Date object, format it
+//     if (dateValue instanceof Date) {
+//       return dateValue.toLocaleDateString();
+//     }
 
-    // Otherwise, parse it as a date and format it
-    return new Date(dateValue).toLocaleDateString();
-  } catch (e) {
-    console.error("Error formatting date for display:", e);
-    return String(dateValue); // Convert to string to avoid React rendering errors
-  }
-}
+//     // Otherwise, parse it as a date and format it
+//     return new Date(dateValue).toLocaleDateString();
+//   } catch (e) {
+//     console.error("Error formatting date for display:", e);
+//     return String(dateValue); // Convert to string to avoid React rendering errors
+//   }
+// }
 
 export async function createTreatmentPlan(planData, clientId) {
   try {
@@ -5406,6 +5413,7 @@ export async function sendAppointmentReminders() {
     console.log(`Sending reminders for appointments on: ${targetDate}`);
 
     // Find all appointments for 2 days from now with status "booked"
+    // Using the correct column names from your schema
     const { rows: appointments } = await sql`
       SELECT 
         t.id,
@@ -5415,7 +5423,8 @@ export async function sendAppointmentReminders() {
         t.location,
         t.duration,
         t.status,
-        t.encrypted_consent_form,
+        t.consent_form,
+        t.consent_form_submitted_at,
         u.first_name,
         u.last_name,
         u.email
@@ -5430,54 +5439,79 @@ export async function sendAppointmentReminders() {
       `Found ${appointments.length} appointments to send reminders for`
     );
 
+    // Add a delay between sending emails to avoid rate limiting
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Track successful and failed emails
+    let successCount = 0;
+    let failCount = 0;
+
     for (const appointment of appointments) {
-      // Determine if the consent form is completed
-      const isConsentFormCompleted = appointment.encrypted_consent_form != null;
+      try {
+        // Determine if the consent form is completed
+        // Check both the consent_form field and the submission timestamp
+        const isConsentFormCompleted =
+          appointment.consent_form !== null &&
+          appointment.consent_form_submitted_at !== null;
 
-      // Format appointment data for email
-      const appointmentData = {
-        firstName: appointment.first_name,
-        lastName: appointment.last_name,
-        email: appointment.email,
-        appointmentDate: formatDateForDisplay(appointment.date),
-        appointmentBeginsAt: formatTimeForDisplay(
-          appointment.appointment_begins_at
-        ),
-        location: appointment.location || "Not specified",
-        duration: appointment.duration || "60",
-      };
+        // Format appointment data for email
+        const appointmentData = {
+          firstName: appointment.first_name,
+          lastName: appointment.last_name,
+          email: appointment.email,
+          appointmentDate: formatDateForDisplay(appointment.date),
+          appointmentBeginsAt: formatTimeForDisplay(
+            appointment.appointment_begins_at
+          ),
+          location: appointment.location || "Not specified",
+          duration: appointment.duration || "60",
+        };
 
-      // Choose the appropriate email template
-      const emailContent = isConsentFormCompleted
-        ? getStandardReminderEmail(appointmentData)
-        : getConsentFormReminderEmail(appointmentData);
+        // Choose the appropriate email template
+        const emailContent = isConsentFormCompleted
+          ? getStandardReminderEmail(appointmentData)
+          : getConsentFormReminderEmail(appointmentData);
 
-      // Send reminder email - using the original sendMail method
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: appointmentData.email,
-        bcc: process.env.EMAIL_USER, // Send a BCC to process.env.EMAIL_USER
-        subject: "Reminder: Your Upcoming Massage Appointment",
-        text: emailContent.text,
-        html: emailContent.html,
-      });
+        // Send reminder email
+        const info = await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: appointmentData.email,
+          bcc: process.env.EMAIL_USER, // Send a BCC to process.env.EMAIL_USER
+          subject: "Reminder: Your Upcoming Massage Appointment",
+          text: emailContent.text,
+          html: emailContent.html,
+        });
 
-      console.log(
-        `Sent reminder email to ${appointmentData.email} for appointment on ${appointmentData.appointmentDate}`
-      );
+        console.log(
+          `Sent reminder email to ${appointmentData.email} for appointment on ${appointmentData.appointmentDate}. MessageId: ${info.messageId}`
+        );
+
+        successCount++;
+
+        // Add a delay between emails (1 second)
+        await delay(1000);
+      } catch (emailError) {
+        console.error(
+          `Error sending email for appointment ${appointment.id}:`,
+          emailError
+        );
+        failCount++;
+        // Continue with the next appointment even if this one fails
+      }
     }
 
-    console.log("Appointment reminder process completed successfully.");
+    console.log(
+      `Appointment reminder process completed. Success: ${successCount}, Failed: ${failCount}`
+    );
     return {
       success: true,
-      message: `Sent ${appointments.length} reminder emails`,
+      message: `Sent ${successCount} reminder emails (${failCount} failed)`,
     };
   } catch (error) {
     console.error("Error in sendAppointmentReminders:", error);
     return { success: false, message: error.message };
   }
 }
-
 //save this in case i need to populate appointments in the future
 // export async function populateAppointmentsForDateRange() {
 //   console.log("Populating appointments for Jan 13, 2025 to Jan 28, 2025...");
