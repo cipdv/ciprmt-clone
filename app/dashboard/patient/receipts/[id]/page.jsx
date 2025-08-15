@@ -50,7 +50,8 @@ const formatTime = (timeString) => {
 
 async function ReceiptDetails({ params }) {
   const user = await getUserDetails();
-  const receipt = await getReceiptById(params.id);
+  const { id } = await params;
+  const receipt = await getReceiptById(id);
 
   if (!receipt) {
     notFound();

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { registerNewPatient } from "@/app/_actions";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useActionState } from "react";
 
 const initialState = {
   errors: {},
@@ -22,7 +23,7 @@ function SubmitButton() {
 }
 
 const SignupForm = () => {
-  const [state, formAction] = useFormState(registerNewPatient, initialState);
+  const [state, formAction] = useActionState(registerNewPatient, initialState);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 

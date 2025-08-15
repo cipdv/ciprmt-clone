@@ -1,9 +1,10 @@
 "use client";
 
 import { login } from "@/app/_actions";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { useState } from "react";
+import { useActionState } from "react";
 
 const initialState = {
   email: "",
@@ -18,7 +19,6 @@ function SubmitButton() {
     <button
       type="submit"
       aria-disabled={pending}
-      button
       className=" mt-4 px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2"
     >
       {pending ? "Signing in..." : "Sign in"}
@@ -27,7 +27,7 @@ function SubmitButton() {
 }
 
 const SignInForm = () => {
-  const [state, formAction] = useFormState(login, initialState);
+  const [state, formAction] = useActionState(login, initialState);
 
   const [showPassword, setShowPassword] = useState(false);
 

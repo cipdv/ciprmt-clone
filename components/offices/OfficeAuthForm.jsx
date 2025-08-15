@@ -1,9 +1,10 @@
 "use client";
 
 import { login, registerNewWorkplacePatient } from "@/app/_actions";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import { useState } from "react";
 import Link from "next/link";
+import { useActionState } from "react";
 
 const initialSignInState = {
   email: "",
@@ -55,11 +56,11 @@ function SignUpButton() {
 
 const AuthForm = ({ officename }) => {
   const [isSignUp, setIsSignUp] = useState(false);
-  const [signInState, signInFormAction] = useFormState(
+  const [signInState, signInFormAction] = useActionState(
     login,
     initialSignInState
   );
-  const [state, signUpFormAction] = useFormState(
+  const [state, signUpFormAction] = useActionState(
     registerNewWorkplacePatient,
     initialSignUpState
   );

@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useFormState } from "react-dom";
+import { useActionState } from "react";
 import { sendMessageToCip } from "@/app/_actions";
 
 function SubmitButton({ isSubmitting }) {
@@ -28,7 +28,7 @@ function SubmitButton({ isSubmitting }) {
 const ContactInfo = () => {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [state, formAction] = useFormState(sendMessageToCip, null);
+  const [state, formAction] = useActionState(sendMessageToCip, null);
   const [charCount, setCharCount] = useState(0);
   const textareaRef = useRef(null);
   const maxChars = 500;

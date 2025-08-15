@@ -33,7 +33,7 @@ export default async function Dashboard() {
         <Calendar appointments={appointmentData.upcoming || []} />
         <NotesToComplete appointments={appointmentData.past || []} />
         <AddExpense />
-        <IncomeTracker />
+        {/* <IncomeTracker /> */}
         <div className="pt-8">
           <h2 className="text-xl font-semibold mb-4">Set Up A New Workspace</h2>
 
