@@ -2,7 +2,6 @@ import AppointmentRequests from "@/components/rmt/AppointmentRequests";
 import Calendar from "@/components/rmt/Calendar";
 import NotesToComplete from "@/components/rmt/NotesToComplete";
 import SearchBar from "@/components/rmt/SearchBar";
-import IncomeTracker from "@/components/rmt/IncomeTracker";
 import Messages from "@/components/rmt/Messages";
 
 import {
@@ -10,7 +9,6 @@ import {
   getDashboardAppointments,
   getAllMessagesByRMTId,
 } from "@/app/_actions";
-import AddExpense from "@/components/rmt/AddExpense";
 import Link from "next/link";
 
 export default async function Dashboard() {
@@ -32,9 +30,8 @@ export default async function Dashboard() {
         <Messages messages={messages} />
         <Calendar appointments={appointmentData.upcoming || []} />
         <NotesToComplete appointments={appointmentData.past || []} />
-        <AddExpense />
         {/* <IncomeTracker /> */}
-        <div className="pt-8">
+        {/* <div className="pt-8">
           <h2 className="text-xl font-semibold mb-4">Set Up A New Workspace</h2>
 
           <Link href="/dashboard/rmt/set-up/regular">
@@ -47,7 +44,7 @@ export default async function Dashboard() {
               Irregular workplace
             </button>
           </Link>
-        </div>
+        </div> */}
       </section>
     </div>
   );
