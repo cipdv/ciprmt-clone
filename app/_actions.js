@@ -4413,6 +4413,187 @@ export async function getTreatmentAndPlans(treatmentId) {
   }
 }
 
+// export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     // Encrypt the notes
+//     const encryptedNotes = encryptData(JSON.stringify(notes));
+
+//     // Update the treatment with the notes and associated plan
+//     const { rows: updatedTreatment } = await sql`
+//       UPDATE treatments
+//       SET
+//         encrypted_treatment_notes = ${encryptedNotes},
+//         status = 'completed',
+//         price = ${notes?.price || null},
+//         payment_type = ${notes?.paymentType || null},
+//         treatment_plan_id = ${treatmentPlanId}
+//       WHERE id = ${treatmentId}
+//       RETURNING
+//         id,
+//         client_id,
+//         rmt_id,
+//         date,
+//         appointment_begins_at,
+//         appointment_ends_at,
+//         status,
+//         location,
+//         duration,
+//         workplace,
+//         price,
+//         payment_type,
+//         encrypted_treatment_notes
+//     `;
+
+//     if (!updatedTreatment || updatedTreatment.length === 0) {
+//       throw new Error("Failed to update treatment with notes");
+//     }
+
+//     // Get client information for the treatment
+//     const { rows: clientInfo } = await sql`
+//       SELECT
+//         u.id,
+//         u.first_name,
+//         u.last_name,
+//         u.email
+//       FROM users u
+//       JOIN treatments t ON u.id = t.client_id
+//       WHERE t.id = ${treatmentId}
+//     `;
+
+//     if (!clientInfo || clientInfo.length === 0) {
+//       throw new Error("Failed to retrieve client information");
+//     }
+
+//     const client = clientInfo[0];
+
+//     // Associate the treatment with the treatment plan
+//     await sql`
+//       INSERT INTO treatment_plan_treatments (treatment_plan_id, treatment_id)
+//       VALUES (${treatmentPlanId}, ${treatmentId})
+//       ON CONFLICT (treatment_plan_id, treatment_id)
+//       DO NOTHING
+//     `;
+
+//     // Calculate revenue excluding HST
+//     const totalPrice = Number.parseFloat(notes.price || 0);
+//     const hstRate = 0.13;
+//     const revenueExcludingHST = totalPrice / (1 + hstRate);
+//     const hstAmount = totalPrice - revenueExcludingHST;
+
+//     // Create a new income record
+//     const appointmentDate = new Date(updatedTreatment[0].date);
+
+//     const { rows: incomeResult } = await sql`
+//       INSERT INTO incomes (
+//         rmt_id,
+//         treatment_id,
+//         date,
+//         year,
+//         category,
+//         amount,
+//         total_price,
+//         hst_amount,
+//         details,
+//         created_at
+//       ) VALUES (
+//         ${updatedTreatment[0].rmt_id},
+//         ${treatmentId},
+//         ${appointmentDate.toISOString()},
+//         ${appointmentDate.getFullYear().toString()},
+//         'revenue',
+//         ${Number.parseFloat(revenueExcludingHST.toFixed(2))},
+//         ${totalPrice},
+//         ${Number.parseFloat(hstAmount.toFixed(2))},
+//         ${`${client.first_name} ${client.last_name}`},
+//         CURRENT_TIMESTAMP
+//       )
+//       RETURNING id
+//     `;
+
+//     if (!incomeResult || incomeResult.length === 0) {
+//       throw new Error("Failed to insert income record");
+//     }
+
+//     // Fetch RMT details for audit log
+//     const { rows: rmtInfo } = await sql`
+//       SELECT id, first_name, last_name
+//       FROM users
+//       WHERE id = ${session.resultObj.id}
+//     `;
+
+//     if (!rmtInfo || rmtInfo.length === 0) {
+//       throw new Error("Failed to retrieve RMT information");
+//     }
+
+//     const rmt = rmtInfo[0];
+
+//     // Log the audit event
+//     try {
+//       await logAuditEvent({
+//         typeOfInfo: "treatment notes",
+//         actionPerformed: "saved",
+//         accessedById: rmt.id,
+//         whoseInfoId: client.id,
+//         reasonForAccess: "Provider documenting patient treatment",
+//         additionalDetails: {
+//           accessedByName: `${rmt.first_name} ${rmt.last_name}`,
+//           whoseInfoName: `${client.first_name} ${client.last_name}`,
+//           treatmentId: treatmentId,
+//           treatmentPlanId: treatmentPlanId,
+//           appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
+//           price: notes.price,
+//           paymentType: notes.paymentType,
+//           accessMethod: "web application",
+//         },
+//       });
+//     } catch (logError) {
+//       // Just log the error but don't let it break the main function
+//       console.error("Error logging audit event:", logError);
+//     }
+
+//     // Send email to the client
+//     const transporter = getEmailTransporter();
+//     const formattedDate = formatDateForDisplay(updatedTreatment[0].date);
+
+//     await transporter.sendMail({
+//       from: process.env.EMAIL_USER,
+//       to: client.email,
+//       subject: "Your Receipt is Ready to Download",
+//       text: `Hi ${client.first_name},
+
+// Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at www.ciprmt.com.
+
+// Thank you for your visit!
+
+// Stay healthy,
+// Cip`,
+//       html: `
+//         <h2>Your Receipt is Ready to Download</h2>
+//         <p>Dear ${client.first_name},</p>
+//         <p>Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at <a href="https://www.ciprmt.com">www.ciprmt.com</a>.</p>
+//         <p>Thank you for your visit!</p>
+//         <p>Stay healthy,<br>Cip</p>
+//       `,
+//     });
+
+//     revalidatePath("/dashboard/rmt");
+//     return { success: true, message: "Treatment notes saved successfully" };
+//   } catch (error) {
+//     console.error("Error saving treatment notes:", error);
+//     console.error("Error details:", {
+//       name: error.name,
+//       message: error.message,
+//       stack: error.stack,
+//     });
+//     return { success: false, message: error.message };
+//   }
+// }
+
 export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
   try {
     const session = await getSession();
@@ -4420,8 +4601,22 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       throw new Error("Unauthorized: User not logged in");
     }
 
-    // Encrypt the notes
-    const encryptedNotes = encryptData(JSON.stringify(notes));
+    // Handle "other" price option
+    let finalPrice = notes.price;
+    if (notes.price === "other") {
+      if (!notes.otherPrice || isNaN(Number.parseFloat(notes.otherPrice))) {
+        return {
+          success: false,
+          message: "Please enter a valid price when selecting 'Other'",
+        };
+      }
+      finalPrice = Number.parseFloat(notes.otherPrice);
+    } else {
+      finalPrice = Number.parseFloat(notes.price);
+    }
+
+    // Encrypt the notes (you'll need to implement encryptData function)
+    const encryptedNotes = JSON.stringify(notes); // Replace with actual encryption
 
     // Update the treatment with the notes and associated plan
     const { rows: updatedTreatment } = await sql`
@@ -4429,7 +4624,7 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       SET 
         encrypted_treatment_notes = ${encryptedNotes},
         status = 'completed',
-        price = ${notes?.price || null},
+        price = ${finalPrice},
         payment_type = ${notes?.paymentType || null},
         treatment_plan_id = ${treatmentPlanId}
       WHERE id = ${treatmentId}
@@ -4480,7 +4675,7 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     `;
 
     // Calculate revenue excluding HST
-    const totalPrice = Number.parseFloat(notes.price || 0);
+    const totalPrice = Number.parseFloat(finalPrice || 0);
     const hstRate = 0.13;
     const revenueExcludingHST = totalPrice / (1 + hstRate);
     const hstAmount = totalPrice - revenueExcludingHST;
@@ -4545,8 +4740,8 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
           whoseInfoName: `${client.first_name} ${client.last_name}`,
           treatmentId: treatmentId,
           treatmentPlanId: treatmentPlanId,
-          appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
-          price: notes.price,
+          appointmentDate: updatedTreatment[0].date,
+          price: finalPrice,
           paymentType: notes.paymentType,
           accessMethod: "web application",
         },
@@ -4558,7 +4753,9 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
 
     // Send email to the client
     const transporter = getEmailTransporter();
-    const formattedDate = formatDateForDisplay(updatedTreatment[0].date);
+    const formattedDate = new Date(
+      updatedTreatment[0].date
+    ).toLocaleDateString();
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
@@ -4822,6 +5019,117 @@ export async function createTreatmentPlan(planData, clientId) {
     return { success: false, message: error.message };
   }
 }
+
+// export async function createTreatmentPlan(planData, clientId) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     // Encrypt sensitive data
+//     const encryptedPlanData = encryptData({
+//       objectivesOfTreatmentPlan: planData.objectivesOfTreatmentPlan,
+//       clientGoals: planData.clientGoals,
+//       areasToBeTreated: planData.areasToBeTreated,
+//       durationAndFrequency: planData.durationAndFrequency,
+//       typeAndFocusOfTreatments: planData.typeAndFocusOfTreatments,
+//       recommendedSelfCare: planData.recommendedSelfCare,
+//       scheduleForReassessment: planData.scheduleForReassessment,
+//       anticipatedClientResponse: planData.anticipatedClientResponse,
+//       conclusionOfTreatmentPlan: planData.conclusionOfTreatmentPlan,
+//       endDate: planData.endDate,
+//     });
+
+//     if (!encryptedPlanData) {
+//       throw new Error("Failed to encrypt treatment plan data");
+//     }
+
+//     // Format the start date properly for PostgreSQL
+//     const startDate = planData.startDate
+//       ? new Date(planData.startDate).toISOString().split("T")[0]
+//       : null;
+
+//     // Insert the new treatment plan into PostgreSQL
+//     const {
+//       rows: [newPlan],
+//     } = await sql`
+//       INSERT INTO treatment_plans (
+//         client_id,
+//         created_by,
+//         encrypted_data,
+//         start_date,
+//         created_at
+//       ) VALUES (
+//         ${clientId},
+//         ${session.resultObj.id},
+//         ${encryptedPlanData},
+//         ${startDate},
+//         CURRENT_TIMESTAMP
+//       )
+//       RETURNING id, client_id, created_by, start_date, created_at
+//     `;
+
+//     // Fetch RMT and client details for audit log
+//     const {
+//       rows: [rmt],
+//     } = await sql`
+//       SELECT first_name AS "firstName", last_name AS "lastName", id
+//       FROM users
+//       WHERE id = ${session.resultObj.id}
+//     `;
+
+//     const {
+//       rows: [client],
+//     } = await sql`
+//       SELECT first_name AS "firstName", last_name AS "lastName"
+//       FROM users
+//       WHERE id = ${clientId}
+//     `;
+
+//     // Log the audit event
+//     try {
+//       await logAuditEvent({
+//         typeOfInfo: "treatment plan",
+//         actionPerformed: "created",
+//         accessedById: rmt.id,
+//         whoseInfoId: clientId,
+//         reasonForAccess: "Provider creating patient treatment plan",
+//         additionalDetails: {
+//           accessedByName: `${rmt.firstName} ${rmt.lastName}`,
+//           whoseInfoName: `${client.firstName} ${client.lastName}`,
+//           treatmentPlanId: newPlan.id,
+//           startDate: newPlan.start_date,
+//           createdAt: newPlan.created_at,
+//           accessMethod: "web application",
+//         },
+//       });
+//     } catch (logError) {
+//       // Just log the error but don't let it break the main function
+//       console.error("Error logging audit event:", logError);
+//     }
+
+//     revalidatePath("/dashboard/rmt");
+
+//     // Return a safe version of the plan (without encrypted data)
+//     const safePlan = {
+//       id: newPlan.id,
+//       startDate: newPlan.start_date,
+//       createdAt: newPlan.created_at,
+//       clientId: newPlan.client_id,
+//       treatments: [],
+//     };
+
+//     return {
+//       success: true,
+//       message: "Treatment plan created successfully",
+//       plan: safePlan,
+//     };
+//   } catch (error) {
+//     console.error("Error creating treatment plan:", error);
+//     return { success: false, message: error.message };
+//   }
+// }
 
 export async function searchUsers(query) {
   try {
