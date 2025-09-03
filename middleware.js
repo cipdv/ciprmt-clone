@@ -33,9 +33,9 @@ export async function middleware(request) {
       "/faq",
       "/reset-password",
       "/survey",
-      "/unsubscribe",
       /^\/workplace-wellness\/.*$/,
       /^\/password-reset\/set-new-password\/.*$/,
+      /^\/unsubscribe\/.*$/,
     ].some((path) =>
       typeof path === "string"
         ? path === request.nextUrl.pathname

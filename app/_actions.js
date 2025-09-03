@@ -6999,3 +6999,225 @@ export async function deleteAppointmentTime(timeId) {
     return { success: false, error: error.message };
   }
 }
+
+////////////////////////////////////////////////////////////////////
+//email list unsubscribe
+////////////////////////////////////////////////////////////////////
+
+export async function unsubscribeByToken(token) {
+  try {
+    const { rows } = await sql`
+      UPDATE users 
+      SET subscribed = false 
+      WHERE unsubscribe_token = ${token} AND subscribed = true
+      RETURNING email
+    `;
+
+    if (rows.length === 0) {
+      return {
+        success: false,
+        message: "Invalid token or already unsubscribed",
+      };
+    }
+
+    const userEmail = rows[0].email;
+
+    // Send notification email to admin
+    const transporter = getEmailTransporter();
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: userEmail,
+      subject: "Unsubscribe Notification",
+      text: `Your email, ${userEmail}, has been unsubscribed from ciprmt.com.`,
+      html: `<p>Your email, ${userEmail}, has been unsubscribed from ciprmt.com.</p>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    return { success: true, message: "Successfully unsubscribed" };
+  } catch (error) {
+    console.error("Error unsubscribing by token:", error);
+    return { success: false, message: "Failed to unsubscribe" };
+  }
+}
+
+//////////////////////////////////////////////////////////
+//email newsletter
+//////////////////////////////////////////////////////////
+
+export async function generateUnsubscribeLink(email) {
+  try {
+    const { rows } = await sql`
+      SELECT unsubscribe_token FROM users WHERE email = ${email}
+    `;
+
+    if (rows.length === 0) return null;
+
+    return `https://ciprmt.com/unsubscribe/${rows[0].unsubscribe_token}`;
+  } catch (error) {
+    console.error("Error generating unsubscribe link:", error);
+    return null;
+  }
+}
+
+function simpleMarkdownToHtml(markdown) {
+  return markdown
+    .replace(
+      /^# (.*$)/gim,
+      '<h1 style="font-size: 24px; font-weight: bold; margin: 16px 0;">$1</h1>'
+    )
+    .replace(
+      /^## (.*$)/gim,
+      '<h2 style="font-size: 20px; font-weight: bold; margin: 14px 0;">$1</h2>'
+    )
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/^- (.*$)/gim, '<li style="margin: 4px 0;">$1</li>')
+    .replace(
+      /\[([^\]]+)\]$$([^)]+)$$/g,
+      '<a href="$2" style="color: #2563eb; text-decoration: underline;">$1</a>'
+    )
+    .replace(/\n/g, "<br>")
+    .replace(
+      /(<li.*?>.*?<\/li>)/gs,
+      '<ul style="margin: 8px 0; padding-left: 20px;">$1</ul>'
+    );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+export async function sendEmailBlast(formData) {
+  try {
+    const subject = formData.get("subject");
+    const emailContent = formData.get("emailContent");
+
+    if (!subject || !emailContent) {
+      return {
+        success: false,
+        message: "Subject and content are required",
+      };
+    }
+
+    // Convert markdown to HTML
+    const contentHtml = simpleMarkdownToHtml(emailContent);
+
+    // Get all subscribed users
+    const { rows: users } = await sql`
+      SELECT email, unsubscribe_token 
+      FROM users 
+      WHERE subscribed = true
+    `;
+
+    if (users.length === 0) {
+      return {
+        success: false,
+        message: "No subscribed users found",
+      };
+    }
+
+    // Randomize the order to avoid hitting all Gmail addresses at once
+    const shuffledUsers = shuffleArray(users);
+
+    const transporter = getEmailTransporter();
+    const batchSize = 50; // Send 50 emails per batch
+    const delayBetweenBatches = 65000; // 65 seconds between batches
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Process emails in batches
+    for (let i = 0; i < shuffledUsers.length; i += batchSize) {
+      const batch = shuffledUsers.slice(i, i + batchSize);
+
+      console.log(
+        `[v0] Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(
+          shuffledUsers.length / batchSize
+        )} (${batch.length} emails)`
+      );
+
+      // Send emails in current batch
+      const batchPromises = batch.map(async (user) => {
+        try {
+          const unsubscribeLink = `https://www.ciprmt.com/unsubscribe/${user.unsubscribe_token}`;
+
+          const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: user.email,
+            subject: subject,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                ${contentHtml}
+                <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+                <p style="font-size: 12px; color: #666; text-align: center;">
+                  If you no longer wish to receive these emails, you can 
+                  <a href="${unsubscribeLink}" style="color: #666;">unsubscribe here</a>.
+                </p>
+              </div>
+            `,
+            text: emailContent + `\n\nUnsubscribe: ${unsubscribeLink}`,
+          };
+
+          await transporter.sendMail(mailOptions);
+          return { success: true };
+        } catch (error) {
+          console.error(`Failed to send email to ${user.email}:`, error);
+          return { success: false, error };
+        }
+      });
+
+      // Wait for current batch to complete
+      const batchResults = await Promise.allSettled(batchPromises);
+
+      // Count successes and failures
+      batchResults.forEach((result) => {
+        if (result.status === "fulfilled" && result.value.success) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      });
+
+      // Add delay between batches (except for the last batch)
+      if (i + batchSize < shuffledUsers.length) {
+        console.log(
+          `[v0] Waiting ${
+            delayBetweenBatches / 1000
+          } seconds before next batch...`
+        );
+        await delay(delayBetweenBatches);
+      }
+    }
+
+    console.log(
+      `[v0] Email blast completed: ${successCount} sent, ${failureCount} failed`
+    );
+
+    return {
+      success: true,
+      message: `Email campaign sent successfully! ${successCount} emails delivered, ${failureCount} failed.`,
+      stats: {
+        successCount,
+        failureCount,
+        totalUsers: users.length,
+      },
+    };
+  } catch (error) {
+    console.error("Error sending email blast:", error);
+    return {
+      success: false,
+      message: "Failed to send email campaign. Please try again.",
+    };
+  }
+}
