@@ -3236,7 +3236,7 @@ export async function addHealthHistory(data) {
     const validatedData = healthHistorySchema.parse(data);
 
     // Encrypt sensitive data
-    const encryptedData = encryptData(validatedData);
+    const encryptedData = await encryptData(validatedData);
     if (!encryptedData) {
       throw new Error("Failed to encrypt health history data");
     }
@@ -3361,31 +3361,52 @@ export async function getClientHealthHistories(id) {
       ORDER BY created_at DESC
     `;
 
-    const decryptedHealthHistories = healthHistories.map((history) => {
-      let decryptedData = {};
-      if (history.encrypted_data) {
-        const decrypted = decryptData(history.encrypted_data);
-        if (decrypted) {
-          decryptedData = decrypted;
-        } else {
-          console.error(`Failed to decrypt health history ${history.id}`);
-        }
-      } else {
-        // Handle unencrypted data
-        const { id, user_id, created_at, ...unencryptedData } = history;
-        decryptedData = unencryptedData;
-      }
+    const decryptedHealthHistories = healthHistories
+      .map((history) => {
+        let decryptedData = {};
+        if (history.encrypted_data) {
+          try {
+            // Use the proper decryptData function
+            decryptedData = decryptData(history.encrypted_data);
+            if (!decryptedData) {
+              console.error(`Failed to decrypt health history ${history.id}`);
+              return null;
+            }
 
-      // Serialize the data to avoid symbol properties
-      return JSON.parse(
-        JSON.stringify({
-          _id: history.id, // Use PostgreSQL UUID as _id for compatibility
-          userId: history.user_id,
-          createdAt: history.created_at.toISOString(),
-          ...decryptedData,
-        })
-      );
-    });
+            // Add backwards compatibility - ensure new fields exist with default values
+            decryptedData = {
+              ...decryptedData,
+              preferredLanguage: decryptedData.preferredLanguage || "",
+              accessibilityNeeds: decryptedData.accessibilityNeeds || "",
+              emergencyContactName: decryptedData.emergencyContactName || "",
+              emergencyContactPhone: decryptedData.emergencyContactPhone || "",
+              practitionerReferral: decryptedData.practitionerReferral || {
+                hasReferral: false,
+                practitionerName: "",
+                practitionerAddress: "",
+              },
+            };
+          } catch (e) {
+            console.error(`Failed to decrypt health history ${history.id}:`, e);
+            return null;
+          }
+        } else {
+          // Handle unencrypted data
+          const { id, user_id, created_at, ...unencryptedData } = history;
+          decryptedData = unencryptedData;
+        }
+
+        // Serialize the data to avoid symbol properties
+        return JSON.parse(
+          JSON.stringify({
+            _id: history.id, // Use PostgreSQL UUID as _id for compatibility
+            userId: history.user_id,
+            createdAt: history.created_at.toISOString(),
+            ...decryptedData,
+          })
+        );
+      })
+      .filter(Boolean); // Remove any null entries from failed decryption
 
     // Fetch user details for audit log
     const { rows: userRows } = await sql`
@@ -3430,6 +3451,209 @@ export async function getClientHealthHistories(id) {
     throw new Error("Failed to fetch client health histories");
   }
 }
+
+// export async function addHealthHistory(data) {
+//   try {
+//     const userId = await checkAuth();
+
+//     // Server-side validation
+//     const validatedData = healthHistorySchema.parse(data);
+
+//     // Encrypt sensitive data
+//     const encryptedData = encryptData(validatedData);
+//     if (!encryptedData) {
+//       throw new Error("Failed to encrypt health history data");
+//     }
+
+//     // Insert into PostgreSQL
+//     const { rows } = await sql`
+//       INSERT INTO health_histories (
+//         user_id,
+//         encrypted_data,
+//         created_at
+//       ) VALUES (
+//         ${userId},
+//         ${encryptedData},
+//         NOW()
+//       )
+//       RETURNING id, created_at
+//     `;
+
+//     if (rows.length > 0) {
+//       const newHealthHistory = rows[0];
+
+//       // Update the user's lastHealthHistoryUpdate field
+//       await sql`
+//         UPDATE users
+//         SET last_health_history_update = NOW()
+//         WHERE id = ${userId}
+//       `;
+
+//       // Fetch updated user data
+//       const { rows: userRows } = await sql`
+//         SELECT
+//           id,
+//           first_name,
+//           last_name,
+//           last_health_history_update
+//         FROM users
+//         WHERE id = ${userId}
+//       `;
+
+//       if (userRows.length === 0) {
+//         throw new Error("User not found after update");
+//       }
+
+//       const updatedUser = userRows[0];
+
+//       // Regenerate the session with updated user data
+//       const session = await getSession();
+//       const newSession = {
+//         ...session,
+//         resultObj: {
+//           ...session.resultObj,
+//           lastHealthHistoryUpdate: updatedUser.last_health_history_update,
+//         },
+//       };
+
+//       const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+//       const encryptedSession = await encrypt({ ...newSession, expires });
+
+//       const cookieStore = await cookies();
+//       cookieStore.set("session", encryptedSession, {
+//         expires,
+//         httpOnly: true,
+//         secure: true,
+//         sameSite: "strict",
+//       });
+
+//       // Log the audit event
+//       try {
+//         await logAuditEvent({
+//           typeOfInfo: "health history",
+//           actionPerformed: "added",
+//           accessedById: userId,
+//           whoseInfoId: userId,
+//           reasonForAccess: "Self-adding health history",
+//           additionalDetails: {
+//             accessedByName: `${updatedUser.first_name} ${updatedUser.last_name}`,
+//             whoseInfoName: `${updatedUser.first_name} ${updatedUser.last_name}`,
+//             healthHistoryId: newHealthHistory.id,
+//             createdAt: newHealthHistory.created_at,
+//             accessMethod: "web application",
+//           },
+//         });
+//       } catch (logError) {
+//         // Just log the error but don't let it break the main function
+//         console.error("Error logging audit event:", logError);
+//       }
+
+//       revalidatePath("/dashboard/patient");
+//       return { success: true, id: newHealthHistory.id };
+//     } else {
+//       throw new Error("Failed to insert health history");
+//     }
+//   } catch (error) {
+//     console.error("Error adding health history:", error);
+//     if (error.name === "ZodError") {
+//       throw new Error(
+//         `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
+//       );
+//     }
+//     throw new Error(error.message || "Failed to add health history");
+//   }
+// }
+
+// export async function getClientHealthHistories(id) {
+//   try {
+//     const authenticatedUserId = await checkAuth();
+
+//     // For PostgreSQL, we're comparing UUIDs directly, no need for toString()
+//     if (id !== authenticatedUserId) {
+//       throw new Error("Unauthorized access: User ID mismatch");
+//     }
+
+//     // Query health histories from PostgreSQL
+//     const { rows: healthHistories } = await sql`
+//       SELECT
+//         id,
+//         user_id,
+//         encrypted_data,
+//         created_at
+//       FROM health_histories
+//       WHERE user_id = ${authenticatedUserId}
+//       ORDER BY created_at DESC
+//     `;
+
+//     const decryptedHealthHistories = healthHistories.map((history) => {
+//       let decryptedData = {};
+//       if (history.encrypted_data) {
+//         const decrypted = decryptData(history.encrypted_data);
+//         if (decrypted) {
+//           decryptedData = decrypted;
+//         } else {
+//           console.error(`Failed to decrypt health history ${history.id}`);
+//         }
+//       } else {
+//         // Handle unencrypted data
+//         const { id, user_id, created_at, ...unencryptedData } = history;
+//         decryptedData = unencryptedData;
+//       }
+
+//       // Serialize the data to avoid symbol properties
+//       return JSON.parse(
+//         JSON.stringify({
+//           _id: history.id, // Use PostgreSQL UUID as _id for compatibility
+//           userId: history.user_id,
+//           createdAt: history.created_at.toISOString(),
+//           ...decryptedData,
+//         })
+//       );
+//     });
+
+//     // Fetch user details for audit log
+//     const { rows: userRows } = await sql`
+//       SELECT first_name, last_name
+//       FROM users
+//       WHERE id = ${authenticatedUserId}
+//     `;
+
+//     if (userRows.length === 0) {
+//       throw new Error("User not found");
+//     }
+
+//     const user = userRows[0];
+
+//     // Log the audit event
+//     try {
+//       await logAuditEvent({
+//         typeOfInfo: "health histories",
+//         actionPerformed: "viewed",
+//         accessedById: authenticatedUserId,
+//         whoseInfoId: authenticatedUserId,
+//         reasonForAccess: "Self-viewing health history records",
+//         additionalDetails: {
+//           accessedByName: `${user.first_name} ${user.last_name}`,
+//           whoseInfoName: `${user.first_name} ${user.last_name}`,
+//           numberOfHistories: decryptedHealthHistories.length,
+//           oldestHistoryDate:
+//             decryptedHealthHistories[decryptedHealthHistories.length - 1]
+//               ?.createdAt,
+//           newestHistoryDate: decryptedHealthHistories[0]?.createdAt,
+//           accessMethod: "web application",
+//         },
+//       });
+//     } catch (logError) {
+//       // Just log the error but don't let it break the main function
+//       console.error("Error logging audit event:", logError);
+//     }
+
+//     return decryptedHealthHistories;
+//   } catch (error) {
+//     console.error("Error fetching client health histories:", error);
+//     throw new Error("Failed to fetch client health histories");
+//   }
+// }
 
 //////////////////////////////////////////////////
 //////////CONTACT PAGE////////////////////////////
