@@ -27,6 +27,7 @@ export async function middleware(request) {
       "/test-page",
       "/",
       "/signup",
+      "/gift",
       "/auth/sign-in",
       "/auth/sign-up",
       "/password-reset",
