@@ -12,6 +12,7 @@ import bcrypt from "bcryptjs";
 import { google } from "googleapis";
 import { randomBytes } from "crypto";
 import he from "he";
+import Stripe from "stripe";
 
 //helpers
 import { formatDateForDisplay, formatTimeForDisplay } from "./lib/date-utils";
@@ -1730,6 +1731,7 @@ export async function bookAppointment({
   workplace,
   appointmentDate,
   RMTLocationId,
+  giftCardCode = null,
 }) {
   const session = await getSession();
 
@@ -1742,6 +1744,54 @@ export async function bookAppointment({
   }
 
   const { id, firstName, lastName, email, phoneNumber } = session.resultObj;
+
+  if (giftCardCode) {
+    try {
+      // Check if gift card exists and is valid
+      const { rows: giftCardRows } = await sql`
+        SELECT id, code, duration, recipient_name, message, status, redeemed, redeemed_by_user_id
+        FROM gift_cards
+        WHERE code = ${giftCardCode}
+      `;
+
+      if (giftCardRows.length === 0) {
+        return {
+          success: false,
+          message: "Invalid gift card code.",
+        };
+      }
+
+      const giftCard = giftCardRows[0];
+
+      // Check if already fully redeemed (booked)
+      if (giftCard.redeemed || giftCard.status === "booked") {
+        return {
+          success: false,
+          message: "This gift card has already been redeemed.",
+        };
+      }
+
+      // Validate duration - only reject if selected duration is LESS than gift card duration
+      const selectedDuration = Number.parseInt(duration);
+      const giftCardDuration = Number.parseInt(giftCard.duration);
+
+      if (selectedDuration < giftCardDuration) {
+        return {
+          success: false,
+          message: `This gift card is for a ${giftCardDuration} minute massage. You cannot book a shorter appointment (${selectedDuration} minutes) with this gift card.`,
+        };
+      }
+
+      // If selectedDuration >= giftCardDuration, allow booking
+      // User will pay difference in person if selectedDuration > giftCardDuration
+    } catch (error) {
+      console.error("Error validating gift card:", error);
+      return {
+        success: false,
+        message: "An error occurred while validating the gift card.",
+      };
+    }
+  }
 
   // Ensure appointmentDate is in "YYYY-MM-DD" format
   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
@@ -1792,7 +1842,9 @@ export async function bookAppointment({
     const event = {
       summary: `[Requested] Mx ${firstName} ${lastName}`,
       location: location,
-      description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
+      description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}${
+        giftCardCode ? `\nGift Card: ${giftCardCode}` : ""
+      }`,
       start: {
         dateTime: `${formattedDate}T${formattedStartTime}:00`,
         timeZone: "America/Toronto",
@@ -1801,7 +1853,7 @@ export async function bookAppointment({
         dateTime: `${formattedDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
-      colorId: "6", // tangerine color
+      colorId: giftCardCode ? "5" : "6", // Yellow for gift cards, tangerine for regular
     };
 
     const createdEvent = await calendar.events.insert({
@@ -1814,7 +1866,6 @@ export async function bookAppointment({
       link: createdEvent.data.htmlLink,
     });
 
-    // Update the appointment
     const updateResult = await sql`
       UPDATE treatments
       SET 
@@ -1826,7 +1877,8 @@ export async function bookAppointment({
         duration = ${Number.parseInt(duration)},
         workplace = ${workplace},
         google_calendar_event_id = ${createdEvent.data.id},
-        google_calendar_event_link = ${createdEvent.data.htmlLink}
+        google_calendar_event_link = ${createdEvent.data.htmlLink},
+        code = ${giftCardCode || null}
       WHERE id = ${appointmentId}
       RETURNING id, status, client_id
     `;
@@ -1866,6 +1918,7 @@ export async function bookAppointment({
           workplace: workplace,
           accessMethod: "web application",
           googleCalendarEventId: createdEvent.data.id,
+          giftCardCode: giftCardCode || null,
         },
       });
     } catch (logError) {
@@ -1882,7 +1935,9 @@ export async function bookAppointment({
       from: process.env.EMAIL_USER,
       to: process.env.EMAIL_USER,
       subject: "New Appointment Scheduled",
-      text: `A new appointment has been scheduled for ${firstName} ${lastName} on ${formattedDate} at ${formattedStartTime}. Click here to confirm: ${confirmationLink}`,
+      text: `A new appointment has been scheduled for ${firstName} ${lastName} on ${formattedDate} at ${formattedStartTime}.${
+        giftCardCode ? ` Gift card ${giftCardCode} will be applied.` : ""
+      } Click here to confirm: ${confirmationLink}`,
       html: `
         <h1>New Appointment Scheduled</h1>
         <p>A new appointment has been scheduled with the following details:</p>
@@ -1892,7 +1947,14 @@ export async function bookAppointment({
           <li>Time: ${formattedStartTime}</li>
           <li>Duration: ${duration} minutes</li>
           <li>Location: ${location}</li>
-          <li>Google Calendar Event: <a href="${createdEvent.data.htmlLink}">View Event</a></li>
+          ${
+            giftCardCode
+              ? `<li><strong>Gift Card Code:</strong> ${giftCardCode}</li>`
+              : ""
+          }
+          <li>Google Calendar Event: <a href="${
+            createdEvent.data.htmlLink
+          }">View Event</a></li>
         </ul>
         <p><a href="${confirmationLink}">Click here to confirm the appointment</a></p>
       `,
@@ -1902,9 +1964,12 @@ export async function bookAppointment({
 
     return {
       success: true,
-      message: "Appointment booked successfully!",
+      message: giftCardCode
+        ? "Appointment booked successfully with gift card applied!"
+        : "Appointment booked successfully!",
       appointmentId: appointmentId,
       redirectTo: "/dashboard/patient",
+      resultObj: session.resultObj,
     };
   } catch (error) {
     console.error("Error in bookAppointment:", error);
@@ -1923,6 +1988,50 @@ export async function bookAppointment({
   }
 }
 
+// Gift card validation function
+export async function validateGiftCard(code) {
+  try {
+    // Check if gift card exists and is valid
+    const { rows } = await sql`
+      SELECT id, code, duration, recipient_name, message, status, redeemed, redeemed_by_user_id
+      FROM gift_cards
+      WHERE code = ${code}
+    `;
+
+    if (rows.length === 0) {
+      return { success: false, message: "Invalid gift card code." };
+    }
+
+    const giftCard = rows[0];
+
+    // Check if already fully redeemed (booked)
+    if (giftCard.redeemed || giftCard.status === "booked") {
+      return {
+        success: false,
+        message: "This gift card has already been redeemed.",
+      };
+    }
+
+    return {
+      success: true,
+      giftCard: {
+        id: giftCard.id,
+        code: giftCard.code,
+        duration: giftCard.duration,
+        recipientName: giftCard.recipient_name,
+        message: giftCard.message,
+        status: giftCard.status,
+        redeemedByUserId: giftCard.redeemed_by_user_id,
+      },
+    };
+  } catch (error) {
+    console.error("Error validating gift card:", error);
+    return {
+      success: false,
+      message: "An error occurred while validating the gift card.",
+    };
+  }
+}
 // export async function bookAppointment({
 //   location,
 //   duration,
@@ -1931,15 +2040,6 @@ export async function bookAppointment({
 //   appointmentDate,
 //   RMTLocationId,
 // }) {
-//   console.log("bookAppointment called with params:", {
-//     location,
-//     duration,
-//     appointmentTime,
-//     workplace,
-//     appointmentDate,
-//     RMTLocationId,
-//   });
-
 //   const session = await getSession();
 
 //   if (!session || !session.resultObj) {
@@ -1965,7 +2065,7 @@ export async function bookAppointment({
 
 //   // Calculate end time
 //   const endDateTime = new Date(
-//     startDateTime.getTime() + parseInt(duration) * 60000
+//     startDateTime.getTime() + Number.parseInt(duration) * 60000
 //   );
 //   const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
 //     hour12: false,
@@ -1974,13 +2074,6 @@ export async function bookAppointment({
 //   });
 
 //   try {
-//     console.log("Searching for available appointment with criteria:", {
-//       rmt_location_id: RMTLocationId,
-//       date: formattedDate,
-//       start_time: formattedStartTime,
-//       end_time: formattedEndTime,
-//     });
-
 //     // Find an available appointment that matches the criteria
 //     const { rows: availableAppointments } = await sql`
 //       SELECT id
@@ -2039,7 +2132,7 @@ export async function bookAppointment({
 //         appointment_begins_at = ${formattedStartTime}::time,
 //         appointment_ends_at = ${formattedEndTime}::time,
 //         client_id = ${id},
-//         duration = ${parseInt(duration)},
+//         duration = ${Number.parseInt(duration)},
 //         workplace = ${workplace},
 //         google_calendar_event_id = ${createdEvent.data.id},
 //         google_calendar_event_link = ${createdEvent.data.htmlLink}
@@ -2115,7 +2208,13 @@ export async function bookAppointment({
 //     });
 
 //     revalidatePath("/dashboard/patient");
-//     redirect("/dashboard/patient");
+
+//     return {
+//       success: true,
+//       message: "Appointment booked successfully!",
+//       appointmentId: appointmentId,
+//       redirectTo: "/dashboard/patient",
+//     };
 //   } catch (error) {
 //     console.error("Error in bookAppointment:", error);
 //     console.error("Error stack:", error.stack);
@@ -2198,7 +2297,8 @@ export const cancelAppointment = async (prevState, formData) => {
         google_calendar_event_link = NULL,
         appointment_begins_at = NULL,
         appointment_ends_at = NULL,
-        location = NULL
+        location = NULL,
+        code = NULL
       WHERE id = ${appointmentId}
       AND client_id = ${id}
       RETURNING id
@@ -2249,6 +2349,123 @@ export const cancelAppointment = async (prevState, formData) => {
     };
   }
 };
+
+// export const cancelAppointment = async (prevState, formData) => {
+//   const session = await getSession();
+//   if (!session) {
+//     return {
+//       message: "You must be logged in to cancel an appointment.",
+//       status: "error",
+//     };
+//   }
+
+//   const { id, firstName, lastName } = session.resultObj;
+
+//   try {
+//     const appointmentId = formData.get("id");
+
+//     // First, fetch the appointment to get the Google Calendar event ID
+//     const { rows } = await sql`
+//       SELECT
+//         id,
+//         date,
+//         appointment_begins_at,
+//         google_calendar_event_id
+
+//       FROM treatments
+//       WHERE id = ${appointmentId}
+//       AND client_id = ${id}
+//     `;
+
+//     if (rows.length === 0) {
+//       console.log("No matching appointment found.");
+//       return {
+//         message: "No matching appointment found.",
+//         status: "error",
+//       };
+//     }
+
+//     const appointment = rows[0];
+
+//     // If there's a Google Calendar event ID, delete the event
+//     if (appointment.google_calendar_event_id) {
+//       try {
+//         await calendar.events.delete({
+//           calendarId: GOOGLE_CALENDAR_ID,
+//           eventId: appointment.google_calendar_event_id,
+//         });
+//         console.log("Google Calendar event deleted successfully.");
+//       } catch (calendarError) {
+//         console.error("Error deleting Google Calendar event:", calendarError);
+//         // We'll continue with the cancellation even if the Calendar deletion fails
+//       }
+//     }
+
+//     // Update the appointment to set it back to available
+//     const updateResult = await sql`
+//       UPDATE treatments
+//       SET
+//         status = 'available',
+//         client_id = NULL,
+//         duration = NULL,
+//         workplace = NULL,
+//         consent_form = NULL,
+//         consent_form_submitted_at = NULL,
+//         google_calendar_event_id = NULL,
+//         google_calendar_event_link = NULL,
+//         appointment_begins_at = NULL,
+//         appointment_ends_at = NULL,
+//         location = NULL
+//       WHERE id = ${appointmentId}
+//       AND client_id = ${id}
+//       RETURNING id
+//     `;
+
+//     if (updateResult.rowCount > 0) {
+//       console.log("Appointment cancelled successfully.");
+
+//       try {
+//         await logAuditEvent({
+//           typeOfInfo: "appointment cancellation",
+//           actionPerformed: "cancelled",
+//           accessedById: id,
+//           whoseInfoId: id,
+//           reasonForAccess: "Self-cancelling appointment",
+//           additionalDetails: {
+//             accessedByName: `${firstName} ${lastName}`,
+//             whoseInfoName: `${firstName} ${lastName}`,
+//             appointmentId: appointmentId,
+//             appointmentDate: appointment.date,
+//             appointmentTime: appointment.appointment_begins_at,
+//             accessMethod: "web application",
+//           },
+//         });
+//       } catch (logError) {
+//         // Just log the error but don't let it break the main function
+//         console.error("Error logging audit event:", logError);
+//       }
+
+//       revalidatePath("/dashboard/patient");
+//       return {
+//         status: "success",
+//         message: "Appointment cancelled successfully.",
+//       };
+//     } else {
+//       console.log("No matching appointment found or no update performed.");
+//       return {
+//         message: "No matching appointment found.",
+//         status: "error",
+//       };
+//     }
+//   } catch (error) {
+//     console.error("An error occurred while cancelling the appointment:", error);
+//     console.error("Error stack:", error.stack);
+//     return {
+//       message: "An error occurred while cancelling the appointment.",
+//       status: "error",
+//     };
+//   }
+// };
 
 export async function getAppointmentById(id) {
   try {
@@ -2951,9 +3168,21 @@ export async function rescheduleAppointment(
   });
 
   try {
-    // Get the current appointment
+    // Get the current appointment with explicit column selection
     const { rows: currentAppointments } = await sql`
-      SELECT * FROM treatments 
+      SELECT 
+        id,
+        status,
+        client_id,
+        consent_form,
+        consent_form_submitted_at,
+        google_calendar_event_id,
+        google_calendar_event_link,
+        code,
+        date,
+        appointment_begins_at,
+        appointment_ends_at
+      FROM treatments 
       WHERE id = ${currentAppointmentId}
     `;
 
@@ -2966,16 +3195,35 @@ export async function rescheduleAppointment(
       };
     }
 
-    // Store consent form data to transfer to the new appointment
+    console.log(
+      "[v0] Current appointment object:",
+      JSON.stringify(currentAppointment, null, 2)
+    );
+    console.log("[v0] Gift card code from database:", currentAppointment.code);
+    console.log("[v0] Code type:", typeof currentAppointment.code);
+    console.log("[v0] Code is null?", currentAppointment.code === null);
+    console.log(
+      "[v0] Code is undefined?",
+      currentAppointment.code === undefined
+    );
+
     const consentForm = currentAppointment.consent_form;
     const consentFormSubmittedAt = currentAppointment.consent_form_submitted_at;
+    const giftCardCode = currentAppointment.code; // Gift card code
+
+    console.log(
+      "[v0] Rescheduling appointment - Gift card code from old appointment:",
+      giftCardCode
+    );
 
     // Update Google Calendar if there's an event ID
     if (currentAppointment.google_calendar_event_id) {
       const updatedEvent = {
         summary: `[Requested] Mx ${firstName} ${lastName}`,
         location: location,
-        description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
+        description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}${
+          giftCardCode ? `\nGift Card: ${giftCardCode}` : ""
+        }`,
         start: {
           dateTime: `${formattedDate}T${formattedStartTime}:00`,
           timeZone: "America/Toronto",
@@ -2984,7 +3232,7 @@ export async function rescheduleAppointment(
           dateTime: `${formattedDate}T${formattedEndTime}:00`,
           timeZone: "America/Toronto",
         },
-        colorId: "6", // tangerine color
+        colorId: giftCardCode ? "5" : "6", // Yellow for gift cards, tangerine for regular
       };
 
       try {
@@ -2999,7 +3247,6 @@ export async function rescheduleAppointment(
       }
     }
 
-    // Mark the current appointment as available
     await sql`
       UPDATE treatments
       SET 
@@ -3008,9 +3255,12 @@ export async function rescheduleAppointment(
         consent_form = NULL,
         consent_form_submitted_at = NULL,
         google_calendar_event_id = NULL,
-        google_calendar_event_link = NULL
+        google_calendar_event_link = NULL,
+        code = NULL
       WHERE id = ${currentAppointmentId}
     `;
+
+    console.log("[v0] Old appointment cleared");
 
     // Find a new available appointment slot
     const { rows: availableAppointments } = await sql`
@@ -3027,8 +3277,14 @@ export async function rescheduleAppointment(
     if (availableAppointments.length > 0) {
       const newAppointmentId = availableAppointments[0].id;
 
-      // Update the new appointment with all data including consent form
-      await sql`
+      console.log("[v0] Found new appointment slot:", newAppointmentId);
+      console.log("[v0] Transferring gift card code:", giftCardCode);
+      console.log(
+        "[v0] Gift card code value being inserted:",
+        giftCardCode || null
+      );
+
+      const updateResult = await sql`
         UPDATE treatments
         SET 
           status = 'requested',
@@ -3036,7 +3292,7 @@ export async function rescheduleAppointment(
           client_id = ${id},
           appointment_begins_at = ${formattedStartTime}::time,
           appointment_ends_at = ${formattedEndTime}::time,
-          duration = ${parseInt(duration)},
+          duration = ${Number.parseInt(duration)},
           workplace = ${workplace},
           google_calendar_event_id = ${
             currentAppointment.google_calendar_event_id
@@ -3045,9 +3301,20 @@ export async function rescheduleAppointment(
             currentAppointment.google_calendar_event_link
           },
           consent_form = ${consentForm},
-          consent_form_submitted_at = ${consentFormSubmittedAt}
+          consent_form_submitted_at = ${consentFormSubmittedAt},
+          code = ${giftCardCode || null}
         WHERE id = ${newAppointmentId}
+        RETURNING id, code
       `;
+
+      console.log(
+        "[v0] New appointment updated. Result:",
+        updateResult.rows[0]
+      );
+      console.log(
+        "[v0] Code successfully transferred?",
+        updateResult.rows[0].code === giftCardCode
+      );
 
       try {
         await logAuditEvent({
@@ -3060,31 +3327,21 @@ export async function rescheduleAppointment(
             accessedByName: `${firstName} ${lastName}`,
             whoseInfoName: `${firstName} ${lastName}`,
             oldAppointmentId: currentAppointmentId,
+            newAppointmentId: newAppointmentId,
             newAppointmentDate: formattedDate,
             newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
             location,
             duration,
             workplace,
             consentFormTransferred: consentForm ? true : false,
+            giftCardCodeTransferred: giftCardCode ? true : false,
+            giftCardCode: giftCardCode || null,
             accessMethod: "web application",
           },
         });
       } catch (logError) {
-        // Just log the error but don't let it break the main function
         console.error("Error logging audit event:", logError);
       }
-
-      // Send email notification
-      await sendRescheduleNotificationEmail(
-        currentAppointment,
-        { firstName, lastName, email, phoneNumber },
-        {
-          appointmentDate: formattedDate,
-          appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
-          location,
-          duration,
-        }
-      );
 
       revalidatePath("/dashboard/patient");
       return {
@@ -3124,16 +3381,20 @@ export async function rescheduleAppointment(
         }
       }
 
-      // Revert the current appointment back to booked with the consent form data
       await sql`
         UPDATE treatments
         SET 
           status = 'booked',
           client_id = ${id},
-          google_calendar_event_id = ${currentAppointment.google_calendar_event_id},
-          google_calendar_event_link = ${currentAppointment.google_calendar_event_link},
+          google_calendar_event_id = ${
+            currentAppointment.google_calendar_event_id
+          },
+          google_calendar_event_link = ${
+            currentAppointment.google_calendar_event_link
+          },
           consent_form = ${consentForm},
-          consent_form_submitted_at = ${consentFormSubmittedAt}
+          consent_form_submitted_at = ${consentFormSubmittedAt},
+          code = ${giftCardCode || null}
         WHERE id = ${currentAppointmentId}
       `;
 
@@ -3153,6 +3414,251 @@ export async function rescheduleAppointment(
     };
   }
 }
+
+// export async function rescheduleAppointment(
+//   currentAppointmentId,
+//   {
+//     location,
+//     duration,
+//     appointmentTime,
+//     workplace,
+//     appointmentDate,
+//     RMTLocationId,
+//   }
+// ) {
+//   const session = await getSession();
+//   if (!session) {
+//     return {
+//       success: false,
+//       message: "You must be logged in to reschedule an appointment.",
+//     };
+//   }
+
+//   const { id, firstName, lastName, email, phoneNumber } = session.resultObj;
+
+//   // Convert appointmentDate from "Month Day, Year" to "YYYY-MM-DD"
+//   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
+
+//   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
+//   const [startTime, endTime] = appointmentTime.split(" - ");
+//   const formattedStartTime = new Date(
+//     `${appointmentDate} ${startTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+//   const formattedEndTime = new Date(
+//     `${appointmentDate} ${endTime}`
+//   ).toLocaleTimeString("en-US", {
+//     hour12: false,
+//     hour: "2-digit",
+//     minute: "2-digit",
+//   });
+
+//   try {
+//     // Get the current appointment
+//     const { rows: currentAppointments } = await sql`
+//       SELECT * FROM treatments
+//       WHERE id = ${currentAppointmentId}
+//     `;
+
+//     const currentAppointment = currentAppointments[0];
+
+//     if (!currentAppointment) {
+//       return {
+//         success: false,
+//         message: "Current appointment not found.",
+//       };
+//     }
+
+//     // Store consent form data to transfer to the new appointment
+//     const consentForm = currentAppointment.consent_form;
+//     const consentFormSubmittedAt = currentAppointment.consent_form_submitted_at;
+
+//     // Update Google Calendar if there's an event ID
+//     if (currentAppointment.google_calendar_event_id) {
+//       const updatedEvent = {
+//         summary: `[Requested] Mx ${firstName} ${lastName}`,
+//         location: location,
+//         description: `Email: ${email}\nPhone: ${phoneNumber || "N/A"}`,
+//         start: {
+//           dateTime: `${formattedDate}T${formattedStartTime}:00`,
+//           timeZone: "America/Toronto",
+//         },
+//         end: {
+//           dateTime: `${formattedDate}T${formattedEndTime}:00`,
+//           timeZone: "America/Toronto",
+//         },
+//         colorId: "6", // tangerine color
+//       };
+
+//       try {
+//         await calendar.events.update({
+//           calendarId: GOOGLE_CALENDAR_ID,
+//           eventId: currentAppointment.google_calendar_event_id,
+//           resource: updatedEvent,
+//         });
+//         console.log("Google Calendar event updated successfully.");
+//       } catch (calendarError) {
+//         console.error("Error updating Google Calendar event:", calendarError);
+//       }
+//     }
+
+//     // Mark the current appointment as available
+//     await sql`
+//       UPDATE treatments
+//       SET
+//         status = 'available',
+//         client_id = NULL,
+//         consent_form = NULL,
+//         consent_form_submitted_at = NULL,
+//         google_calendar_event_id = NULL,
+//         google_calendar_event_link = NULL
+//       WHERE id = ${currentAppointmentId}
+//     `;
+
+//     // Find a new available appointment slot
+//     const { rows: availableAppointments } = await sql`
+//       SELECT * FROM treatments
+//       WHERE
+//         rmt_location_id = ${RMTLocationId}
+//         AND date = ${formattedDate}
+//         AND appointment_window_start <= ${formattedStartTime}::time
+//         AND appointment_window_end >= ${formattedEndTime}::time
+//         AND status IN ('available', 'rescheduling')
+//       LIMIT 1
+//     `;
+
+//     if (availableAppointments.length > 0) {
+//       const newAppointmentId = availableAppointments[0].id;
+
+//       // Update the new appointment with all data including consent form
+//       await sql`
+//         UPDATE treatments
+//         SET
+//           status = 'requested',
+//           location = ${location},
+//           client_id = ${id},
+//           appointment_begins_at = ${formattedStartTime}::time,
+//           appointment_ends_at = ${formattedEndTime}::time,
+//           duration = ${parseInt(duration)},
+//           workplace = ${workplace},
+//           google_calendar_event_id = ${
+//             currentAppointment.google_calendar_event_id
+//           },
+//           google_calendar_event_link = ${
+//             currentAppointment.google_calendar_event_link
+//           },
+//           consent_form = ${consentForm},
+//           consent_form_submitted_at = ${consentFormSubmittedAt}
+//         WHERE id = ${newAppointmentId}
+//       `;
+
+//       try {
+//         await logAuditEvent({
+//           typeOfInfo: "appointment rescheduling",
+//           actionPerformed: "rescheduled",
+//           accessedById: id,
+//           whoseInfoId: id,
+//           reasonForAccess: "Self-rescheduling appointment",
+//           additionalDetails: {
+//             accessedByName: `${firstName} ${lastName}`,
+//             whoseInfoName: `${firstName} ${lastName}`,
+//             oldAppointmentId: currentAppointmentId,
+//             newAppointmentDate: formattedDate,
+//             newAppointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+//             location,
+//             duration,
+//             workplace,
+//             consentFormTransferred: consentForm ? true : false,
+//             accessMethod: "web application",
+//           },
+//         });
+//       } catch (logError) {
+//         // Just log the error but don't let it break the main function
+//         console.error("Error logging audit event:", logError);
+//       }
+
+//       // Send email notification
+//       await sendRescheduleNotificationEmail(
+//         currentAppointment,
+//         { firstName, lastName, email, phoneNumber },
+//         {
+//           appointmentDate: formattedDate,
+//           appointmentTime: `${formattedStartTime} - ${formattedEndTime}`,
+//           location,
+//           duration,
+//         }
+//       );
+
+//       revalidatePath("/dashboard/patient");
+//       return {
+//         success: true,
+//         message: "Appointment rescheduled successfully.",
+//       };
+//     } else {
+//       console.log("No matching appointment found for rescheduling.");
+
+//       // Revert Google Calendar event if needed
+//       if (currentAppointment.google_calendar_event_id) {
+//         try {
+//           await calendar.events.update({
+//             calendarId: GOOGLE_CALENDAR_ID,
+//             eventId: currentAppointment.google_calendar_event_id,
+//             resource: {
+//               start: {
+//                 dateTime: `${
+//                   new Date(currentAppointment.date).toISOString().split("T")[0]
+//                 }T${currentAppointment.appointment_begins_at}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//               end: {
+//                 dateTime: `${
+//                   new Date(currentAppointment.date).toISOString().split("T")[0]
+//                 }T${currentAppointment.appointment_ends_at}:00`,
+//                 timeZone: "America/Toronto",
+//               },
+//             },
+//           });
+//           console.log("Google Calendar event reverted successfully.");
+//         } catch (calendarError) {
+//           console.error(
+//             "Error reverting Google Calendar event:",
+//             calendarError
+//           );
+//         }
+//       }
+
+//       // Revert the current appointment back to booked with the consent form data
+//       await sql`
+//         UPDATE treatments
+//         SET
+//           status = 'booked',
+//           client_id = ${id},
+//           google_calendar_event_id = ${currentAppointment.google_calendar_event_id},
+//           google_calendar_event_link = ${currentAppointment.google_calendar_event_link},
+//           consent_form = ${consentForm},
+//           consent_form_submitted_at = ${consentFormSubmittedAt}
+//         WHERE id = ${currentAppointmentId}
+//       `;
+
+//       return {
+//         success: false,
+//         message: "No matching appointment found for rescheduling.",
+//       };
+//     }
+//   } catch (error) {
+//     console.error(
+//       "An error occurred while rescheduling the appointment:",
+//       error
+//     );
+//     return {
+//       success: false,
+//       message: "An error occurred while rescheduling the appointment.",
+//     };
+//   }
+// }
 
 async function sendRescheduleNotificationEmail(
   currentAppointment,
@@ -3989,13 +4495,25 @@ export async function resetPasswordWithToken(token, newPassword) {
 
 export async function getDashboardAppointments(rmtId) {
   try {
-    // Get current date for comparison
+    // Get current date and time in Toronto timezone
     const now = new Date();
-    const currentDateString = now.toISOString().split("T")[0];
+    const torontoTime = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/Toronto" })
+    );
+    const currentDateString = torontoTime.toISOString().split("T")[0];
+    const currentHour = torontoTime.getHours();
+    const currentMinute = torontoTime.getMinutes();
+    const currentTimeString = `${currentHour
+      .toString()
+      .padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}:00`;
+
+    console.log("[v0] Current Toronto time:", torontoTime);
+    console.log("[v0] Current date string:", currentDateString);
+    console.log("[v0] Current time string:", currentTimeString);
 
     // Query all treatments for this RMT with status "requested" or "booked"
     const { rows: treatments } = await sql`
-      SELECT 
+      SELECT
         t.id,
         t.client_id AS "clientId",
         t.date AS "appointmentDate",
@@ -4011,18 +4529,21 @@ export async function getDashboardAppointments(rmtId) {
         t.google_calendar_event_link AS "googleCalendarEventLink",
         t.created_at AS "createdAt",
         t.consent_form AS "consentForm",
+        t.code,
         u.first_name AS "firstName",
         u.last_name AS "lastName",
-        u.email
-      FROM 
+        u.email,
+        u.phone_number AS "phoneNumber",
+        u.last_health_history_update AS "lastHealthHistoryUpdate"
+      FROM
         treatments t
       JOIN
         users u ON t.client_id = u.id
-      WHERE 
+      WHERE
         t.rmt_id = ${rmtId}
         AND t.status IN ('requested', 'booked')
-      ORDER BY 
-        t.date ASC, 
+      ORDER BY
+        t.date ASC,
         t.appointment_begins_at ASC
     `;
 
@@ -4058,19 +4579,14 @@ export async function getDashboardAppointments(rmtId) {
           // Past date
           past.push(treatment);
         } else {
-          // Same date - check the time
-          const appointmentTime = treatment.appointmentBeginsAt;
-          const currentHour = now.getHours();
-          const currentMinute = now.getMinutes();
-          const currentTimeString = `${currentHour
-            .toString()
-            .padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}:00`;
+          // Same date - check the time (including currently happening appointments)
+          const appointmentEndTime = treatment.appointmentEndsAt;
 
-          if (appointmentTime > currentTimeString) {
-            // Later today
+          // Show appointment if it hasn't ended yet (future or currently happening)
+          if (appointmentEndTime >= currentTimeString) {
             upcoming.push(treatment);
           } else {
-            // Earlier today
+            // Already ended today
             past.push(treatment);
           }
         }
@@ -4087,6 +4603,107 @@ export async function getDashboardAppointments(rmtId) {
     throw new Error("Failed to fetch treatments. Please try again.");
   }
 }
+
+// export async function getDashboardAppointments(rmtId) {
+//   try {
+//     // Get current date for comparison
+//     const now = new Date();
+//     const currentDateString = now.toISOString().split("T")[0];
+
+//     // Query all treatments for this RMT with status "requested" or "booked"
+//     const { rows: treatments } = await sql`
+//       SELECT
+//         t.id,
+//         t.client_id AS "clientId",
+//         t.date AS "appointmentDate",
+//         t.appointment_begins_at AS "appointmentBeginsAt",
+//         t.appointment_ends_at AS "appointmentEndsAt",
+//         t.status,
+//         t.location,
+//         t.duration,
+//         t.workplace,
+//         t.price,
+//         t.payment_type AS "paymentType",
+//         t.google_calendar_event_id AS "googleCalendarEventId",
+//         t.google_calendar_event_link AS "googleCalendarEventLink",
+//         t.created_at AS "createdAt",
+//         t.consent_form AS "consentForm",
+//         u.first_name AS "firstName",
+//         u.last_name AS "lastName",
+//         u.email
+//       FROM
+//         treatments t
+//       JOIN
+//         users u ON t.client_id = u.id
+//       WHERE
+//         t.rmt_id = ${rmtId}
+//         AND t.status IN ('requested', 'booked')
+//       ORDER BY
+//         t.date ASC,
+//         t.appointment_begins_at ASC
+//     `;
+
+//     // Categorize treatments
+//     const requested = [];
+//     const upcoming = [];
+//     const past = [];
+
+//     // Process each treatment
+//     treatments.forEach((treatment) => {
+//       // For PostgreSQL date type, we need to convert to a string for comparison
+//       let appointmentDateStr;
+
+//       if (treatment.appointmentDate instanceof Date) {
+//         appointmentDateStr = treatment.appointmentDate
+//           .toISOString()
+//           .split("T")[0];
+//       } else if (typeof treatment.appointmentDate === "string") {
+//         appointmentDateStr = treatment.appointmentDate;
+//       } else {
+//         const dateObj = new Date(treatment.appointmentDate);
+//         appointmentDateStr = dateObj.toISOString().split("T")[0];
+//       }
+
+//       if (treatment.status === "requested") {
+//         requested.push(treatment);
+//       } else if (treatment.status === "booked") {
+//         // Compare dates as strings in YYYY-MM-DD format
+//         if (appointmentDateStr > currentDateString) {
+//           // Future date
+//           upcoming.push(treatment);
+//         } else if (appointmentDateStr < currentDateString) {
+//           // Past date
+//           past.push(treatment);
+//         } else {
+//           // Same date - check the time
+//           const appointmentTime = treatment.appointmentBeginsAt;
+//           const currentHour = now.getHours();
+//           const currentMinute = now.getMinutes();
+//           const currentTimeString = `${currentHour
+//             .toString()
+//             .padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}:00`;
+
+//           if (appointmentTime > currentTimeString) {
+//             // Later today
+//             upcoming.push(treatment);
+//           } else {
+//             // Earlier today
+//             past.push(treatment);
+//           }
+//         }
+//       }
+//     });
+
+//     return {
+//       requested,
+//       upcoming,
+//       past,
+//     };
+//   } catch (error) {
+//     console.error("Error fetching dashboard treatments:", error);
+//     throw new Error("Failed to fetch treatments. Please try again.");
+//   }
+// }
 
 // Helper function to format dates consistently
 function formatDateToYYYYMMDD(date) {
@@ -4105,7 +4722,7 @@ export async function updateAppointmentStatus(formData) {
   const status = formData.get("status");
 
   try {
-    // Get the appointment with consistent property naming
+    // Get the appointment with gift card code
     const { rows } = await sql`
       SELECT 
         t.id,
@@ -4117,6 +4734,7 @@ export async function updateAppointmentStatus(formData) {
         t.status,
         t.google_calendar_event_id,
         t.workplace,
+        t.code,
         u.first_name AS "firstName",
         u.last_name AS "lastName",
         u.email
@@ -4134,27 +4752,6 @@ export async function updateAppointmentStatus(formData) {
 
     const appointment = rows[0];
 
-    // Transform the appointment object to include formatted date and time
-    const formattedAppointment = {
-      ...appointment,
-      appointmentDate: formatDateForDisplay(appointment.date),
-      appointmentBeginsAt: formatTimeForDisplay(
-        appointment.appointment_begins_at
-      ),
-    };
-
-    // Log the formatted appointment data
-    console.log("Formatted appointment data for email:", {
-      id: appointment.id,
-      firstName: appointment.firstName,
-      lastName: appointment.lastName,
-      email: appointment.email,
-      date: appointment.date,
-      formattedDate: formattedAppointment.appointmentDate,
-      time: appointment.appointment_begins_at,
-      formattedTime: formattedAppointment.appointmentBeginsAt,
-    });
-
     if (status === "available") {
       // Deny request
       if (appointment.google_calendar_event_id) {
@@ -4169,7 +4766,7 @@ export async function updateAppointmentStatus(formData) {
         }
       }
 
-      // Clear all user-related fields
+      // Clear all user-related fields including gift card code
       await sql`
         UPDATE treatments
         SET 
@@ -4183,12 +4780,25 @@ export async function updateAppointmentStatus(formData) {
           google_calendar_event_link = NULL,
           appointment_begins_at = NULL,
           appointment_ends_at = NULL,
-          location = NULL
+          location = NULL,
+          code = NULL
         WHERE 
           id = ${appointmentId}
       `;
 
-      await sendDenialEmail(formattedAppointment);
+      // Send denial email
+      const transporter = getEmailTransporter();
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: appointment.email,
+        subject: "Appointment Request Update",
+        text: `Unfortunately, your appointment request for ${appointment.date} has been declined. Please contact us to find an alternative time.`,
+        html: `
+          <h2>Appointment Request Update</h2>
+          <p>Unfortunately, your appointment request for ${appointment.date} has been declined.</p>
+          <p>Please contact us at ${process.env.EMAIL_USER} to find an alternative time.</p>
+        `,
+      });
     } else if (status === "booked") {
       // Accept request
       if (appointment.google_calendar_event_id) {
@@ -4197,7 +4807,7 @@ export async function updateAppointmentStatus(formData) {
             calendarId: GOOGLE_CALENDAR_ID,
             eventId: appointment.google_calendar_event_id,
             resource: {
-              colorId: "2", // "2" corresponds to "sage" in Google Calendar
+              colorId: appointment.code ? "5" : "2",
               summary: `[Confirmed]: Mx ${appointment.firstName} ${appointment.lastName}`,
             },
           });
@@ -4214,7 +4824,36 @@ export async function updateAppointmentStatus(formData) {
         WHERE id = ${appointmentId}
       `;
 
-      await sendApprovalEmail(formattedAppointment);
+      // Send approval email
+      const transporter = getEmailTransporter();
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: appointment.email,
+        subject: "Appointment Confirmed",
+        text: `Your appointment for ${appointment.date} at ${
+          appointment.appointment_begins_at
+        } has been confirmed!${
+          appointment.code
+            ? ` Your gift card ${appointment.code} will be applied.`
+            : ""
+        }`,
+        html: `
+          <h2>Appointment Confirmed</h2>
+          <p>Your appointment has been confirmed with the following details:</p>
+          <ul>
+            <li><strong>Date:</strong> ${appointment.date}</li>
+            <li><strong>Time:</strong> ${appointment.appointment_begins_at}</li>
+            <li><strong>Duration:</strong> ${appointment.duration} minutes</li>
+            <li><strong>Location:</strong> ${appointment.location}</li>
+            ${
+              appointment.code
+                ? `<li><strong>Gift Card:</strong> ${appointment.code}</li>`
+                : ""
+            }
+          </ul>
+          <p>We look forward to seeing you!</p>
+        `,
+      });
     }
 
     revalidatePath("/dashboard/rmt");
@@ -4232,15 +4871,24 @@ export async function updateAppointmentStatus(formData) {
     };
   }
 }
+
 // export async function updateAppointmentStatus(formData) {
 //   const appointmentId = formData.get("appointmentId");
 //   const status = formData.get("status");
 
 //   try {
-//     // Get the appointment
+//     // Get the appointment with consistent property naming
 //     const { rows } = await sql`
 //       SELECT
-//         t.*,
+//         t.id,
+//         t.date,
+//         t.appointment_begins_at,
+//         t.appointment_ends_at,
+//         t.location,
+//         t.duration,
+//         t.status,
+//         t.google_calendar_event_id,
+//         t.workplace,
 //         u.first_name AS "firstName",
 //         u.last_name AS "lastName",
 //         u.email
@@ -4258,7 +4906,26 @@ export async function updateAppointmentStatus(formData) {
 
 //     const appointment = rows[0];
 
-//     let updateFields = {};
+//     // Transform the appointment object to include formatted date and time
+//     const formattedAppointment = {
+//       ...appointment,
+//       appointmentDate: formatDateForDisplay(appointment.date),
+//       appointmentBeginsAt: formatTimeForDisplay(
+//         appointment.appointment_begins_at
+//       ),
+//     };
+
+//     // Log the formatted appointment data
+//     console.log("Formatted appointment data for email:", {
+//       id: appointment.id,
+//       firstName: appointment.firstName,
+//       lastName: appointment.lastName,
+//       email: appointment.email,
+//       date: appointment.date,
+//       formattedDate: formattedAppointment.appointmentDate,
+//       time: appointment.appointment_begins_at,
+//       formattedTime: formattedAppointment.appointmentBeginsAt,
+//     });
 
 //     if (status === "available") {
 //       // Deny request
@@ -4293,7 +4960,7 @@ export async function updateAppointmentStatus(formData) {
 //           id = ${appointmentId}
 //       `;
 
-//       await sendDenialEmail(appointment);
+//       await sendDenialEmail(formattedAppointment);
 //     } else if (status === "booked") {
 //       // Accept request
 //       if (appointment.google_calendar_event_id) {
@@ -4319,7 +4986,7 @@ export async function updateAppointmentStatus(formData) {
 //         WHERE id = ${appointmentId}
 //       `;
 
-//       await sendApprovalEmail(appointment);
+//       await sendApprovalEmail(formattedAppointment);
 //     }
 
 //     revalidatePath("/dashboard/rmt");
@@ -4382,122 +5049,122 @@ async function sendApprovalEmail(appointment) {
 }
 
 // Function to get treatment plans for a user
-export async function getTreatmentPlansForUser(userId) {
-  try {
-    const session = await getSession();
-    if (!session || !session.resultObj) {
-      throw new Error("Unauthorized: User not logged in");
-    }
+// export async function getTreatmentPlansForUser(userId) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
 
-    // Check if the user has permission to access these treatment plans
-    const canAccess =
-      session.resultObj.userType === "rmt" ||
-      session.resultObj.id.toString() === userId;
+//     // Check if the user has permission to access these treatment plans
+//     const canAccess =
+//       session.resultObj.userType === "rmt" ||
+//       session.resultObj.id.toString() === userId;
 
-    if (!canAccess) {
-      throw new Error(
-        "Unauthorized: User does not have permission to access these treatment plans"
-      );
-    }
+//     if (!canAccess) {
+//       throw new Error(
+//         "Unauthorized: User does not have permission to access these treatment plans"
+//       );
+//     }
 
-    // Query treatment plans from PostgreSQL - using only columns that exist
-    const { rows: plans } = await sql`
-      SELECT 
-        tp.id,
-        tp.mongodb_id AS "mongodbId",
-        tp.client_id AS "clientId",
-        tp.created_by AS "createdBy",
-        tp.created_at AS "createdAt",
-        tp.encrypted_data AS "encryptedData",
-        tp.start_date AS "startDate",
-        u.first_name AS "clientFirstName",
-        u.last_name AS "clientLastName"
-      FROM 
-        treatment_plans tp
-      JOIN
-        users u ON tp.client_id = u.id
-      WHERE 
-        tp.client_id = ${userId} OR tp.created_by = ${userId}
-    `;
+//     // Query treatment plans from PostgreSQL - using only columns that exist
+//     const { rows: plans } = await sql`
+//       SELECT
+//         tp.id,
+//         tp.mongodb_id AS "mongodbId",
+//         tp.client_id AS "clientId",
+//         tp.created_by AS "createdBy",
+//         tp.created_at AS "createdAt",
+//         tp.encrypted_data AS "encryptedData",
+//         tp.start_date AS "startDate",
+//         u.first_name AS "clientFirstName",
+//         u.last_name AS "clientLastName"
+//       FROM
+//         treatment_plans tp
+//       JOIN
+//         users u ON tp.client_id = u.id
+//       WHERE
+//         tp.client_id = ${userId} OR tp.created_by = ${userId}
+//     `;
 
-    // Get associated treatments for each plan
-    const plansWithTreatments = await Promise.all(
-      plans.map(async (plan) => {
-        const { rows: treatments } = await sql`
-        SELECT 
-          id,
-          date AS "appointmentDate",
-          appointment_begins_at AS "appointmentBeginsAt",
-          status
-        FROM 
-          treatments
-        WHERE 
-          treatment_plan_id = ${plan.id}
-        ORDER BY 
-          date ASC, appointment_begins_at ASC
-      `;
+//     // Get associated treatments for each plan
+//     const plansWithTreatments = await Promise.all(
+//       plans.map(async (plan) => {
+//         const { rows: treatments } = await sql`
+//         SELECT
+//           id,
+//           date AS "appointmentDate",
+//           appointment_begins_at AS "appointmentBeginsAt",
+//           status
+//         FROM
+//           treatments
+//         WHERE
+//           treatment_plan_id = ${plan.id}
+//         ORDER BY
+//           date ASC, appointment_begins_at ASC
+//       `;
 
-        const processedPlan = { ...plan };
+//         const processedPlan = { ...plan };
 
-        // Add treatments to the plan
-        processedPlan.treatments = treatments;
+//         // Add treatments to the plan
+//         processedPlan.treatments = treatments;
 
-        // Decrypt encrypted data if present
-        if (plan.encryptedData) {
-          try {
-            processedPlan.decryptedData = decryptData(plan.encryptedData);
-          } catch (decryptError) {
-            console.error(
-              "Error decrypting data for plan:",
-              plan.id,
-              decryptError
-            );
-            processedPlan.decryptedData = null;
-          }
-        }
+//         // Decrypt encrypted data if present
+//         if (plan.encryptedData) {
+//           try {
+//             processedPlan.decryptedData = decryptData(plan.encryptedData);
+//           } catch (decryptError) {
+//             console.error(
+//               "Error decrypting data for plan:",
+//               plan.id,
+//               decryptError
+//             );
+//             processedPlan.decryptedData = null;
+//           }
+//         }
 
-        return processedPlan;
-      })
-    );
+//         return processedPlan;
+//       })
+//     );
 
-    // Log the audit event
-    try {
-      // Determine reason for access based on user type and relationship
-      let reasonForAccess = "Self-viewing treatment plans";
-      if (session.resultObj.userType === "rmt") {
-        reasonForAccess = "Provider accessing patient treatment plans";
-      } else if (session.resultObj.id.toString() !== userId) {
-        reasonForAccess = "Administrative access to treatment plans";
-      }
+//     // Log the audit event
+//     try {
+//       // Determine reason for access based on user type and relationship
+//       let reasonForAccess = "Self-viewing treatment plans";
+//       if (session.resultObj.userType === "rmt") {
+//         reasonForAccess = "Provider accessing patient treatment plans";
+//       } else if (session.resultObj.id.toString() !== userId) {
+//         reasonForAccess = "Administrative access to treatment plans";
+//       }
 
-      await logAuditEvent({
-        typeOfInfo: "treatment plans",
-        actionPerformed: "viewed",
-        accessedById: session.resultObj.id,
-        whoseInfoId: userId,
-        reasonForAccess,
-        additionalDetails: {
-          accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-          accessedByUserType: session.resultObj.userType,
-          numberOfPlans: plansWithTreatments.length,
-          planIds: plansWithTreatments.map((plan) => plan.id),
-          accessMethod: "web application",
-        },
-      });
-    } catch (logError) {
-      // Just log the error but don't let it break the main function
-      console.error("Error logging audit event:", logError);
-    }
+//       await logAuditEvent({
+//         typeOfInfo: "treatment plans",
+//         actionPerformed: "viewed",
+//         accessedById: session.resultObj.id,
+//         whoseInfoId: userId,
+//         reasonForAccess,
+//         additionalDetails: {
+//           accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+//           accessedByUserType: session.resultObj.userType,
+//           numberOfPlans: plansWithTreatments.length,
+//           planIds: plansWithTreatments.map((plan) => plan.id),
+//           accessMethod: "web application",
+//         },
+//       });
+//     } catch (logError) {
+//       // Just log the error but don't let it break the main function
+//       console.error("Error logging audit event:", logError);
+//     }
 
-    return { success: true, data: plansWithTreatments };
-  } catch (error) {
-    console.error("Error fetching treatment plans:", error);
-    return {
-      success: false,
-      message: "Failed to fetch treatment plans: " + error.message,
-    };
-  }
-}
+//     return { success: true, data: plansWithTreatments };
+//   } catch (error) {
+//     console.error("Error fetching treatment plans:", error);
+//     return {
+//       success: false,
+//       message: "Failed to fetch treatment plans: " + error.message,
+//     };
+//   }
+// }
 
 // Function to get a single treatment by ID
 export async function getTreatmentById(id) {
@@ -4614,6 +5281,57 @@ export async function getTreatmentById(id) {
   }
 }
 
+export async function getTreatmentsForPlan(treatmentPlanId) {
+  try {
+    const { rows: treatments } = await sql`
+      SELECT
+        t.id,
+        t.date,
+        t.duration,
+        t.price,
+        t.payment_type AS "paymentType",
+        t.encrypted_treatment_notes AS "encryptedTreatmentNotes",
+        t.status,
+        t.appointment_begins_at AS "appointmentBeginsAt",
+        t.appointment_ends_at AS "appointmentEndsAt"
+      FROM treatments t
+      WHERE t.treatment_plan_id = ${treatmentPlanId}
+        AND t.encrypted_treatment_notes IS NOT NULL
+      ORDER BY t.date DESC, t.appointment_begins_at DESC
+    `;
+
+    // Decrypt the treatment notes
+    const decryptedTreatments = treatments.map((treatment) => {
+      let decryptedNotes = null;
+
+      if (treatment.encryptedTreatmentNotes) {
+        try {
+          decryptedNotes = decryptData(treatment.encryptedTreatmentNotes);
+        } catch (error) {
+          console.error(`Error decrypting treatment ${treatment.id}:`, error);
+        }
+      }
+
+      return {
+        ...treatment,
+        treatmentNotes: decryptedNotes,
+      };
+    });
+
+    return {
+      success: true,
+      data: decryptedTreatments,
+    };
+  } catch (error) {
+    console.error("Error fetching treatments for plan:", error);
+    return {
+      success: false,
+      message: "Failed to fetch treatments: " + error.message,
+      data: [],
+    };
+  }
+}
+
 // New consolidated function that gets both treatment and treatment plans
 export async function getTreatmentAndPlans(treatmentId) {
   try {
@@ -4637,6 +5355,254 @@ export async function getTreatmentAndPlans(treatmentId) {
   }
 }
 
+export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    // Check if the user is an RMT
+    if (session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can save treatment notes");
+    }
+
+    if (notes.paymentType === "Gift Card" && notes.giftCardCode) {
+      // Validate and redeem gift card
+      const { rows: giftCards } = await sql`
+        SELECT id, duration, redeemed, code
+        FROM gift_cards
+        WHERE code = ${notes.giftCardCode}
+      `;
+
+      if (giftCards.length === 0) {
+        return {
+          success: false,
+          message: "Invalid gift card code",
+        };
+      }
+
+      const giftCard = giftCards[0];
+
+      if (giftCard.redeemed) {
+        return {
+          success: false,
+          message: "This gift card has already been redeemed",
+        };
+      }
+
+      // Mark gift card as redeemed
+      await sql`
+        UPDATE gift_cards
+        SET
+          redeemed = true,
+          redeemed_at = NOW(),
+          redeemed_by_user_id = (SELECT client_id FROM treatments WHERE id = ${treatmentId})
+        WHERE id = ${giftCard.id}
+      `;
+    }
+
+    // Handle "other" price option
+    let finalPrice = notes.price;
+    if (notes.price === "other") {
+      if (!notes.otherPrice || isNaN(Number.parseFloat(notes.otherPrice))) {
+        return {
+          success: false,
+          message: "Please enter a valid price when selecting 'Other'",
+        };
+      }
+      finalPrice = Number.parseFloat(notes.otherPrice);
+    } else if (notes.paymentType === "Gift Card") {
+      finalPrice = 0;
+    } else {
+      finalPrice = Number.parseFloat(notes.price);
+    }
+
+    // Encrypt the notes (you'll need to implement encryptData function)
+    // For now, stringify as placeholder, but should be encrypted in production.
+    const encryptedNotes = JSON.stringify(notes);
+    // const encryptedNotes = encrypt(JSON.stringify(notes)); // Use this with actual encryption
+
+    // Update the treatment with the notes and associated plan
+    const { rows: updatedTreatment } = await sql`
+      UPDATE treatments
+      SET 
+        encrypted_treatment_notes = ${encryptedNotes},
+        status = 'completed',
+        price = ${finalPrice},
+        payment_type = ${notes?.paymentType || null},
+        treatment_plan_id = ${treatmentPlanId}
+      WHERE id = ${treatmentId}
+      RETURNING 
+        id, 
+        client_id,
+        rmt_id,
+        date,
+        appointment_begins_at,
+        appointment_ends_at,
+        status,
+        location,
+        duration,
+        workplace,
+        price,
+        payment_type,
+        encrypted_treatment_notes
+    `;
+
+    if (!updatedTreatment || updatedTreatment.length === 0) {
+      throw new Error("Failed to update treatment with notes");
+    }
+
+    // Get client information for the treatment
+    const { rows: clientInfo } = await sql`
+      SELECT 
+        u.id, 
+        u.first_name, 
+        u.last_name, 
+        u.email
+      FROM users u
+      JOIN treatments t ON u.id = t.client_id
+      WHERE t.id = ${treatmentId}
+    `;
+
+    if (!clientInfo || clientInfo.length === 0) {
+      throw new Error("Failed to retrieve client information");
+    }
+
+    const client = clientInfo[0];
+
+    // Associate the treatment with the treatment plan
+    // This should only happen if treatmentPlanId is provided and valid
+    if (treatmentPlanId) {
+      await sql`
+        INSERT INTO treatment_plan_treatments (treatment_plan_id, treatment_id)
+        VALUES (${treatmentPlanId}, ${treatmentId})
+        ON CONFLICT (treatment_plan_id, treatment_id) 
+        DO NOTHING
+      `;
+    }
+
+    // Calculate revenue excluding HST
+    const totalPrice = Number.parseFloat(finalPrice || 0);
+    const hstRate = 0.13; // Assuming HST is 13%
+    const revenueExcludingHST = totalPrice / (1 + hstRate);
+    const hstAmount = totalPrice - revenueExcludingHST;
+
+    // Create a new income record
+    const appointmentDate = new Date(updatedTreatment[0].date);
+
+    // Only insert income if the final price is greater than 0 (i.e., not fully covered by gift card)
+    if (totalPrice > 0) {
+      const { rows: incomeResult } = await sql`
+        INSERT INTO incomes (
+          rmt_id,
+          treatment_id,
+          date,
+          year,
+          category,
+          amount,
+          total_price,
+          hst_amount,
+          details,
+          created_at
+        ) VALUES (
+          ${updatedTreatment[0].rmt_id},
+          ${treatmentId},
+          ${appointmentDate.toISOString()},
+          ${appointmentDate.getFullYear().toString()},
+          'revenue',
+          ${Number.parseFloat(revenueExcludingHST.toFixed(2))},
+          ${totalPrice},
+          ${Number.parseFloat(hstAmount.toFixed(2))},
+          ${`${client.first_name} ${client.last_name}`},
+          CURRENT_TIMESTAMP
+        )
+        RETURNING id
+      `;
+
+      if (!incomeResult || incomeResult.length === 0) {
+        throw new Error("Failed to insert income record");
+      }
+    }
+
+    // Fetch RMT details for audit log
+    const { rows: rmtInfo } = await sql`
+      SELECT id, first_name, last_name
+      FROM users
+      WHERE id = ${session.resultObj.id}
+    `;
+
+    if (!rmtInfo || rmtInfo.length === 0) {
+      throw new Error("Failed to retrieve RMT information");
+    }
+
+    const rmt = rmtInfo[0];
+
+    // Log the audit event
+    try {
+      await logAuditEvent({
+        typeOfInfo: "treatment notes",
+        actionPerformed: "saved",
+        accessedById: rmt.id,
+        whoseInfoId: client.id,
+        reasonForAccess: "Provider documenting patient treatment",
+        additionalDetails: {
+          accessedByName: `${rmt.first_name} ${rmt.last_name}`,
+          whoseInfoName: `${client.first_name} ${client.last_name}`,
+          treatmentId: treatmentId,
+          treatmentPlanId: treatmentPlanId,
+          appointmentDate: updatedTreatment[0].date,
+          price: finalPrice,
+          paymentType: notes.paymentType,
+          giftCardRedeemed: notes.paymentType === "Gift Card",
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      // Just log the error but don't let it break the main function
+      console.error("Error logging audit event:", logError);
+    }
+
+    // Send email to the client
+    const transporter = getEmailTransporter();
+    const formattedDate = new Date(
+      updatedTreatment[0].date
+    ).toLocaleDateString();
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: client.email,
+      subject: "Your Receipt is Ready to Download",
+      text: `Hi ${client.first_name},
+
+Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at www.ciprmt.com.
+
+Thank you for your visit!
+
+Stay healthy,
+Cip`,
+      html: `
+        <h2>Your Receipt is Ready to Download</h2>
+        <p>Dear ${client.first_name},</p>
+        <p>Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at <a href="https://www.ciprmt.com">www.ciprmt.com</a>.</p>
+        <p>Thank you for your visit!</p>
+        <p>Stay healthy,<br>Cip</p>
+      `,
+    });
+
+    revalidatePath("/dashboard/rmt");
+    return { success: true, message: "Treatment notes saved successfully" };
+  } catch (error) {
+    console.error("Error saving treatment notes:", error);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return { success: false, message: error.message };
+  }
+}
+
 // export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
 //   try {
 //     const session = await getSession();
@@ -4644,8 +5610,22 @@ export async function getTreatmentAndPlans(treatmentId) {
 //       throw new Error("Unauthorized: User not logged in");
 //     }
 
-//     // Encrypt the notes
-//     const encryptedNotes = encryptData(JSON.stringify(notes));
+//     // Handle "other" price option
+//     let finalPrice = notes.price;
+//     if (notes.price === "other") {
+//       if (!notes.otherPrice || isNaN(Number.parseFloat(notes.otherPrice))) {
+//         return {
+//           success: false,
+//           message: "Please enter a valid price when selecting 'Other'",
+//         };
+//       }
+//       finalPrice = Number.parseFloat(notes.otherPrice);
+//     } else {
+//       finalPrice = Number.parseFloat(notes.price);
+//     }
+
+//     // Encrypt the notes (you'll need to implement encryptData function)
+//     const encryptedNotes = JSON.stringify(notes); // Replace with actual encryption
 
 //     // Update the treatment with the notes and associated plan
 //     const { rows: updatedTreatment } = await sql`
@@ -4653,7 +5633,7 @@ export async function getTreatmentAndPlans(treatmentId) {
 //       SET
 //         encrypted_treatment_notes = ${encryptedNotes},
 //         status = 'completed',
-//         price = ${notes?.price || null},
+//         price = ${finalPrice},
 //         payment_type = ${notes?.paymentType || null},
 //         treatment_plan_id = ${treatmentPlanId}
 //       WHERE id = ${treatmentId}
@@ -4704,7 +5684,7 @@ export async function getTreatmentAndPlans(treatmentId) {
 //     `;
 
 //     // Calculate revenue excluding HST
-//     const totalPrice = Number.parseFloat(notes.price || 0);
+//     const totalPrice = Number.parseFloat(finalPrice || 0);
 //     const hstRate = 0.13;
 //     const revenueExcludingHST = totalPrice / (1 + hstRate);
 //     const hstAmount = totalPrice - revenueExcludingHST;
@@ -4769,8 +5749,8 @@ export async function getTreatmentAndPlans(treatmentId) {
 //           whoseInfoName: `${client.first_name} ${client.last_name}`,
 //           treatmentId: treatmentId,
 //           treatmentPlanId: treatmentPlanId,
-//           appointmentDate: formatDateForDisplay(updatedTreatment[0].date),
-//           price: notes.price,
+//           appointmentDate: updatedTreatment[0].date,
+//           price: finalPrice,
 //           paymentType: notes.paymentType,
 //           accessMethod: "web application",
 //         },
@@ -4782,7 +5762,9 @@ export async function getTreatmentAndPlans(treatmentId) {
 
 //     // Send email to the client
 //     const transporter = getEmailTransporter();
-//     const formattedDate = formatDateForDisplay(updatedTreatment[0].date);
+//     const formattedDate = new Date(
+//       updatedTreatment[0].date
+//     ).toLocaleDateString();
 
 //     await transporter.sendMail({
 //       from: process.env.EMAIL_USER,
@@ -4817,203 +5799,6 @@ export async function getTreatmentAndPlans(treatmentId) {
 //     return { success: false, message: error.message };
 //   }
 // }
-
-export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
-  try {
-    const session = await getSession();
-    if (!session || !session.resultObj) {
-      throw new Error("Unauthorized: User not logged in");
-    }
-
-    // Handle "other" price option
-    let finalPrice = notes.price;
-    if (notes.price === "other") {
-      if (!notes.otherPrice || isNaN(Number.parseFloat(notes.otherPrice))) {
-        return {
-          success: false,
-          message: "Please enter a valid price when selecting 'Other'",
-        };
-      }
-      finalPrice = Number.parseFloat(notes.otherPrice);
-    } else {
-      finalPrice = Number.parseFloat(notes.price);
-    }
-
-    // Encrypt the notes (you'll need to implement encryptData function)
-    const encryptedNotes = JSON.stringify(notes); // Replace with actual encryption
-
-    // Update the treatment with the notes and associated plan
-    const { rows: updatedTreatment } = await sql`
-      UPDATE treatments
-      SET 
-        encrypted_treatment_notes = ${encryptedNotes},
-        status = 'completed',
-        price = ${finalPrice},
-        payment_type = ${notes?.paymentType || null},
-        treatment_plan_id = ${treatmentPlanId}
-      WHERE id = ${treatmentId}
-      RETURNING 
-        id, 
-        client_id,
-        rmt_id,
-        date,
-        appointment_begins_at,
-        appointment_ends_at,
-        status,
-        location,
-        duration,
-        workplace,
-        price,
-        payment_type,
-        encrypted_treatment_notes
-    `;
-
-    if (!updatedTreatment || updatedTreatment.length === 0) {
-      throw new Error("Failed to update treatment with notes");
-    }
-
-    // Get client information for the treatment
-    const { rows: clientInfo } = await sql`
-      SELECT 
-        u.id, 
-        u.first_name, 
-        u.last_name, 
-        u.email
-      FROM users u
-      JOIN treatments t ON u.id = t.client_id
-      WHERE t.id = ${treatmentId}
-    `;
-
-    if (!clientInfo || clientInfo.length === 0) {
-      throw new Error("Failed to retrieve client information");
-    }
-
-    const client = clientInfo[0];
-
-    // Associate the treatment with the treatment plan
-    await sql`
-      INSERT INTO treatment_plan_treatments (treatment_plan_id, treatment_id)
-      VALUES (${treatmentPlanId}, ${treatmentId})
-      ON CONFLICT (treatment_plan_id, treatment_id) 
-      DO NOTHING
-    `;
-
-    // Calculate revenue excluding HST
-    const totalPrice = Number.parseFloat(finalPrice || 0);
-    const hstRate = 0.13;
-    const revenueExcludingHST = totalPrice / (1 + hstRate);
-    const hstAmount = totalPrice - revenueExcludingHST;
-
-    // Create a new income record
-    const appointmentDate = new Date(updatedTreatment[0].date);
-
-    const { rows: incomeResult } = await sql`
-      INSERT INTO incomes (
-        rmt_id,
-        treatment_id,
-        date,
-        year,
-        category,
-        amount,
-        total_price,
-        hst_amount,
-        details,
-        created_at
-      ) VALUES (
-        ${updatedTreatment[0].rmt_id},
-        ${treatmentId},
-        ${appointmentDate.toISOString()},
-        ${appointmentDate.getFullYear().toString()},
-        'revenue',
-        ${Number.parseFloat(revenueExcludingHST.toFixed(2))},
-        ${totalPrice},
-        ${Number.parseFloat(hstAmount.toFixed(2))},
-        ${`${client.first_name} ${client.last_name}`},
-        CURRENT_TIMESTAMP
-      )
-      RETURNING id
-    `;
-
-    if (!incomeResult || incomeResult.length === 0) {
-      throw new Error("Failed to insert income record");
-    }
-
-    // Fetch RMT details for audit log
-    const { rows: rmtInfo } = await sql`
-      SELECT id, first_name, last_name
-      FROM users
-      WHERE id = ${session.resultObj.id}
-    `;
-
-    if (!rmtInfo || rmtInfo.length === 0) {
-      throw new Error("Failed to retrieve RMT information");
-    }
-
-    const rmt = rmtInfo[0];
-
-    // Log the audit event
-    try {
-      await logAuditEvent({
-        typeOfInfo: "treatment notes",
-        actionPerformed: "saved",
-        accessedById: rmt.id,
-        whoseInfoId: client.id,
-        reasonForAccess: "Provider documenting patient treatment",
-        additionalDetails: {
-          accessedByName: `${rmt.first_name} ${rmt.last_name}`,
-          whoseInfoName: `${client.first_name} ${client.last_name}`,
-          treatmentId: treatmentId,
-          treatmentPlanId: treatmentPlanId,
-          appointmentDate: updatedTreatment[0].date,
-          price: finalPrice,
-          paymentType: notes.paymentType,
-          accessMethod: "web application",
-        },
-      });
-    } catch (logError) {
-      // Just log the error but don't let it break the main function
-      console.error("Error logging audit event:", logError);
-    }
-
-    // Send email to the client
-    const transporter = getEmailTransporter();
-    const formattedDate = new Date(
-      updatedTreatment[0].date
-    ).toLocaleDateString();
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: client.email,
-      subject: "Your Receipt is Ready to Download",
-      text: `Hi ${client.first_name},
-
-Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at www.ciprmt.com.
-
-Thank you for your visit!
-
-Stay healthy,
-Cip`,
-      html: `
-        <h2>Your Receipt is Ready to Download</h2>
-        <p>Dear ${client.first_name},</p>
-        <p>Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at <a href="https://www.ciprmt.com">www.ciprmt.com</a>.</p>
-        <p>Thank you for your visit!</p>
-        <p>Stay healthy,<br>Cip</p>
-      `,
-    });
-
-    revalidatePath("/dashboard/rmt");
-    return { success: true, message: "Treatment notes saved successfully" };
-  } catch (error) {
-    console.error("Error saving treatment notes:", error);
-    console.error("Error details:", {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    });
-    return { success: false, message: error.message };
-  }
-}
 
 export async function setDNSTreatmentStatusAttachment(treatmentId) {
   try {
@@ -5446,9 +6231,94 @@ export async function searchUsers(query) {
   }
 }
 
-export async function getClientWithHealthHistory(clientId) {
+export async function getClientWithHealthHistory(userId) {
   try {
-    // Get the current user session
+    console.log("[v0] Fetching client with health history for userId:", userId);
+
+    // Get client information
+    const { rows: clientRows } = await sql`
+      SELECT
+        id,
+        first_name AS "firstName",
+        last_name AS "lastName",
+        preferred_name AS "preferredName",
+        email,
+        phone_number AS "phoneNumber",
+        pronouns,
+        rmt_id AS "rmtId",
+        user_type AS "userType"
+      FROM users
+      WHERE id = ${userId}
+    `;
+
+    if (clientRows.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    const client = clientRows[0];
+    console.log("[v0] Client found:", client.firstName, client.lastName);
+
+    // Get health history
+    const { rows: healthHistoryRows } = await sql`
+      SELECT
+        id,
+        user_id AS "userId",
+        encrypted_data AS "encryptedData",
+        created_at AS "createdAt"
+      FROM health_histories
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+    `;
+
+    console.log("[v0] Health history rows found:", healthHistoryRows.length);
+    console.log(
+      "[v0] Health history raw data:",
+      JSON.stringify(healthHistoryRows, null, 2)
+    );
+
+    const healthHistory = healthHistoryRows.map((record) => {
+      let decryptedData = null;
+      if (record.encryptedData) {
+        try {
+          decryptedData = decryptData(record.encryptedData);
+          console.log(
+            "[v0] Decrypted health history data:",
+            JSON.stringify(decryptedData, null, 2)
+          );
+        } catch (error) {
+          console.error(
+            `[v0] Error decrypting health history ${record.id}:`,
+            error
+          );
+        }
+      }
+
+      // Flatten the decrypted data into the record so fields can be accessed directly
+      return {
+        id: record.id,
+        userId: record.userId,
+        createdAt: record.createdAt,
+        encryptedData: record.encryptedData,
+        decryptedData,
+        // Spread the decrypted data fields so they can be accessed directly
+        ...(decryptedData || {}),
+      };
+    });
+
+    console.log(
+      "[v0] Processed health history:",
+      JSON.stringify(healthHistory, null, 2)
+    );
+
+    return { client, healthHistory };
+  } catch (error) {
+    console.error("[v0] Error fetching client with health history:", error);
+    throw error;
+  }
+}
+
+export async function getClientProfileData(userId) {
+  try {
     const session = await getSession();
     if (!session || !session.resultObj) {
       throw new Error("Unauthorized: User not logged in");
@@ -5459,94 +6329,114 @@ export async function getClientWithHealthHistory(clientId) {
       throw new Error("Unauthorized: Only RMTs can access client profiles");
     }
 
-    // Get the user ID from the session, handling both MongoDB and PostgreSQL formats
-    const userId = session.resultObj.id || session.resultObj._id;
+    // Get client information with health history
+    const clientData = await getClientWithHealthHistory(userId);
 
-    if (!userId) {
-      console.error("User ID not found in session", session.resultObj);
-      throw new Error("User ID not found in session");
-    }
-
-    // Apply rate limiting using the user ID as a string
-    await checkRateLimit(String(userId), "getClientWithHealthHistory", 10, 60); // 10 requests per minute
-
-    // Query the database for the client
-    const { rows: userRows } = await sql`
-      SELECT 
+    // Get all treatments for this client
+    const { rows: treatments } = await sql`
+      SELECT
         id,
-        first_name AS "firstName",
-        last_name AS "lastName",
-        email,
-        phone_number AS "phoneNumber",
-        rmt_id AS "rmtId"
-      FROM 
-        users
-      WHERE 
-        id = ${clientId}
-    `;
-
-    if (userRows.length === 0) {
-      throw new Error("Client not found");
-    }
-
-    const client = userRows[0];
-
-    // Query health histories using the correct column names
-    const { rows: healthHistories } = await sql`
-      SELECT 
-        id,
-        user_id AS "userId",
+        client_id AS "clientId",
+        rmt_id AS "rmtId",
+        date AS "appointmentDate",
+        appointment_begins_at AS "appointmentBeginsAt",
+        appointment_ends_at AS "appointmentEndsAt",
+        status,
+        location,
+        duration,
+        workplace,
+        price,
+        payment_type AS "paymentType",
+        encrypted_treatment_notes AS "treatmentNotes",
+        treatment_plan_id AS "treatmentPlanId",
+        google_calendar_event_id AS "googleCalendarEventId",
+        google_calendar_event_link AS "googleCalendarEventLink",
         created_at AS "createdAt",
-        mongodb_id AS "mongodbId",
-        encrypted_data AS "encryptedData"
-      FROM 
-        health_histories
-      WHERE 
-        user_id = ${clientId}
-      ORDER BY 
-        created_at DESC
+        consent_form AS "consentForm",
+        consent_form_submitted_at AS "consentFormSubmittedAt",
+        code
+      FROM treatments
+      WHERE client_id = ${userId}
+      ORDER BY date DESC, appointment_begins_at DESC
     `;
 
-    // Process health histories if they're encrypted
-    const processedHistories = healthHistories.map((history) => {
-      // If we have encrypted data and a decryption function
-      if (history.encryptedData && typeof decryptData === "function") {
+    // Get treatment plans for this client
+    const treatmentPlans = await getTreatmentPlansForUser(userId);
+
+    console.log(
+      "[v0] getClientProfileData - treatments sample:",
+      treatments.slice(0, 2)
+    );
+    console.log("[v0] getClientProfileData - treatmentPlans:", treatmentPlans);
+
+    return {
+      success: true,
+      client: clientData.client,
+      healthHistory: clientData.healthHistory,
+      treatments,
+      treatmentPlans: treatmentPlans.success ? treatmentPlans.data : [],
+    };
+  } catch (error) {
+    console.error("Error fetching client profile data:", error);
+    return {
+      success: false,
+      message: "Failed to fetch client profile data: " + error.message,
+    };
+  }
+}
+
+export async function getTreatmentPlansForUser(userId) {
+  try {
+    const { rows: plans } = await sql`
+      SELECT
+        tp.id,
+        tp.client_id AS "clientId",
+        tp.created_by AS "createdBy",
+        tp.start_date AS "startDate",
+        tp.created_at AS "createdAt",
+        tp.encrypted_data AS "encryptedData",
+        u.first_name AS "clientFirstName",
+        u.last_name AS "clientLastName"
+      FROM treatment_plans tp
+      LEFT JOIN users u ON tp.client_id = u.id
+      WHERE tp.client_id = ${userId}
+      ORDER BY tp.created_at DESC
+    `;
+
+    // Decrypt the treatment plan data
+    const decryptedPlans = plans.map((plan) => {
+      let decryptedData = null;
+
+      if (plan.encryptedData) {
         try {
-          const decrypted = decryptData(history.encryptedData);
-          if (decrypted) {
-            // Merge the decrypted data with the history object
-            return {
-              ...history,
-              ...decrypted, // Spread the decrypted data into the result
-            };
-          }
-        } catch (decryptError) {
-          console.error(
-            `Error decrypting health history ${history.id}:`,
-            decryptError
-          );
+          decryptedData = decryptData(plan.encryptedData);
+        } catch (error) {
+          console.error(`Error decrypting plan ${plan.id}:`, error);
         }
       }
 
-      // If no encryption or decryption failed, return as is
-      return history;
+      return {
+        ...plan,
+        decryptedData,
+        // Flatten commonly used fields for easier access
+        clientGoals: decryptedData?.clientGoals,
+        areasToBeTreated: decryptedData?.areasToBeTreated,
+        durationAndFrequency: decryptedData?.durationAndFrequency,
+        endDate: decryptedData?.endDate,
+      };
     });
 
-    // Return both client profile and health histories
     return {
-      client: {
-        id: client.id,
-        firstName: client.firstName,
-        lastName: client.lastName,
-        email: client.email,
-        phoneNumber: client.phoneNumber || "N/A",
-        rmtId: client.rmtId,
-      },
-      healthHistory: processedHistories,
+      success: true,
+      data: decryptedPlans,
     };
   } catch (error) {
-    console.error("Error in getClientWithHealthHistory:", error);
-    throw new Error("Failed to fetch client data. Please try again.");
+    console.error("Error fetching treatment plans:", error);
+    return {
+      success: false,
+      message: "Failed to fetch treatment plans: " + error.message,
+      data: [],
+    };
   }
 }
 
@@ -5557,34 +6447,36 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       throw new Error("Unauthorized: User not logged in");
     }
 
+    // Check if the user is an RMT
     if (session.resultObj.userType !== "rmt") {
-      throw new Error("Unauthorized: Only RMTs can book appointments");
+      throw new Error(
+        "Unauthorized: Only RMTs can book appointments for clients"
+      );
     }
-
-    await checkRateLimit(
-      session.resultObj.id,
-      "bookAppointmentForClient",
-      5,
-      60
-    ); // 5 requests per minute
-
-    // Get client information
-    const { rows: clients } = await sql`
-          SELECT * FROM users
-          WHERE id = ${clientId}
-        `;
-
-    if (clients.length === 0) {
-      throw new Error("Client not found");
-    }
-    const client = clients[0];
 
     const { date, time, duration } = appointmentData;
 
-    // Ensure appointmentDate is in "YYYY-MM-DD" format
-    const formattedDate = new Date(date).toISOString().split("T")[0];
+    // Get client information
+    const { rows: clientRows } = await sql`
+      SELECT 
+        id,
+        first_name AS "firstName",
+        last_name AS "lastName",
+        email,
+        phone_number AS "phoneNumber",
+        rmt_id AS "rmtId"
+      FROM users
+      WHERE id = ${clientId}
+    `;
 
-    // Convert appointmentTime to "HH:MM" (24-hour format)
+    if (clientRows.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    const client = clientRows[0];
+
+    // Format the date and time
+    const formattedDate = new Date(date).toISOString().split("T")[0];
     const startDateTime = new Date(`${date} ${time}`);
     const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
       hour12: false,
@@ -5593,20 +6485,41 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     });
 
     // Calculate end time
-    const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+    const endDateTime = new Date(
+      startDateTime.getTime() + Number.parseInt(duration) * 60000
+    );
     const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
       hour12: false,
       hour: "2-digit",
       minute: "2-digit",
     });
 
+    // Find an available appointment slot
+    const { rows: availableAppointments } = await sql`
+      SELECT id, rmt_location_id
+      FROM treatments
+      WHERE rmt_id = ${client.rmtId}
+      AND date = ${formattedDate}::date
+      AND appointment_window_start <= ${formattedStartTime}::time
+      AND appointment_window_end >= ${formattedEndTime}::time
+      AND status = 'available'
+      LIMIT 1
+    `;
+
+    if (availableAppointments.length === 0) {
+      throw new Error(
+        "No available appointment slot found for the selected time"
+      );
+    }
+
+    const appointmentId = availableAppointments[0].id;
+
     // Create Google Calendar event
-    const calendar = google.calendar({ version: "v3", auth: jwtClient });
     const event = {
-      summary: `[Booked] Mx: ${client.first_name} ${client.last_name}`,
-      location: "268 Shuter Street",
+      summary: `[Booked] Mx ${client.firstName} ${client.lastName}`,
+      location: "268 Shuter Street, Toronto, ON",
       description: `Email: ${client.email}\nPhone: ${
-        client.phone_number || "N/A"
+        client.phoneNumber || "N/A"
       }`,
       start: {
         dateTime: `${formattedDate}T${formattedStartTime}:00`,
@@ -5616,118 +6529,371 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
         dateTime: `${formattedDate}T${formattedEndTime}:00`,
         timeZone: "America/Toronto",
       },
-      colorId: "2", // "2" corresponds to "sage" in Google Calendar
+      colorId: "2", // Green for booked
     };
 
-    const calendarEvent = await calendar.events.insert({
+    const createdEvent = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
       resource: event,
     });
 
-    //     // Insert the treatment into the database
-    const { rows: insertedTreatment } = await sql`
-          INSERT INTO treatments (
-            rmt_id,
-            client_id,
-            date,
-            appointment_begins_at,
-            appointment_ends_at,
-            status,
-            location,
-            duration,
-            workplace,
-            google_calendar_event_id,
-            google_calendar_event_link,
-            consent_form,
-            consent_form_submitted_at,
-            created_at,
-            rmt_location_id
-          ) VALUES (
-            ${session.resultObj.id},
-            ${clientId},
-            ${formattedDate},
-            ${formattedStartTime},
-            ${formattedEndTime},
-            'booked',
-            '268 Shuter Street',
-            ${duration.toString()},
-            '',
-            ${calendarEvent.data.id},
-            ${calendarEvent.data.htmlLink},
-            NULL,
-            NULL,
-            NOW(),
-            '644fee83-bfeb-4418-935f-a094ad821766'
-          )
-          RETURNING id
-        `;
-
-    const appointmentId = insertedTreatment[0].id;
+    // Update the appointment
+    await sql`
+      UPDATE treatments
+      SET 
+        status = 'booked',
+        location = '268 Shuter Street, Toronto, ON',
+        appointment_begins_at = ${formattedStartTime}::time,
+        appointment_ends_at = ${formattedEndTime}::time,
+        client_id = ${clientId},
+        duration = ${Number.parseInt(duration)},
+        google_calendar_event_id = ${createdEvent.data.id},
+        google_calendar_event_link = ${createdEvent.data.htmlLink}
+      WHERE id = ${appointmentId}
+    `;
 
     // Log audit event
     try {
       await logAuditEvent({
         typeOfInfo: "appointment booking",
-        actionPerformed: "booked",
+        actionPerformed: "created by RMT",
         accessedById: session.resultObj.id,
         whoseInfoId: clientId,
-        reasonForAccess: "Provider scheduling appointment for patient",
+        reasonForAccess: "RMT booking appointment for client",
         additionalDetails: {
           accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
-          whoseInfoName: `${client.first_name} ${client.last_name}`,
+          whoseInfoName: `${client.firstName} ${client.lastName}`,
           appointmentId: appointmentId,
           appointmentDate: formattedDate,
           appointmentTime: formattedStartTime,
           duration: duration,
           accessMethod: "web application",
+          googleCalendarEventId: createdEvent.data.id,
         },
       });
     } catch (logError) {
-      // Just log the error but don't let it break the main function
       console.error("Error logging audit event:", logError);
     }
 
-    // Send email notification
-    const transporter = getEmailTransporter();
-    const confirmationLink = `${BASE_URL}/dashboard/patient`;
+    revalidatePath("/dashboard/rmt");
 
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: client.email,
-      subject: "Massage Appointment Confirmation",
-      text: `Hi ${client.first_name},
-
-    Your massage appointment has been booked for ${formattedDate} at ${formattedStartTime}.
-
-    Appointment Details:
-    - Date: ${formattedDate}
-    - Time: ${formattedStartTime}
-    - Duration: ${duration} minutes
-
-    Please login at ${confirmationLink} to complete the consent form and view your appointment details.
-
-    If you need to make any changes or have any questions, please use the website to make any changes, or reach out by text: 416-258-1230.
-    `,
-      html: `
-            <p>Hi ${client.first_name},</p>
-            <p>Your massage appointment has been booked for ${formattedDate} at ${formattedStartTime}.</p>
-            <h2>Appointment Details:</h2>
-            <ul>
-              <li>Date: ${formattedDate}</li>
-              <li>Time: ${formattedStartTime}</li>
-              <li>Duration: ${duration} minutes</li>
-            </ul>
-            <p>Please login at <a href="${confirmationLink}"> www.ciprmt.com</a> to complete the consent form and view your appointment details.</p>
-            <p>If you need to make any changes or have any questions, please contact Cip at 416-258-1230.</p>
-          `,
-    });
-
-    return { success: true, appointmentId: appointmentId };
+    return {
+      success: true,
+      message: "Appointment booked successfully!",
+      appointmentId: appointmentId,
+    };
   } catch (error) {
-    console.error("Error in bookAppointmentForClient:", error);
-    throw new Error("Failed to book appointment. Please try again.");
+    console.error("Error booking appointment for client:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to book appointment",
+    };
   }
 }
+
+// export async function getClientWithHealthHistory(userId) {
+//   // Mock implementation: Replace with actual data fetching and decryption
+//   const mockClient = {
+//     id: userId,
+//     first_name: "John",
+//     last_name: "Doe",
+//     email: "john.doe@example.com",
+//     phone_number: "123-456-7890",
+//     rmt_id: "some-rmt-id",
+//   };
+//   const mockHealthHistory = [
+//     {
+//       id: 1,
+//       condition: "Migraines",
+//       diagnosis_date: "2023-01-01",
+//       notes: "Frequent migraines",
+//     },
+//   ];
+//   return { client: mockClient, healthHistory: mockHealthHistory };
+// }
+
+// export async function getClientWithHealthHistory(clientId) {
+//   try {
+//     // Get the current user session
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     // Check if the user is an RMT
+//     if (session.resultObj.userType !== "rmt") {
+//       throw new Error("Unauthorized: Only RMTs can access client profiles");
+//     }
+
+//     // Get the user ID from the session, handling both MongoDB and PostgreSQL formats
+//     const userId = session.resultObj.id || session.resultObj._id;
+
+//     if (!userId) {
+//       console.error("User ID not found in session", session.resultObj);
+//       throw new Error("User ID not found in session");
+//     }
+
+//     // Apply rate limiting using the user ID as a string
+//     await checkRateLimit(String(userId), "getClientWithHealthHistory", 10, 60); // 10 requests per minute
+
+//     // Query the database for the client
+//     const { rows: userRows } = await sql`
+//       SELECT
+//         id,
+//         first_name AS "firstName",
+//         last_name AS "lastName",
+//         email,
+//         phone_number AS "phoneNumber",
+//         rmt_id AS "rmtId"
+//       FROM
+//         users
+//       WHERE
+//         id = ${clientId}
+//     `;
+
+//     if (userRows.length === 0) {
+//       throw new Error("Client not found");
+//     }
+
+//     const client = userRows[0];
+
+//     // Query health histories using the correct column names
+//     const { rows: healthHistories } = await sql`
+//       SELECT
+//         id,
+//         user_id AS "userId",
+//         created_at AS "createdAt",
+//         mongodb_id AS "mongodbId",
+//         encrypted_data AS "encryptedData"
+//       FROM
+//         health_histories
+//       WHERE
+//         user_id = ${clientId}
+//       ORDER BY
+//         created_at DESC
+//     `;
+
+//     // Process health histories if they're encrypted
+//     const processedHistories = healthHistories.map((history) => {
+//       // If we have encrypted data and a decryption function
+//       if (history.encryptedData && typeof decryptData === "function") {
+//         try {
+//           const decrypted = decryptData(history.encryptedData);
+//           if (decrypted) {
+//             // Merge the decrypted data with the history object
+//             return {
+//               ...history,
+//               ...decrypted, // Spread the decrypted data into the result
+//             };
+//           }
+//         } catch (decryptError) {
+//           console.error(
+//             `Error decrypting health history ${history.id}:`,
+//             decryptError
+//           );
+//         }
+//       }
+
+//       // If no encryption or decryption failed, return as is
+//       return history;
+//     });
+
+//     // Return both client profile and health histories
+//     return {
+//       client: {
+//         id: client.id,
+//         firstName: client.firstName,
+//         lastName: client.lastName,
+//         email: client.email,
+//         phoneNumber: client.phoneNumber || "N/A",
+//         rmtId: client.rmtId,
+//       },
+//       healthHistory: processedHistories,
+//     };
+//   } catch (error) {
+//     console.error("Error in getClientWithHealthHistory:", error);
+//     throw new Error("Failed to fetch client data. Please try again.");
+//   }
+// }
+
+// export async function bookAppointmentForClient(clientId, appointmentData) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     if (session.resultObj.userType !== "rmt") {
+//       throw new Error("Unauthorized: Only RMTs can book appointments");
+//     }
+
+//     await checkRateLimit(
+//       session.resultObj.id,
+//       "bookAppointmentForClient",
+//       5,
+//       60
+//     ); // 5 requests per minute
+
+//     // Get client information
+//     const { rows: clients } = await sql`
+//           SELECT * FROM users
+//           WHERE id = ${clientId}
+//         `;
+
+//     if (clients.length === 0) {
+//       throw new Error("Client not found");
+//     }
+//     const client = clients[0];
+
+//     const { date, time, duration } = appointmentData;
+
+//     // Ensure appointmentDate is in "YYYY-MM-DD" format
+//     const formattedDate = new Date(date).toISOString().split("T")[0];
+
+//     // Convert appointmentTime to "HH:MM" (24-hour format)
+//     const startDateTime = new Date(`${date} ${time}`);
+//     const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
+//       hour12: false,
+//       hour: "2-digit",
+//       minute: "2-digit",
+//     });
+
+//     // Calculate end time
+//     const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+//     const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+//       hour12: false,
+//       hour: "2-digit",
+//       minute: "2-digit",
+//     });
+
+//     // Create Google Calendar event
+//     const calendar = google.calendar({ version: "v3", auth: jwtClient });
+//     const event = {
+//       summary: `[Booked] Mx: ${client.first_name} ${client.last_name}`,
+//       location: "268 Shuter Street",
+//       description: `Email: ${client.email}\nPhone: ${
+//         client.phone_number || "N/A"
+//       }`,
+//       start: {
+//         dateTime: `${formattedDate}T${formattedStartTime}:00`,
+//         timeZone: "America/Toronto",
+//       },
+//       end: {
+//         dateTime: `${formattedDate}T${formattedEndTime}:00`,
+//         timeZone: "America/Toronto",
+//       },
+//       colorId: "2", // "2" corresponds to "sage" in Google Calendar
+//     };
+
+//     const calendarEvent = await calendar.events.insert({
+//       calendarId: GOOGLE_CALENDAR_ID,
+//       resource: event,
+//     });
+
+//     //     // Insert the treatment into the database
+//     const { rows: insertedTreatment } = await sql`
+//           INSERT INTO treatments (
+//             rmt_id,
+//             client_id,
+//             date,
+//             appointment_begins_at,
+//             appointment_ends_at,
+//             status,
+//             location,
+//             duration,
+//             workplace,
+//             google_calendar_event_id,
+//             google_calendar_event_link,
+//             consent_form,
+//             consent_form_submitted_at,
+//             created_at,
+//             rmt_location_id
+//           ) VALUES (
+//             ${session.resultObj.id},
+//             ${clientId},
+//             ${formattedDate},
+//             ${formattedStartTime},
+//             ${formattedEndTime},
+//             'booked',
+//             '268 Shuter Street',
+//             ${duration.toString()},
+//             '',
+//             ${calendarEvent.data.id},
+//             ${calendarEvent.data.htmlLink},
+//             NULL,
+//             NULL,
+//             NOW(),
+//             '644fee83-bfeb-4418-935f-a094ad821766'
+//           )
+//           RETURNING id
+//         `;
+
+//     const appointmentId = insertedTreatment[0].id;
+
+//     // Log audit event
+//     try {
+//       await logAuditEvent({
+//         typeOfInfo: "appointment booking",
+//         actionPerformed: "booked",
+//         accessedById: session.resultObj.id,
+//         whoseInfoId: clientId,
+//         reasonForAccess: "Provider scheduling appointment for patient",
+//         additionalDetails: {
+//           accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+//           whoseInfoName: `${client.first_name} ${client.last_name}`,
+//           appointmentId: appointmentId,
+//           appointmentDate: formattedDate,
+//           appointmentTime: formattedStartTime,
+//           duration: duration,
+//           accessMethod: "web application",
+//         },
+//       });
+//     } catch (logError) {
+//       // Just log the error but don't let it break the main function
+//       console.error("Error logging audit event:", logError);
+//     }
+
+//     // Send email notification
+//     const transporter = getEmailTransporter();
+//     const confirmationLink = `${BASE_URL}/dashboard/patient`;
+
+//     await transporter.sendMail({
+//       from: process.env.EMAIL_USER,
+//       to: client.email,
+//       subject: "Massage Appointment Confirmation",
+//       text: `Hi ${client.first_name},
+
+//     Your massage appointment has been booked for ${formattedDate} at ${formattedStartTime}.
+
+//     Appointment Details:
+//     - Date: ${formattedDate}
+//     - Time: ${formattedStartTime}
+//     - Duration: ${duration} minutes
+
+//     Please login at ${confirmationLink} to complete the consent form and view your appointment details.
+
+//     If you need to make any changes or have any questions, please use the website to make any changes, or reach out by text: 416-258-1230.
+//     `,
+//       html: `
+//             <p>Hi ${client.first_name},</p>
+//             <p>Your massage appointment has been booked for ${formattedDate} at ${formattedStartTime}.</p>
+//             <h2>Appointment Details:</h2>
+//             <ul>
+//               <li>Date: ${formattedDate}</li>
+//               <li>Time: ${formattedStartTime}</li>
+//               <li>Duration: ${duration} minutes</li>
+//             </ul>
+//             <p>Please login at <a href="${confirmationLink}"> www.ciprmt.com</a> to complete the consent form and view your appointment details.</p>
+//             <p>If you need to make any changes or have any questions, please contact Cip at 416-258-1230.</p>
+//           `,
+//     });
+
+//     return { success: true, appointmentId: appointmentId };
+//   } catch (error) {
+//     console.error("Error in bookAppointmentForClient:", error);
+//     throw new Error("Failed to book appointment. Please try again.");
+//   }
+// }
 
 export async function deleteAppointment(appointmentId) {
   try {
@@ -7033,93 +8199,265 @@ export async function consolidateUsers() {
 // FINANCIAL TRACKING
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-export async function getIncomeByMonth() {
+export async function getTreatmentsRevenueByMonth(year) {
   try {
-    const session = await getSession();
-    if (!session || !session.resultObj) {
-      throw new Error("Unauthorized: User not logged in");
-    }
-
-    const rmtId = session.resultObj.id;
-
-    // Query the incomes table for all income records
-    const { rows: incomeData } = await sql`
+    const queryResult = await sql`
       SELECT 
-        id,
-        date,
-        total_price as "totalPrice",
-        amount,
-        hst_amount as "hstAmount",
-        category,
-        details,
-        year
-      FROM incomes
-      WHERE rmt_id = ${rmtId}
-      ORDER BY date DESC
+        EXTRACT(MONTH FROM t.date) as month,
+        t.date,
+        t.price,
+        u.first_name,
+        u.last_name
+      FROM treatments t
+      LEFT JOIN users u ON t.client_id = u.id
+      WHERE EXTRACT(YEAR FROM t.date) = ${year}
+        AND t.status = 'completed'
+      ORDER BY t.date
     `;
-
-    // Organize data by year and month
-    const incomeByYear = {};
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear().toString();
-
-    // Initialize the current year if it doesn't exist
-    if (!incomeByYear[currentYear]) {
-      incomeByYear[currentYear] = {
-        months: {},
-        yearTotal: 0,
-        yearToDateTotal: 0,
-      };
-    }
-
-    // Process each income record
-    incomeData.forEach((income) => {
-      const date = new Date(income.date);
-      const year = date.getFullYear().toString();
-      const month = date.getMonth(); // 0-11
-
-      // Initialize year if it doesn't exist
-      if (!incomeByYear[year]) {
-        incomeByYear[year] = {
-          months: {},
-          yearTotal: 0,
-          yearToDateTotal: 0,
-        };
-      }
-
-      // Initialize month if it doesn't exist
-      if (!incomeByYear[year].months[month]) {
-        incomeByYear[year].months[month] = {
-          monthTotal: 0,
-          incomes: [],
-        };
-      }
-
-      // Add income to the appropriate month
-      incomeByYear[year].months[month].incomes.push(income);
-
-      // Update month total
-      incomeByYear[year].months[month].monthTotal += Number.parseFloat(
-        income.totalPrice || 0
-      );
-
-      // Update year total
-      incomeByYear[year].yearTotal += Number.parseFloat(income.totalPrice || 0);
-
-      // Update year-to-date total (for current year only)
-      if (year === currentYear && date <= currentDate) {
-        incomeByYear[year].yearToDateTotal += Number.parseFloat(
-          income.totalPrice || 0
-        );
-      }
-    });
-
-    return { success: true, data: incomeByYear };
+    const result = queryResult.rows || queryResult;
+    return { success: true, data: result };
   } catch (error) {
-    console.error("Error fetching income data:", error);
-    return { success: false, message: error.message };
+    console.error("Error fetching treatments revenue:", error);
+    return { success: false, error: "Failed to fetch treatments revenue" };
   }
 }
+
+export async function getAvailableYears() {
+  try {
+    const queryResult = await sql`
+      SELECT DISTINCT EXTRACT(YEAR FROM date)::integer as year
+      FROM treatments
+      WHERE date IS NOT NULL
+      ORDER BY year DESC
+    `;
+    const years = queryResult.rows || queryResult;
+
+    return { success: true, data: years.map((row) => row.year) };
+  } catch (error) {
+    console.error("Error fetching available years:", error);
+    return { success: true, data: [new Date().getFullYear()] };
+  }
+}
+
+export async function addAdditionalIncome(formData) {
+  try {
+    const amount = formData.get("amount");
+    const source = formData.get("source");
+    const details = formData.get("details") || null;
+    const date = formData.get("date");
+
+    const queryResult = await sql`
+      INSERT INTO additional_income (amount, source, details, date)
+      VALUES (${amount}, ${source}, ${details}, ${date})
+      RETURNING *
+    `;
+    const result = queryResult.rows || queryResult;
+    return { success: true, data: result[0] };
+  } catch (error) {
+    console.error("Error adding additional income:", error);
+    return { success: false, error: "Failed to add additional income" };
+  }
+}
+
+export async function getAdditionalIncomeByMonth(year) {
+  try {
+    const queryResult = await sql`
+      SELECT 
+        EXTRACT(MONTH FROM date) as month,
+        date,
+        amount,
+        source,
+        details
+      FROM additional_income
+      WHERE EXTRACT(YEAR FROM date) = ${year}
+      ORDER BY date
+    `;
+    const result = queryResult.rows || queryResult;
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error fetching additional income:", error);
+    return { success: false, error: "Failed to fetch additional income" };
+  }
+}
+
+export async function addExpense(formData) {
+  try {
+    const enteredAmount = Number.parseFloat(formData.get("amount"));
+    const category = formData.get("category");
+    const subcategory = formData.get("subcategory") || null;
+    const details = formData.get("details") || null;
+    const date = formData.get("date");
+    const includesHst = formData.get("includesHst") === "on";
+
+    let amount = enteredAmount;
+    let hst = 0;
+
+    // Special case: Rent has no HST
+    if (subcategory === "Rent") {
+      amount = enteredAmount;
+      hst = 0;
+    } else if (includesHst) {
+      // HST is included in the entered amount, extract it
+      // amount / 1.13 gives the base amount
+      // amount - (amount / 1.13) gives the HST portion
+      amount = enteredAmount / 1.13;
+      hst = enteredAmount - amount;
+    } else {
+      // HST is not included, calculate it separately
+      amount = enteredAmount;
+      hst = enteredAmount * 0.13;
+    }
+
+    const queryResult = await sql`
+      INSERT INTO expenses (amount, category, subcategory, details, date, hst)
+      VALUES (${amount}, ${category}, ${subcategory}, ${details}, ${date}, ${hst})
+      RETURNING *
+    `;
+    const result = queryResult.rows || queryResult;
+    return { success: true, data: result[0] };
+  } catch (error) {
+    console.error("Error adding expense:", error);
+    return { success: false, error: "Failed to add expense" };
+  }
+}
+
+export async function getExpensesByMonth(year) {
+  try {
+    const queryResult = await sql`
+      SELECT 
+        id,
+        EXTRACT(MONTH FROM date) as month,
+        date,
+        amount,
+        category,
+        subcategory,
+        details,
+        hst
+      FROM expenses
+      WHERE EXTRACT(YEAR FROM date) = ${year}
+      ORDER BY date
+    `;
+    const result = queryResult.rows || queryResult;
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error fetching expenses:", error);
+    return { success: false, error: "Failed to fetch expenses" };
+  }
+}
+
+export async function deleteExpense(expenseId) {
+  try {
+    await sql`
+      DELETE FROM expenses
+      WHERE id = ${expenseId}
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting expense:", error);
+    return { success: false, error: "Failed to delete expense" };
+  }
+}
+
+export async function deleteAdditionalIncome(incomeId) {
+  try {
+    await sql`
+      DELETE FROM additional_income
+      WHERE id = ${incomeId}
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting additional income:", error);
+    return { success: false, error: "Failed to delete additional income" };
+  }
+}
+
+// export async function getIncomeByMonth() {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     const rmtId = session.resultObj.id;
+
+//     // Query the incomes table for all income records
+//     const { rows: incomeData } = await sql`
+//       SELECT
+//         id,
+//         date,
+//         total_price as "totalPrice",
+//         amount,
+//         hst_amount as "hstAmount",
+//         category,
+//         details,
+//         year
+//       FROM incomes
+//       WHERE rmt_id = ${rmtId}
+//       ORDER BY date DESC
+//     `;
+
+//     // Organize data by year and month
+//     const incomeByYear = {};
+//     const currentDate = new Date();
+//     const currentYear = currentDate.getFullYear().toString();
+
+//     // Initialize the current year if it doesn't exist
+//     if (!incomeByYear[currentYear]) {
+//       incomeByYear[currentYear] = {
+//         months: {},
+//         yearTotal: 0,
+//         yearToDateTotal: 0,
+//       };
+//     }
+
+//     // Process each income record
+//     incomeData.forEach((income) => {
+//       const date = new Date(income.date);
+//       const year = date.getFullYear().toString();
+//       const month = date.getMonth(); // 0-11
+
+//       // Initialize year if it doesn't exist
+//       if (!incomeByYear[year]) {
+//         incomeByYear[year] = {
+//           months: {},
+//           yearTotal: 0,
+//           yearToDateTotal: 0,
+//         };
+//       }
+
+//       // Initialize month if it doesn't exist
+//       if (!incomeByYear[year].months[month]) {
+//         incomeByYear[year].months[month] = {
+//           monthTotal: 0,
+//           incomes: [],
+//         };
+//       }
+
+//       // Add income to the appropriate month
+//       incomeByYear[year].months[month].incomes.push(income);
+
+//       // Update month total
+//       incomeByYear[year].months[month].monthTotal += Number.parseFloat(
+//         income.totalPrice || 0
+//       );
+
+//       // Update year total
+//       incomeByYear[year].yearTotal += Number.parseFloat(income.totalPrice || 0);
+
+//       // Update year-to-date total (for current year only)
+//       if (year === currentYear && date <= currentDate) {
+//         incomeByYear[year].yearToDateTotal += Number.parseFloat(
+//           income.totalPrice || 0
+//         );
+//       }
+//     });
+
+//     return { success: true, data: incomeByYear };
+//   } catch (error) {
+//     console.error("Error fetching income data:", error);
+//     return { success: false, message: error.message };
+//   }
+// }
 
 /////////////////////////////////////////////////////////////////
 //RMT WEEKLY SCHEDULE
@@ -7442,6 +8780,804 @@ export async function sendEmailBlast(formData) {
     return {
       success: false,
       message: "Failed to send email campaign. Please try again.",
+    };
+  }
+}
+
+//////////////////////////////////////////////////////////////////
+//gift cards
+//////////////////////////////////////////////////////////////////
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+function generateGiftCardCode() {
+  const { randomBytes } = require("crypto");
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed ambiguous characters
+  let code = "";
+  const bytes = randomBytes(12);
+
+  for (let i = 0; i < 12; i++) {
+    code += chars[bytes[i] % chars.length];
+  }
+
+  // Format as XXXX-XXXX-XXXX
+  return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8, 12)}`;
+}
+
+// Generate PDF gift card with QR code
+async function generateGiftCardPDF(giftCardData) {
+  const pdfMake = require("pdfmake/build/pdfmake");
+  const pdfFonts = require("pdfmake/build/vfs_fonts");
+  const fs = require("fs");
+  const path = require("path");
+
+  pdfMake.vfs = pdfFonts.pdfMake.vfs;
+
+  const { code, recipient_name, duration, message, id, purchaser_first_name } =
+    giftCardData;
+
+  // Read and convert logo to base64
+  const logoPath = path.join(process.cwd(), "public", "images", "icon.png");
+  const logoBuffer = fs.readFileSync(logoPath);
+  const logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
+
+  const docDefinition = {
+    pageSize: "LETTER",
+    pageMargins: [40, 60, 40, 40],
+    content: [
+      {
+        stack: [
+          {
+            alignment: "center",
+            stack: [
+              recipient_name
+                ? {
+                    text: `To: ${recipient_name}`,
+                    fontSize: 18,
+                    bold: true,
+                    color: "#15803d",
+                    margin: [0, 0, 0, 16],
+                  }
+                : { text: "", margin: [0, 0, 0, 16] },
+              message
+                ? {
+                    text: `"${message}"`,
+                    fontSize: 16,
+                    italics: true,
+                    color: "#3d7f2f",
+                    margin: [0, 0, 0, 16],
+                  }
+                : { text: "", margin: [0, 0, 0, 16] },
+              {
+                text: `From: ${purchaser_first_name}`,
+                fontSize: 16,
+                bold: true,
+                color: "#15803d",
+              },
+            ],
+            fillColor: "#dcfce7",
+            padding: [24, 24, 24, 24],
+            border: [1, 1, 1, 1],
+            borderColor: "#15803d",
+            borderWidth: 1,
+          },
+        ],
+        margin: [0, 0, 0, 24],
+      },
+      {
+        table: {
+          widths: ["*"],
+          body: [
+            [
+              {
+                stack: [
+                  {
+                    text: "This gift card entitles you to a",
+                    fontSize: 13,
+                    color: "#1f2937",
+                    alignment: "center",
+                    margin: [0, 16, 0, 8],
+                  },
+                  {
+                    text: `${duration} Minute Massage`,
+                    fontSize: 28,
+                    bold: true,
+                    color: "#15803d",
+                    alignment: "center",
+                    margin: [0, 0, 0, 8],
+                  },
+                  {
+                    text: "from Cip de Vries, RMT",
+                    fontSize: 12,
+                    color: "#3d7f2f",
+                    alignment: "center",
+                    margin: [0, 0, 0, 20],
+                  },
+                  {
+                    text: "Your Gift Card Code:",
+                    fontSize: 12,
+                    bold: true,
+                    color: "#1f2937",
+                    alignment: "center",
+                    margin: [0, 0, 0, 8],
+                  },
+                  {
+                    text: code,
+                    fontSize: 20,
+                    bold: true,
+                    color: "#15803d",
+                    alignment: "center",
+                    margin: [0, 0, 0, 20],
+                    characterSpacing: 2,
+                  },
+                  {
+                    text: "How to Redeem Your Gift Card",
+                    fontSize: 14,
+                    bold: true,
+                    color: "#1f2937",
+                    alignment: "left",
+                    margin: [20, 0, 0, 12],
+                  },
+                  {
+                    ol: [
+                      {
+                        text: [
+                          { text: "Visit ", fontSize: 11, color: "#4b5563" },
+                          {
+                            text: "www.ciprmt.com/signup",
+                            fontSize: 11,
+                            bold: true,
+                            color: "#15803d",
+                          },
+                          {
+                            text: " to create a profile",
+                            fontSize: 11,
+                            color: "#4b5563",
+                          },
+                        ],
+                        margin: [0, 0, 0, 8],
+                      },
+                      {
+                        text: 'Once logged in, select "Book a Massage"',
+                        fontSize: 11,
+                        color: "#4b5563",
+                        margin: [0, 0, 0, 8],
+                      },
+                      {
+                        text: "Select the location and duration of massage your gift card entitles you to",
+                        fontSize: 11,
+                        color: "#4b5563",
+                        margin: [0, 0, 0, 8],
+                      },
+                      {
+                        text: "Find a time that works for your schedule",
+                        fontSize: 11,
+                        color: "#4b5563",
+                        margin: [0, 0, 0, 8],
+                      },
+                      {
+                        text: [
+                          {
+                            text: "At the confirmation screen, enter this code: ",
+                            fontSize: 11,
+                            color: "#4b5563",
+                          },
+                          {
+                            text: code,
+                            fontSize: 11,
+                            bold: true,
+                            color: "#15803d",
+                          },
+                        ],
+                        margin: [0, 0, 0, 8],
+                      },
+                      {
+                        text: 'Press "Yes, Book Appointment"',
+                        fontSize: 11,
+                        color: "#4b5563",
+                        margin: [0, 0, 0, 8],
+                      },
+                    ],
+                    margin: [20, 0, 0, 16],
+                  },
+                  {
+                    text: [
+                      {
+                        text: "Can't find a time? Email me at ",
+                        fontSize: 10,
+                        color: "#6b7280",
+                      },
+                      {
+                        text: "cipdevries@ciprmt.com",
+                        fontSize: 10,
+                        bold: true,
+                        color: "#15803d",
+                      },
+                      {
+                        text: " and I'll do my best to accommodate you.",
+                        fontSize: 10,
+                        color: "#6b7280",
+                      },
+                    ],
+                    alignment: "center",
+                    margin: [0, 0, 0, 16],
+                  },
+                ],
+                border: [1, 1, 1, 1],
+                borderColor: "#15803d",
+                borderWidth: 2,
+                padding: [25, 25, 30, 25],
+                fillColor: "#dcfce7",
+              },
+            ],
+          ],
+        },
+        layout: "noBorders",
+        margin: [0, 0, 0, 20],
+      },
+      // Logo and contact info section
+      {
+        columns: [
+          {
+            image: logoBase64,
+            width: 40,
+            margin: [0, 0, 20, 0],
+          },
+          {
+            stack: [
+              {
+                text: "Cip de Vries, RMT",
+                fontSize: 12,
+                bold: true,
+                color: "#1f2937",
+                margin: [0, 0, 0, 4],
+              },
+              {
+                text: "268 Shuter Street\nToronto, ON",
+                fontSize: 10,
+                color: "#4b5563",
+                margin: [0, 0, 0, 4],
+              },
+              {
+                text: "www.ciprmt.com",
+                fontSize: 10,
+                color: "#15803d",
+                bold: true,
+              },
+            ],
+            width: "*",
+          },
+        ],
+      },
+    ],
+  };
+
+  return new Promise((resolve, reject) => {
+    const pdfDoc = pdfMake.createPdf(docDefinition);
+    pdfDoc.getBuffer((buffer) => {
+      resolve(buffer);
+    });
+  });
+}
+
+// Generate receipt PDF for gift card purchase
+async function generateReceiptPDF(purchaseData) {
+  const pdfMake = require("pdfmake/build/pdfmake");
+  const pdfFonts = require("pdfmake/build/vfs_fonts");
+  const fs = require("fs");
+  const path = require("path");
+
+  pdfMake.vfs = pdfFonts.pdfMake.vfs;
+
+  const {
+    code,
+    recipient_name,
+    duration,
+    price,
+    purchaser_first_name,
+    purchaser_email,
+    purchase_date,
+    stripe_payment_intent_id,
+  } = purchaseData;
+
+  // Calculate base price and HST (13%)
+  const basePrice = price / 1.13;
+  const hst = price - basePrice;
+
+  // Read and convert logos to base64
+  const logoPath = path.join(process.cwd(), "public", "images", "icon.png");
+  const logoBuffer = fs.readFileSync(logoPath);
+  const logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
+
+  const stripeLogoPath = path.join(
+    process.cwd(),
+    "public",
+    "images",
+    "stripe-logo.png"
+  );
+  const stripeLogoBuffer = fs.readFileSync(stripeLogoPath);
+  const stripeLogoBase64 = `data:image/png;base64,${stripeLogoBuffer.toString(
+    "base64"
+  )}`;
+
+  const docDefinition = {
+    pageSize: "LETTER",
+    pageMargins: [40, 60, 40, 40],
+    content: [
+      // Header with logo and business info
+      {
+        columns: [
+          {
+            image: logoBase64,
+            width: 50,
+            margin: [0, 0, 20, 0],
+          },
+          {
+            stack: [
+              {
+                text: "Cip de Vries, RMT",
+                fontSize: 18,
+                bold: true,
+                color: "#1f2937",
+              },
+              {
+                text: "268 Shuter Street\nToronto, ON\nwww.ciprmt.com",
+                fontSize: 10,
+                color: "#4b5563",
+                margin: [0, 4, 0, 0],
+              },
+            ],
+            width: "*",
+          },
+        ],
+        margin: [0, 0, 0, 30],
+      },
+
+      // Receipt title
+      {
+        text: "RECEIPT",
+        fontSize: 24,
+        bold: true,
+        color: "#15803d",
+        alignment: "center",
+        margin: [0, 0, 0, 20],
+      },
+
+      // Purchase details
+      {
+        table: {
+          widths: ["*", "auto"],
+          body: [
+            [
+              {
+                text: "Date:",
+                bold: true,
+                color: "#1f2937",
+                border: [false, false, false, false],
+              },
+              {
+                text: new Date(purchase_date).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                }),
+                color: "#4b5563",
+                border: [false, false, false, false],
+              },
+            ],
+            [
+              {
+                text: "Receipt #:",
+                bold: true,
+                color: "#1f2937",
+                border: [false, false, false, false],
+              },
+              {
+                text: stripe_payment_intent_id,
+                color: "#4b5563",
+                border: [false, false, false, false],
+              },
+            ],
+            [
+              {
+                text: "Customer:",
+                bold: true,
+                color: "#1f2937",
+                border: [false, false, false, false],
+              },
+              {
+                text: `${purchaser_first_name}\n${purchaser_email}`,
+                color: "#4b5563",
+                border: [false, false, false, false],
+              },
+            ],
+          ],
+        },
+        margin: [0, 0, 0, 30],
+      },
+
+      // Items purchased
+      {
+        text: "Items Purchased",
+        fontSize: 14,
+        bold: true,
+        color: "#1f2937",
+        margin: [0, 0, 0, 10],
+      },
+      {
+        table: {
+          widths: ["*", "auto"],
+          body: [
+            [
+              {
+                text: `Gift Card - ${duration} Minute Massage`,
+                fontSize: 12,
+                color: "#1f2937",
+                border: [false, false, false, true],
+                borderColor: ["#e5e7eb", "#e5e7eb", "#e5e7eb", "#e5e7eb"],
+              },
+              {
+                text: `$${basePrice.toFixed(2)}`,
+                fontSize: 12,
+                color: "#1f2937",
+                alignment: "right",
+                border: [false, false, false, true],
+                borderColor: ["#e5e7eb", "#e5e7eb", "#e5e7eb", "#e5e7eb"],
+              },
+            ],
+            [
+              {
+                text: recipient_name
+                  ? `Recipient: ${recipient_name}`
+                  : "Recipient: Not specified",
+                fontSize: 10,
+                color: "#6b7280",
+                italics: true,
+                border: [false, false, false, true],
+                borderColor: ["#e5e7eb", "#e5e7eb", "#e5e7eb", "#e5e7eb"],
+              },
+              {
+                text: "",
+                border: [false, false, false, true],
+                borderColor: ["#e5e7eb", "#e5e7eb", "#e5e7eb", "#e5e7eb"],
+              },
+            ],
+            [
+              {
+                text: `Gift Card Code: ${code}`,
+                fontSize: 10,
+                color: "#15803d",
+                bold: true,
+                border: [false, false, false, true],
+                borderColor: ["#e5e7eb", "#e5e7eb", "#e5e7eb", "#e5e7eb"],
+              },
+              {
+                text: "",
+                border: [false, false, false, true],
+                borderColor: ["#e5e7eb", "#e5e7eb", "#e5e7eb", "#e5e7eb"],
+              },
+            ],
+          ],
+        },
+        margin: [0, 0, 0, 20],
+      },
+
+      // Price breakdown
+      {
+        table: {
+          widths: ["*", "auto"],
+          body: [
+            [
+              {
+                text: "Subtotal:",
+                color: "#4b5563",
+                border: [false, false, false, false],
+              },
+              {
+                text: `$${basePrice.toFixed(2)}`,
+                color: "#4b5563",
+                alignment: "right",
+                border: [false, false, false, false],
+              },
+            ],
+            [
+              {
+                text: "HST (13%):",
+                color: "#4b5563",
+                border: [false, false, false, false],
+              },
+              {
+                text: `$${hst.toFixed(2)}`,
+                color: "#4b5563",
+                alignment: "right",
+                border: [false, false, false, false],
+              },
+            ],
+            [
+              {
+                text: "Total:",
+                bold: true,
+                fontSize: 14,
+                color: "#1f2937",
+                border: [false, true, false, false],
+                borderColor: ["#000000", "#000000", "#000000", "#000000"],
+                margin: [0, 8, 0, 0],
+              },
+              {
+                text: `$${price.toFixed(2)}`,
+                bold: true,
+                fontSize: 14,
+                color: "#15803d",
+                alignment: "right",
+                border: [false, true, false, false],
+                borderColor: ["#000000", "#000000", "#000000", "#000000"],
+                margin: [0, 8, 0, 0],
+              },
+            ],
+          ],
+        },
+        margin: [0, 0, 0, 30],
+      },
+
+      // Payment method
+      {
+        stack: [
+          {
+            text: "Payment Method",
+            fontSize: 12,
+            bold: true,
+            color: "#1f2937",
+            margin: [0, 0, 0, 8],
+          },
+          {
+            columns: [
+              {
+                text: "Credit Card",
+                fontSize: 10,
+                color: "#4b5563",
+              },
+              {
+                image: stripeLogoBase64,
+                width: 50,
+                alignment: "right",
+              },
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 30],
+      },
+
+      // Footer
+      {
+        text: "Thank you for your purchase!",
+        fontSize: 12,
+        color: "#15803d",
+        bold: true,
+        alignment: "center",
+        margin: [0, 20, 0, 10],
+      },
+      {
+        text: "The gift card PDF has been sent in a separate email.",
+        fontSize: 10,
+        color: "#6b7280",
+        alignment: "center",
+      },
+    ],
+  };
+
+  return new Promise((resolve, reject) => {
+    const pdfDoc = pdfMake.createPdf(docDefinition);
+    pdfDoc.getBuffer((buffer) => {
+      resolve(buffer);
+    });
+  });
+}
+
+// Main server action to purchase gift card
+export async function purchaseGiftCard(data) {
+  try {
+    const {
+      email,
+      purchaserFirstName,
+      recipientName,
+      message,
+      duration,
+      price,
+      paymentMethodId,
+    } = data;
+
+    // Validate duration
+    if (![60, 75, 90].includes(duration)) {
+      return {
+        success: false,
+        message: "Invalid massage duration selected",
+      };
+    }
+
+    // Generate unique gift card code
+    let code;
+    let isUnique = false;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) {
+      code = generateGiftCardCode();
+      const { rows } = await sql`
+        SELECT id FROM gift_cards WHERE code = ${code}
+      `;
+      if (rows.length === 0) {
+        isUnique = true;
+      }
+      attempts++;
+    }
+
+    if (!isUnique) {
+      return {
+        success: false,
+        message: "Failed to generate unique gift card code. Please try again.",
+      };
+    }
+
+    // Create Stripe payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(price * 100), // Convert to cents
+      currency: "cad",
+      payment_method: paymentMethodId,
+      confirm: true,
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: "never",
+      },
+      description: `Gift Card - ${duration} min massage`,
+      receipt_email: email,
+      metadata: {
+        type: "gift_card",
+        duration: duration.toString(),
+        code: code,
+      },
+    });
+
+    // Check if payment requires additional action (3D Secure)
+    if (paymentIntent.status === "requires_action") {
+      return {
+        success: false,
+        requiresAction: true,
+        clientSecret: paymentIntent.client_secret,
+      };
+    }
+
+    // Check if payment was successful
+    if (paymentIntent.status !== "succeeded") {
+      return {
+        success: false,
+        message: "Payment failed. Please try again.",
+      };
+    }
+
+    // Insert gift card into database
+    const { rows } = await sql`
+      INSERT INTO gift_cards (
+        code,
+        purchaser_email,
+        purchaser_first_name,
+        recipient_name,
+        message,
+        duration,
+        price,
+        stripe_payment_intent_id
+      ) VALUES (
+        ${code},
+        ${email},
+        ${purchaserFirstName},
+        ${recipientName},
+        ${message},
+        ${duration},
+        ${price},
+        ${paymentIntent.id}
+      )
+      RETURNING id, code, recipient_name, message, duration, purchaser_first_name, created_at
+    `;
+
+    if (rows.length === 0) {
+      // Refund the payment if database insert fails
+      await stripe.refunds.create({
+        payment_intent: paymentIntent.id,
+      });
+
+      return {
+        success: false,
+        message: "Failed to create gift card. Payment has been refunded.",
+      };
+    }
+
+    const giftCard = rows[0];
+
+    const giftCardPdfBuffer = await generateGiftCardPDF(giftCard);
+    const receiptPdfBuffer = await generateReceiptPDF({
+      code: giftCard.code,
+      recipient_name: giftCard.recipient_name,
+      duration: giftCard.duration,
+      price: price,
+      purchaser_first_name: giftCard.purchaser_first_name,
+      purchaser_email: email,
+      purchase_date: giftCard.created_at,
+      stripe_payment_intent_id: paymentIntent.id,
+    });
+
+    const transporter = getEmailTransporter();
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Your Massage Gift Card & Receipt",
+      text: `Thank you for your purchase! Your gift card code is: ${code}\n\nPlease find your gift card and receipt PDFs attached.\n\nTo redeem, visit ${BASE_URL}/signup to create an account and book your appointment.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #15803d; text-align: center;">Your Massage Gift Card</h1>
+          <p>Thank you for your purchase!</p>
+          <p>Your gift card code is: <strong style="font-size: 18px; color: #15803d;">${code}</strong></p>
+          <p>Please find your gift card and receipt PDFs attached. You can print them or forward the gift card to the recipient.</p>
+          <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0;">How to Redeem:</h3>
+            <ol>
+              <li>Visit <a href="${BASE_URL}/signup" style="color: #15803d;">ciprmt.com/signup</a> to create an account</li>
+              <li>Once logged in, select "Book a Massage"</li>
+              <li>Find a time that works for you</li>
+              <li>Enter the gift card code at checkout</li>
+            </ol>
+          </div>
+          <p style="font-size: 12px; color: #6b7280; margin-top: 30px;">
+            If you have any questions, please contact us at cipdevries@ciprmt.com
+          </p>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `gift-card-${code}.pdf`,
+          content: giftCardPdfBuffer,
+          contentType: "application/pdf",
+        },
+        {
+          filename: `receipt-${code}.pdf`,
+          content: receiptPdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+
+    // Send notification to admin
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: "New Gift Card Purchase",
+      text: `A new gift card has been purchased:\n\nCode: ${code}\nDuration: ${duration} minutes\nPrice: $${price}\nPurchaser: ${email}\nRecipient: ${
+        recipientName || "Not specified"
+      }`,
+      html: `
+        <h2>New Gift Card Purchase</h2>
+        <p>A new gift card has been purchased:</p>
+        <ul>
+          <li><strong>Code:</strong> ${code}</li>
+          <li><strong>Duration:</strong> ${duration} minutes</li>
+          <li><strong>Price:</strong> $${price}</li>
+          <li><strong>Purchaser:</strong> ${email}</li>
+          <li><strong>Recipient:</strong> ${
+            recipientName || "Not specified"
+          }</li>
+        </ul>
+      `,
+    });
+
+    return {
+      success: true,
+      message: "Gift card purchased successfully!",
+      giftCardId: giftCard.id,
+    };
+  } catch (error) {
+    console.error("Error purchasing gift card:", error);
+    return {
+      success: false,
+      message:
+        error.message || "An error occurred while processing your purchase",
     };
   }
 }

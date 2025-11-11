@@ -13,8 +13,8 @@ const NotesToComplete = ({ appointments }) => {
     (appointment) => !appointment.encryptedTreatmentNotes
   );
 
-  const handleAppointmentClick = (id) => {
-    router.push(`/dashboard/rmt/treatments/${id}`);
+  const handleAppointmentClick = (clientId) => {
+    router.push(`/dashboard/rmt/client-profile/${clientId}`);
   };
 
   const handleDNSClick = async (e, id) => {
@@ -83,8 +83,8 @@ const NotesToComplete = ({ appointments }) => {
           {notesToComplete.map((appointment) => (
             <div
               key={appointment.id}
-              className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
-              onClick={() => handleAppointmentClick(appointment.id)}
+              className="bg-yellow-50 shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
+              onClick={() => handleAppointmentClick(appointment.clientId)}
             >
               <div>
                 <h3 className="font-semibold text-lg mb-2 text-gray-800">

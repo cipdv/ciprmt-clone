@@ -26,6 +26,7 @@ export async function middleware(request) {
     ![
       "/test-page",
       "/",
+      "/signup",
       "/auth/sign-in",
       "/auth/sign-up",
       "/password-reset",
@@ -36,6 +37,8 @@ export async function middleware(request) {
       /^\/workplace-wellness\/.*$/,
       /^\/password-reset\/set-new-password\/.*$/,
       /^\/unsubscribe\/.*$/,
+      /^\/gift\/.*$/,
+      /^\/gift$/,
     ].some((path) =>
       typeof path === "string"
         ? path === request.nextUrl.pathname
@@ -53,7 +56,8 @@ export async function middleware(request) {
 
   if (
     currentUser &&
-    !request.nextUrl.pathname.startsWith(dashboardPaths[userType])
+    !request.nextUrl.pathname.startsWith(dashboardPaths[userType]) &&
+    !request.nextUrl.pathname.startsWith("/gift")
   ) {
     return NextResponse.redirect(
       new URL(dashboardPaths[userType], request.url)
@@ -66,8 +70,6 @@ export async function middleware(request) {
 export const config = {
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/(api|trpc)(.*)"],
 };
-
-// good to know: middleware can get ip address from request.headers.get('x-real-ip')
 
 // import {
 //   updateSession,
@@ -82,7 +84,8 @@ export const config = {
 //     return NextResponse.next();
 //   }
 
-//   const currentUser = request?.cookies?.get("session")?.value;
+//   const cookieStore = await request.cookies;
+//   const currentUser = cookieStore.get("session")?.value;
 
 //   let currentUserObj = null;
 //   if (currentUser) {
@@ -103,9 +106,9 @@ export const config = {
 //       "/faq",
 //       "/reset-password",
 //       "/survey",
-//       "/unsubscribe",
-//       new RegExp("^/workplace-wellness/.*$"),
-//       new RegExp("^/password-reset/set-new-password/.*$"),
+//       /^\/workplace-wellness\/.*$/,
+//       /^\/password-reset\/set-new-password\/.*$/,
+//       /^\/unsubscribe\/.*$/,
 //     ].some((path) =>
 //       typeof path === "string"
 //         ? path === request.nextUrl.pathname
@@ -136,5 +139,3 @@ export const config = {
 // export const config = {
 //   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/(api|trpc)(.*)"],
 // };
-
-// //good to know: middleware can get ip address from request.headers.get('x-real-ip')

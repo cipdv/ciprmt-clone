@@ -1,28 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { addExpense } from "@/app/_actions";
+import { addAdditionalIncome } from "@/app/_actions";
 
-const EXPENSE_CATEGORIES = [
-  "advertising",
-  "other",
-  "travel",
-  "licences and business taxes",
-  "insurance",
-  "interest paid",
-  "repairs and maintenance",
-  "other supplies",
-  "office supplies",
-  "admin fees",
-  "other expenses",
-  "rent",
-  "cell phone",
-  "internet",
-  "heat",
-  "electricity",
-];
+const INCOME_CATEGORIES = ["work", "other"];
 
-export default function AddExpense({ rmtId, onSuccess }) {
+export default function AddIncome({ rmtId, onSuccess }) {
   const [date, setDate] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
@@ -36,7 +19,7 @@ export default function AddExpense({ rmtId, onSuccess }) {
     setMessage(null);
 
     try {
-      const result = await addExpense({
+      const result = await addAdditionalIncome({
         rmtId,
         date,
         amount: Number.parseFloat(amount),
@@ -45,7 +28,7 @@ export default function AddExpense({ rmtId, onSuccess }) {
       });
 
       if (result.success) {
-        setMessage({ type: "success", text: "Expense added successfully!" });
+        setMessage({ type: "success", text: "Income added successfully!" });
         setDate("");
         setAmount("");
         setCategory("");
@@ -63,7 +46,7 @@ export default function AddExpense({ rmtId, onSuccess }) {
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold mb-4">Add Expense</h2>
+      <h2 className="text-2xl font-bold mb-4">Add Income</h2>
 
       {message && (
         <div
@@ -80,57 +63,57 @@ export default function AddExpense({ rmtId, onSuccess }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label
-            htmlFor="expense-date"
+            htmlFor="income-date"
             className="block text-sm font-medium text-gray-700 mb-1"
           >
             Date
           </label>
           <input
             type="date"
-            id="expense-date"
+            id="income-date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
             required
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
           />
         </div>
 
         <div>
           <label
-            htmlFor="expense-amount"
+            htmlFor="income-amount"
             className="block text-sm font-medium text-gray-700 mb-1"
           >
             Amount ($)
           </label>
           <input
             type="number"
-            id="expense-amount"
+            id="income-amount"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             step="0.01"
             min="0"
             required
             placeholder="0.00"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
           />
         </div>
 
         <div>
           <label
-            htmlFor="expense-category"
+            htmlFor="income-category"
             className="block text-sm font-medium text-gray-700 mb-1"
           >
             Category
           </label>
           <select
-            id="expense-category"
+            id="income-category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             required
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
           >
             <option value="">Select a category</option>
-            {EXPENSE_CATEGORIES.map((cat) => (
+            {INCOME_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
                 {cat.charAt(0).toUpperCase() + cat.slice(1)}
               </option>
@@ -140,27 +123,27 @@ export default function AddExpense({ rmtId, onSuccess }) {
 
         <div>
           <label
-            htmlFor="expense-notes"
+            htmlFor="income-notes"
             className="block text-sm font-medium text-gray-700 mb-1"
           >
             Notes
           </label>
           <textarea
-            id="expense-notes"
+            id="income-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            placeholder="What was this expense for?"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            placeholder="Where did this income come from?"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
           />
         </div>
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isSubmitting ? "Adding..." : "Add Expense"}
+          {isSubmitting ? "Adding..." : "Add Income"}
         </button>
       </form>
     </div>

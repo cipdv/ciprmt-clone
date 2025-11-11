@@ -23,11 +23,11 @@ export default async function Dashboard() {
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <section className="space-y-8">
         <SearchBar />
+        <Messages messages={messages} />
 
         <AppointmentRequests
           requestedAppointments={appointmentData.requested || []}
         />
-        <Messages messages={messages} />
         <Calendar appointments={appointmentData.upcoming || []} />
         <NotesToComplete appointments={appointmentData.past || []} />
         {/* <IncomeTracker /> */}
