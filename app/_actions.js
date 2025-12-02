@@ -6504,30 +6504,33 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     const client = clientRows[0];
 
     // ---------------------
-    // 3. PARSE DATE/TIME (LOCAL TORONTO TIME – NO UTC SHIFTING)
+    // 3. FORMAT DATE & TIME (OLD WORKING METHOD)
     // ---------------------
-    const [year, month, day] = date.split("-").map(Number);
-    const [hour, minute] = time.split(":").map(Number);
 
-    // Construct local datetime safely
-    const startDateTime = new Date(year, month - 1, day, hour, minute, 0);
+    // Use browser-style parsing so deployment servers behave correctly
+    const startDateTime = new Date(`${date}T${time}:00`);
+
+    const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    // Calculate end time
     const endDateTime = new Date(
       startDateTime.getTime() + Number(duration) * 60000
     );
 
-    // Format times in Toronto timezone w/o UTC
-    const formatTime = (d) =>
-      d.toLocaleTimeString("en-CA", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZone: "America/Toronto",
-      });
+    const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
 
-    const formattedStartTime = formatTime(startDateTime);
-    const formattedEndTime = formatTime(endDateTime);
-    const formattedDate = date; // already yyyy-mm-dd
+    // Format date
+    const formattedDate = new Date(date).toISOString().split("T")[0];
 
     // ---------------------
     // 4. PREVENT OVERLAPPING BOOKINGS
@@ -6640,7 +6643,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     });
 
     // ---------------------
-    // 7. UPDATE APPOINTMENT WITH GOOGLE EVENT INFO
+    // 7. UPDATE DB WITH GOOGLE EVENT INFO
     // ---------------------
     await sql`
       UPDATE treatments
@@ -6670,9 +6673,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
           googleCalendarEventId: createdEvent.data.id,
         },
       });
-    } catch (logErr) {
-      console.warn("Audit log failed:", logErr);
-    }
+    } catch (_) {}
 
     revalidatePath("/dashboard/rmt");
 
