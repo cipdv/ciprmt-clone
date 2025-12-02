@@ -52,7 +52,7 @@ export default function BookAppointmentModal({ isOpen, onClose, clientId }) {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">
-            Book Appointment
+            Book Appointmentfdsfa
           </h2>
           <button
             onClick={onClose}

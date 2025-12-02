@@ -1148,13 +1148,9 @@ export async function getDataForReschedulePage(appointmentId, userId) {
     if (appointment.can_book_at_ids && appointment.can_book_at_ids.length > 0) {
       // Use the array directly if it's populated
       canBookAtIds = appointment.can_book_at_ids;
-      console.log("Using can_book_at_ids from user table:", canBookAtIds);
     } else {
       // Otherwise, fetch from the junction table
-      console.log(
-        "Fetching can_book_at_ids from junction table for client:",
-        clientId
-      );
+
       const { rows: userLocations } = await sql`
         SELECT rmt_location_id
         FROM user_rmt_locations
@@ -1162,15 +1158,10 @@ export async function getDataForReschedulePage(appointmentId, userId) {
       `;
 
       canBookAtIds = userLocations.map((loc) => loc.rmt_location_id);
-      console.log("Fetched can_book_at_ids from junction table:", canBookAtIds);
     }
 
     // If canBookAtIds is still empty, get all locations for this RMT as a fallback
     if (canBookAtIds.length === 0) {
-      console.log(
-        "No can_book_at_ids found, fetching all locations for RMT:",
-        rmtId
-      );
       const { rows: allRmtLocations } = await sql`
         SELECT id
         FROM rmt_locations
@@ -1178,7 +1169,6 @@ export async function getDataForReschedulePage(appointmentId, userId) {
       `;
 
       canBookAtIds = allRmtLocations.map((loc) => loc.id);
-      console.log("Using all RMT locations as fallback:", canBookAtIds);
     }
 
     // Get all RMT locations that the user can book at
@@ -1861,11 +1851,6 @@ export async function bookAppointment({
       resource: event,
     });
 
-    console.log("Google Calendar event created:", {
-      id: createdEvent.data.id,
-      link: createdEvent.data.htmlLink,
-    });
-
     const updateResult = await sql`
       UPDATE treatments
       SET 
@@ -1927,7 +1912,6 @@ export async function bookAppointment({
     }
 
     // Send email notification
-    console.log("Sending email notification");
     const transporter = getEmailTransporter();
     const confirmationLink = `${BASE_URL}/dashboard/rmt/confirm-appointment/${appointmentId}`;
 
@@ -4507,10 +4491,6 @@ export async function getDashboardAppointments(rmtId) {
       .toString()
       .padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}:00`;
 
-    console.log("[v0] Current Toronto time:", torontoTime);
-    console.log("[v0] Current date string:", currentDateString);
-    console.log("[v0] Current time string:", currentTimeString);
-
     // Query all treatments for this RMT with status "requested" or "booked"
     const { rows: treatments } = await sql`
       SELECT
@@ -6207,7 +6187,7 @@ export async function searchUsers(query) {
       users = result.rows;
 
       if (users.length > 0) {
-        console.log("First result sample:", users[0]);
+        console.log("First result sample:");
       } else {
         console.log("No search results found");
       }
@@ -6233,8 +6213,6 @@ export async function searchUsers(query) {
 
 export async function getClientWithHealthHistory(userId) {
   try {
-    console.log("[v0] Fetching client with health history for userId:", userId);
-
     // Get client information
     const { rows: clientRows } = await sql`
       SELECT
@@ -6256,7 +6234,6 @@ export async function getClientWithHealthHistory(userId) {
     }
 
     const client = clientRows[0];
-    console.log("[v0] Client found:", client.firstName, client.lastName);
 
     // Get health history
     const { rows: healthHistoryRows } = await sql`
@@ -6270,21 +6247,11 @@ export async function getClientWithHealthHistory(userId) {
       ORDER BY created_at DESC
     `;
 
-    console.log("[v0] Health history rows found:", healthHistoryRows.length);
-    console.log(
-      "[v0] Health history raw data:",
-      JSON.stringify(healthHistoryRows, null, 2)
-    );
-
     const healthHistory = healthHistoryRows.map((record) => {
       let decryptedData = null;
       if (record.encryptedData) {
         try {
           decryptedData = decryptData(record.encryptedData);
-          console.log(
-            "[v0] Decrypted health history data:",
-            JSON.stringify(decryptedData, null, 2)
-          );
         } catch (error) {
           console.error(
             `[v0] Error decrypting health history ${record.id}:`,
@@ -6304,11 +6271,6 @@ export async function getClientWithHealthHistory(userId) {
         ...(decryptedData || {}),
       };
     });
-
-    console.log(
-      "[v0] Processed health history:",
-      JSON.stringify(healthHistory, null, 2)
-    );
 
     return { client, healthHistory };
   } catch (error) {
@@ -6363,17 +6325,11 @@ export async function getClientProfileData(userId) {
     // Get treatment plans for this client
     const treatmentPlans = await getTreatmentPlansForUser(userId);
 
-    console.log(
-      "[v0] getClientProfileData - treatments sample:",
-      treatments.slice(0, 2)
-    );
-    console.log("[v0] getClientProfileData - treatmentPlans:", treatmentPlans);
-
     return {
       success: true,
       client: clientData.client,
       healthHistory: clientData.healthHistory,
-      treatments,
+      treatments, // ← NO DECRYPTION, original DB values
       treatmentPlans: treatmentPlans.success ? treatmentPlans.data : [],
     };
   } catch (error) {
@@ -6384,6 +6340,74 @@ export async function getClientProfileData(userId) {
     };
   }
 }
+
+// export async function getClientProfileData(userId) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     // Check if the user is an RMT
+//     if (session.resultObj.userType !== "rmt") {
+//       throw new Error("Unauthorized: Only RMTs can access client profiles");
+//     }
+
+//     // Get client information with health history
+//     const clientData = await getClientWithHealthHistory(userId);
+
+//     // Get all treatments for this client
+//     const { rows: treatments } = await sql`
+//       SELECT
+//         id,
+//         client_id AS "clientId",
+//         rmt_id AS "rmtId",
+//         date AS "appointmentDate",
+//         appointment_begins_at AS "appointmentBeginsAt",
+//         appointment_ends_at AS "appointmentEndsAt",
+//         status,
+//         location,
+//         duration,
+//         workplace,
+//         price,
+//         payment_type AS "paymentType",
+//         encrypted_treatment_notes AS "treatmentNotes",
+//         treatment_plan_id AS "treatmentPlanId",
+//         google_calendar_event_id AS "googleCalendarEventId",
+//         google_calendar_event_link AS "googleCalendarEventLink",
+//         created_at AS "createdAt",
+//         consent_form AS "consentForm",
+//         consent_form_submitted_at AS "consentFormSubmittedAt",
+//         code
+//       FROM treatments
+//       WHERE client_id = ${userId}
+//       ORDER BY date DESC, appointment_begins_at DESC
+//     `;
+
+//     // Get treatment plans for this client
+//     const treatmentPlans = await getTreatmentPlansForUser(userId);
+
+//     console.log(
+//       "[v0] getClientProfileData - treatments sample:",
+//       treatments.slice(0, 2)
+//     );
+//     console.log("[v0] getClientProfileData - treatmentPlans:", treatmentPlans);
+
+//     return {
+//       success: true,
+//       client: clientData.client,
+//       healthHistory: clientData.healthHistory,
+//       treatments,
+//       treatmentPlans: treatmentPlans.success ? treatmentPlans.data : [],
+//     };
+//   } catch (error) {
+//     console.error("Error fetching client profile data:", error);
+//     return {
+//       success: false,
+//       message: "Failed to fetch client profile data: " + error.message,
+//     };
+//   }
+// }
 
 export async function getTreatmentPlansForUser(userId) {
   try {
@@ -6442,12 +6466,13 @@ export async function getTreatmentPlansForUser(userId) {
 
 export async function bookAppointmentForClient(clientId, appointmentData) {
   try {
+    // ---------------------
+    // 1. AUTHENTICATION
+    // ---------------------
     const session = await getSession();
-    if (!session || !session.resultObj) {
+    if (!session?.resultObj) {
       throw new Error("Unauthorized: User not logged in");
     }
-
-    // Check if the user is an RMT
     if (session.resultObj.userType !== "rmt") {
       throw new Error(
         "Unauthorized: Only RMTs can book appointments for clients"
@@ -6455,8 +6480,13 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     }
 
     const { date, time, duration } = appointmentData;
+    if (!date || !time || !duration) {
+      throw new Error("Missing required fields: date, time, or duration");
+    }
 
-    // Get client information
+    // ---------------------
+    // 2. LOAD CLIENT
+    // ---------------------
     const { rows: clientRows } = await sql`
       SELECT 
         id,
@@ -6467,54 +6497,126 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
         rmt_id AS "rmtId"
       FROM users
       WHERE id = ${clientId}
+      LIMIT 1
     `;
 
-    if (clientRows.length === 0) {
-      throw new Error("Client not found");
-    }
-
+    if (clientRows.length === 0) throw new Error("Client not found");
     const client = clientRows[0];
 
-    // Format the date and time
-    const formattedDate = new Date(date).toISOString().split("T")[0];
-    const startDateTime = new Date(`${date} ${time}`);
-    const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    // ---------------------
+    // 3. PARSE DATE/TIME (LOCAL TORONTO TIME – NO UTC SHIFTING)
+    // ---------------------
+    const [year, month, day] = date.split("-").map(Number);
+    const [hour, minute] = time.split(":").map(Number);
 
-    // Calculate end time
+    // Construct local datetime safely
+    const startDateTime = new Date(year, month - 1, day, hour, minute, 0);
     const endDateTime = new Date(
-      startDateTime.getTime() + Number.parseInt(duration) * 60000
+      startDateTime.getTime() + Number(duration) * 60000
     );
-    const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-    });
 
-    // Find an available appointment slot
-    const { rows: availableAppointments } = await sql`
+    // Format times in Toronto timezone w/o UTC
+    const formatTime = (d) =>
+      d.toLocaleTimeString("en-CA", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZone: "America/Toronto",
+      });
+
+    const formattedStartTime = formatTime(startDateTime);
+    const formattedEndTime = formatTime(endDateTime);
+    const formattedDate = date; // already yyyy-mm-dd
+
+    // ---------------------
+    // 4. PREVENT OVERLAPPING BOOKINGS
+    // ---------------------
+    const { rows: overlapping } = await sql`
+      SELECT id
+      FROM treatments
+      WHERE rmt_id = ${client.rmtId}
+      AND date = ${formattedDate}::date
+      AND status = 'booked'
+      AND (
+            (appointment_begins_at <= ${formattedStartTime}::time 
+              AND appointment_ends_at > ${formattedStartTime}::time)
+         OR (appointment_begins_at < ${formattedEndTime}::time 
+              AND appointment_ends_at >= ${formattedEndTime}::time)
+          )
+      LIMIT 1
+    `;
+
+    if (overlapping.length > 0) {
+      throw new Error("This time overlaps with another booked appointment.");
+    }
+
+    // ---------------------
+    // 5. FIND AVAILABLE SLOT OR CREATE NEW ONE
+    // ---------------------
+    const { rows: availableSlots } = await sql`
       SELECT id, rmt_location_id
       FROM treatments
       WHERE rmt_id = ${client.rmtId}
       AND date = ${formattedDate}::date
+      AND status = 'available'
       AND appointment_window_start <= ${formattedStartTime}::time
       AND appointment_window_end >= ${formattedEndTime}::time
-      AND status = 'available'
       LIMIT 1
     `;
 
-    if (availableAppointments.length === 0) {
-      throw new Error(
-        "No available appointment slot found for the selected time"
-      );
+    let appointmentId;
+    let rmtLocationId;
+
+    if (availableSlots.length === 0) {
+      // Create new row
+      const { rows: created } = await sql`
+        INSERT INTO treatments (
+          rmt_id,
+          client_id,
+          date,
+          appointment_begins_at,
+          appointment_ends_at,
+          duration,
+          status,
+          location
+        )
+        VALUES (
+          ${client.rmtId},
+          ${clientId},
+          ${formattedDate}::date,
+          ${formattedStartTime}::time,
+          ${formattedEndTime}::time,
+          ${Number(duration)},
+          'booked',
+          '268 Shuter Street, Toronto, ON'
+        )
+        RETURNING id, rmt_location_id
+      `;
+
+      appointmentId = created[0].id;
+      rmtLocationId = created[0].rmt_location_id;
+    } else {
+      // Use the existing slot
+      appointmentId = availableSlots[0].id;
+      rmtLocationId = availableSlots[0].rmt_location_id;
+
+      await sql`
+        UPDATE treatments
+        SET 
+          status = 'booked',
+          appointment_begins_at = ${formattedStartTime}::time,
+          appointment_ends_at = ${formattedEndTime}::time,
+          duration = ${Number(duration)},
+          client_id = ${clientId},
+          location = '268 Shuter Street, Toronto, ON'
+        WHERE id = ${appointmentId}
+      `;
     }
 
-    const appointmentId = availableAppointments[0].id;
-
-    // Create Google Calendar event
+    // ---------------------
+    // 6. CREATE GOOGLE CALENDAR EVENT
+    // ---------------------
     const event = {
       summary: `[Booked] Mx ${client.firstName} ${client.lastName}`,
       location: "268 Shuter Street, Toronto, ON",
@@ -6522,14 +6624,14 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
         client.phoneNumber || "N/A"
       }`,
       start: {
-        dateTime: `${formattedDate}T${formattedStartTime}:00`,
+        dateTime: `${formattedDate}T${formattedStartTime}`,
         timeZone: "America/Toronto",
       },
       end: {
-        dateTime: `${formattedDate}T${formattedEndTime}:00`,
+        dateTime: `${formattedDate}T${formattedEndTime}`,
         timeZone: "America/Toronto",
       },
-      colorId: "2", // Green for booked
+      colorId: "2",
     };
 
     const createdEvent = await calendar.events.insert({
@@ -6537,22 +6639,20 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       resource: event,
     });
 
-    // Update the appointment
+    // ---------------------
+    // 7. UPDATE APPOINTMENT WITH GOOGLE EVENT INFO
+    // ---------------------
     await sql`
       UPDATE treatments
       SET 
-        status = 'booked',
-        location = '268 Shuter Street, Toronto, ON',
-        appointment_begins_at = ${formattedStartTime}::time,
-        appointment_ends_at = ${formattedEndTime}::time,
-        client_id = ${clientId},
-        duration = ${Number.parseInt(duration)},
         google_calendar_event_id = ${createdEvent.data.id},
         google_calendar_event_link = ${createdEvent.data.htmlLink}
       WHERE id = ${appointmentId}
     `;
 
-    // Log audit event
+    // ---------------------
+    // 8. AUDIT LOG
+    // ---------------------
     try {
       await logAuditEvent({
         typeOfInfo: "appointment booking",
@@ -6563,16 +6663,15 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
         additionalDetails: {
           accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
           whoseInfoName: `${client.firstName} ${client.lastName}`,
-          appointmentId: appointmentId,
+          appointmentId,
           appointmentDate: formattedDate,
           appointmentTime: formattedStartTime,
-          duration: duration,
-          accessMethod: "web application",
+          duration,
           googleCalendarEventId: createdEvent.data.id,
         },
       });
-    } catch (logError) {
-      console.error("Error logging audit event:", logError);
+    } catch (logErr) {
+      console.warn("Audit log failed:", logErr);
     }
 
     revalidatePath("/dashboard/rmt");
@@ -6580,7 +6679,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     return {
       success: true,
       message: "Appointment booked successfully!",
-      appointmentId: appointmentId,
+      appointmentId,
     };
   } catch (error) {
     console.error("Error booking appointment for client:", error);
@@ -6590,6 +6689,157 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     };
   }
 }
+
+// export async function bookAppointmentForClient(clientId, appointmentData) {
+//   try {
+//     const session = await getSession();
+//     if (!session || !session.resultObj) {
+//       throw new Error("Unauthorized: User not logged in");
+//     }
+
+//     // Check if the user is an RMT
+//     if (session.resultObj.userType !== "rmt") {
+//       throw new Error(
+//         "Unauthorized: Only RMTs can book appointments for clients"
+//       );
+//     }
+
+//     const { date, time, duration } = appointmentData;
+
+//     // Get client information
+//     const { rows: clientRows } = await sql`
+//       SELECT
+//         id,
+//         first_name AS "firstName",
+//         last_name AS "lastName",
+//         email,
+//         phone_number AS "phoneNumber",
+//         rmt_id AS "rmtId"
+//       FROM users
+//       WHERE id = ${clientId}
+//     `;
+
+//     if (clientRows.length === 0) {
+//       throw new Error("Client not found");
+//     }
+
+//     const client = clientRows[0];
+
+//     // Format the date and time
+//     const formattedDate = new Date(date).toISOString().split("T")[0];
+//     const startDateTime = new Date(`${date} ${time}`);
+//     const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
+//       hour12: false,
+//       hour: "2-digit",
+//       minute: "2-digit",
+//     });
+
+//     // Calculate end time
+//     const endDateTime = new Date(
+//       startDateTime.getTime() + Number.parseInt(duration) * 60000
+//     );
+//     const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+//       hour12: false,
+//       hour: "2-digit",
+//       minute: "2-digit",
+//     });
+
+//     // Find an available appointment slot
+//     const { rows: availableAppointments } = await sql`
+//       SELECT id, rmt_location_id
+//       FROM treatments
+//       WHERE rmt_id = ${client.rmtId}
+//       AND date = ${formattedDate}::date
+//       AND appointment_window_start <= ${formattedStartTime}::time
+//       AND appointment_window_end >= ${formattedEndTime}::time
+//       AND status = 'available'
+//       LIMIT 1
+//     `;
+
+//     if (availableAppointments.length === 0) {
+//       throw new Error(
+//         "No available appointment slot found for the selected time"
+//       );
+//     }
+
+//     const appointmentId = availableAppointments[0].id;
+
+//     // Create Google Calendar event
+//     const event = {
+//       summary: `[Booked] Mx ${client.firstName} ${client.lastName}`,
+//       location: "268 Shuter Street, Toronto, ON",
+//       description: `Email: ${client.email}\nPhone: ${
+//         client.phoneNumber || "N/A"
+//       }`,
+//       start: {
+//         dateTime: `${formattedDate}T${formattedStartTime}:00`,
+//         timeZone: "America/Toronto",
+//       },
+//       end: {
+//         dateTime: `${formattedDate}T${formattedEndTime}:00`,
+//         timeZone: "America/Toronto",
+//       },
+//       colorId: "2", // Green for booked
+//     };
+
+//     const createdEvent = await calendar.events.insert({
+//       calendarId: GOOGLE_CALENDAR_ID,
+//       resource: event,
+//     });
+
+//     // Update the appointment
+//     await sql`
+//       UPDATE treatments
+//       SET
+//         status = 'booked',
+//         location = '268 Shuter Street, Toronto, ON',
+//         appointment_begins_at = ${formattedStartTime}::time,
+//         appointment_ends_at = ${formattedEndTime}::time,
+//         client_id = ${clientId},
+//         duration = ${Number.parseInt(duration)},
+//         google_calendar_event_id = ${createdEvent.data.id},
+//         google_calendar_event_link = ${createdEvent.data.htmlLink}
+//       WHERE id = ${appointmentId}
+//     `;
+
+//     // Log audit event
+//     try {
+//       await logAuditEvent({
+//         typeOfInfo: "appointment booking",
+//         actionPerformed: "created by RMT",
+//         accessedById: session.resultObj.id,
+//         whoseInfoId: clientId,
+//         reasonForAccess: "RMT booking appointment for client",
+//         additionalDetails: {
+//           accessedByName: `${session.resultObj.firstName} ${session.resultObj.lastName}`,
+//           whoseInfoName: `${client.firstName} ${client.lastName}`,
+//           appointmentId: appointmentId,
+//           appointmentDate: formattedDate,
+//           appointmentTime: formattedStartTime,
+//           duration: duration,
+//           accessMethod: "web application",
+//           googleCalendarEventId: createdEvent.data.id,
+//         },
+//       });
+//     } catch (logError) {
+//       console.error("Error logging audit event:", logError);
+//     }
+
+//     revalidatePath("/dashboard/rmt");
+
+//     return {
+//       success: true,
+//       message: "Appointment booked successfully!",
+//       appointmentId: appointmentId,
+//     };
+//   } catch (error) {
+//     console.error("Error booking appointment for client:", error);
+//     return {
+//       success: false,
+//       message: error.message || "Failed to book appointment",
+//     };
+//   }
+// }
 
 // export async function getClientWithHealthHistory(userId) {
 //   // Mock implementation: Replace with actual data fetching and decryption
