@@ -48,7 +48,7 @@ const AppointmentRequests = ({ requestedAppointments }) => {
     <div>
       <h2 className="text-xl font-semibold mb-4">Appointment Requests</h2>
       {requestedAppointments.length === 0 ? (
-        <div className="p-8 bg-white rounded-md shadow-sm">
+        <div className="p-8 bg-yellow-50 rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
             There are currently no appointment requests.
           </p>

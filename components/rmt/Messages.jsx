@@ -64,7 +64,7 @@ const Messages = ({ messages }) => {
     <div>
       <h2 className="text-xl font-semibold mb-4">Messages</h2>
       {messageRequests.length === 0 ? (
-        <div className="p-8 bg-white rounded-md shadow-sm">
+        <div className="p-8 bg-yellow-50 rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
             There are currently no new messages.
           </p>
@@ -74,7 +74,7 @@ const Messages = ({ messages }) => {
           {messageRequests.map((message) => (
             <div
               key={message.id} // Use id instead of _id
-              className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200"
+              className="bg-yellow-50 shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200"
             >
               <div className="mb-4">
                 <h3 className="font-semibold text-lg mb-2 text-gray-800">

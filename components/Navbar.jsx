@@ -13,7 +13,7 @@ const Navbar = ({ session, logout }) => {
 
   return (
     <nav className="bg-navbar text-white py-12">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 lg:px-24">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-24">
         <div className="flex items-center justify-between">
           <Link href="/" className="text-3xl font-serif" onClick={closeMenu}>
             CipRMT.com
@@ -189,7 +189,7 @@ const NavItems = ({ session, logout, closeMenu, mobile = false }) => {
               className="hover:text-gray-300 transition duration-300"
               onClick={closeMenu}
             >
-              Account
+              Schedule
             </Link>
           </li>
           <li className={itemClass}>

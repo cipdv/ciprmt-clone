@@ -2312,6 +2312,24 @@ export const cancelAppointment = async (prevState, formData) => {
         console.error("Error logging audit event:", logError);
       }
 
+      const transporter = getEmailTransporter();
+      const formattedDate = formatDateForDisplay(appointment.date);
+      const formattedTime = formatTimeForDisplay(
+        appointment.appointment_begins_at
+      );
+
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: "cipdevries@ciprmt.com",
+        subject: "Appointment Cancelled",
+        text: `Appointment for ${firstName} ${lastName} on ${formattedDate} at ${formattedTime} has been cancelled.`,
+        html: `
+          <p>Appointment for ${firstName} ${lastName} has been cancelled.</p>
+          <p>Date: ${formattedDate}</p>
+          <p>Time: ${formattedTime}</p>
+        `,
+      });
+
       revalidatePath("/dashboard/patient");
       return {
         status: "success",
