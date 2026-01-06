@@ -35,6 +35,7 @@ export async function middleware(request) {
       "/faq",
       "/reset-password",
       "/survey",
+      "/benefits-calculator",
       /^\/workplace-wellness\/.*$/,
       /^\/password-reset\/set-new-password\/.*$/,
       /^\/unsubscribe\/.*$/,
