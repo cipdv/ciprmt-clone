@@ -59,7 +59,8 @@ export async function middleware(request) {
   if (
     currentUser &&
     !request.nextUrl.pathname.startsWith(dashboardPaths[userType]) &&
-    !request.nextUrl.pathname.startsWith("/gift")
+    !request.nextUrl.pathname.startsWith("/gift") &&
+    !request.nextUrl.pathname.startsWith("/benefits-calculator")
   ) {
     return NextResponse.redirect(
       new URL(dashboardPaths[userType], request.url)
