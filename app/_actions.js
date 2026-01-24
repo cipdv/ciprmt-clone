@@ -9221,7 +9221,13 @@ export async function sendEmailBlast(formData) {
 //gift cards
 //////////////////////////////////////////////////////////////////
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const getStripe = () => {
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not set in environment variables");
+  }
+  return new Stripe(STRIPE_SECRET_KEY);
+};
 
 function generateGiftCardCode() {
   const { randomBytes } = require("crypto");
@@ -9851,6 +9857,7 @@ export async function purchaseGiftCard(data) {
     }
 
     // Create Stripe payment intent
+    const stripe = getStripe();
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(price * 100), // Convert to cents
       currency: "cad",
@@ -9912,6 +9919,7 @@ export async function purchaseGiftCard(data) {
 
     if (rows.length === 0) {
       // Refund the payment if database insert fails
+      const stripe = getStripe();
       await stripe.refunds.create({
         payment_intent: paymentIntent.id,
       });
