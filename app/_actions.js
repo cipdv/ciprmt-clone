@@ -46,13 +46,12 @@ const key = new TextEncoder().encode(secretKey);
 
 // Set up Google Calendar API
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
-let GOOGLE_PRIVATE_KEY;
-
-if (process.env.NODE_ENV === "production") {
-  GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
-} else {
-  GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY;
-}
+const GOOGLE_PRIVATE_KEY_RAW = process.env.GOOGLE_PRIVATE_KEY;
+const GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY_RAW
+  ? process.env.NODE_ENV === "production"
+    ? GOOGLE_PRIVATE_KEY_RAW.replace(/\\n/g, "\n")
+    : GOOGLE_PRIVATE_KEY_RAW
+  : "";
 const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
 const GOOGLE_PROJECT_NUMBER = process.env.GOOGLE_PROJECT_NUMBER;
 const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
