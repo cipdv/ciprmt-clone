@@ -21,13 +21,13 @@ const ServicesAndRates = () => {
           <div className="w-full lg:w-1/2 space-y-8">
             <div className="w-full">
               <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2041.1059380687564!2d-79.36814617403721!3d43.6573282117439!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89d4cb38873a2897%3A0xcc99cf3a3c62ca42!2s268%20Shuter%20St%2C%20Toronto%2C%20ON%20M5A%201W3!5e0!3m2!1sen!2sca!4v1720976663394!5m2!1sen!2sca"
-                width="100%"
-                height="300"
-                style={{ border: 0 }}
-                allowFullScreen=""
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2886.4614697273237!2d-79.35067372416869!3d43.6593715520321!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89d4cb6dc3720fe1%3A0xfb1c300c8d896510!2s754%20Queen%20St%20E%2C%20Toronto%2C%20ON%20M4M%201H4!5e0!3m2!1sen!2sca!4v1769268222129!5m2!1sen!2sca"
+                width="600"
+                height="450"
+                style="border:0;"
+                allowfullscreen=""
                 loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
+                referrerpolicy="no-referrer-when-downgrade"
               ></iframe>
             </div>
             <div className="space-y-4">
@@ -36,7 +36,7 @@ const ServicesAndRates = () => {
                   Location:
                 </h3>
                 <p className="text-white text-sm sm:text-base">
-                  268 Shuter Street
+                  754 Queen Street East
                 </p>
                 <p className="text-white text-sm sm:text-base">Toronto ON</p>
               </div>

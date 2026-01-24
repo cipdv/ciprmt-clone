@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Script from "next/script";
 import { registerNewPatient } from "@/app/_actions";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
@@ -28,6 +29,7 @@ const SignupForm = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const router = useRouter();
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     if (state.success && state.redirectUrl) {
@@ -63,6 +65,17 @@ const SignupForm = () => {
         {state.errors?.firstName && (
           <p className="text-red-500 text-sm">{state.errors.firstName[0]}</p>
         )}
+        <label className="hidden" htmlFor="company">
+          Company
+        </label>
+        <input
+          type="text"
+          id="company"
+          name="company"
+          tabIndex="-1"
+          autoComplete="off"
+          className="hidden"
+        />
         <label htmlFor="preferredName">Preferred Name</label>
         <input
           type="text"
@@ -189,7 +202,29 @@ const SignupForm = () => {
           </Link>
         </h2>
         {state.message && (
-          <p className="text-red-500 text-lg text-bold">{state.message}</p>
+          <p
+            className={`text-lg text-bold ${
+              state.success ? "text-green-600" : "text-red-500"
+            }`}
+          >
+            {state.message}
+          </p>
+        )}
+        {turnstileSiteKey && (
+          <>
+            <div className="mt-2">
+              <div
+                className="cf-turnstile"
+                data-sitekey={turnstileSiteKey}
+                data-theme="light"
+              />
+            </div>
+            <Script
+              src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+              async
+              defer
+            />
+          </>
         )}
         <SubmitButton />
       </div>

@@ -3,19 +3,17 @@
 import { sql } from "@vercel/postgres";
 
 export async function checkRateLimit(
-  userId,
+  identifier,
   action,
   maxRequests,
   windowSeconds
 ) {
   try {
-    // Ensure userId is a string and not undefined
-    if (!userId) {
-      console.error("checkRateLimit called with undefined userId");
-      return true; // Allow the request to proceed
+    if (!identifier) {
+      identifier = "anonymous";
     }
 
-    userId = String(userId); // Convert to string to ensure compatibility
+    const userId = String(identifier);
 
     const now = new Date();
     const windowStart = new Date(now.getTime() - windowSeconds * 1000);

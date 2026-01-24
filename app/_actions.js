@@ -5,6 +5,8 @@ import { z } from "zod";
 import { encryptData, decryptData } from "@/app/lib/security/security";
 import { logAuditEvent } from "@/app/lib/auditLog/auditLog";
 import { checkRateLimit } from "@/app/lib/security/rate-limit";
+import { verifyTurnstileToken } from "@/app/lib/security/turnstile";
+import { getClientIp } from "@/app/lib/auditLog/getClientIp";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
@@ -136,6 +138,22 @@ export async function registerNewPatient(prevState, formData) {
       confirmPassword: formData.get("confirmPassword"),
     };
 
+    const honeypot = formData.get("company");
+    if (honeypot) {
+      return {
+        message: "Registration failed. Please try again.",
+        errors: {
+          form: ["Registration failed. Please try again."],
+        },
+      };
+    }
+
+    const clientIp = await getClientIp();
+    await checkRateLimit(clientIp, "registerNewPatient", 5, 60);
+
+    const turnstileToken = formData.get("cf-turnstile-response");
+    await verifyTurnstileToken(turnstileToken, clientIp);
+
     // Validate without destructuring
     const validation = registerPatientSchema.safeParse(data);
 
@@ -165,7 +183,6 @@ export async function registerNewPatient(prevState, formData) {
 
     const hashedPassword = await bcrypt.hash(validatedData.password, 10);
 
-    // Modified database insertion to handle the result more safely - FIX: access the rows property
     const { rows: insertResult } = await sql`
       INSERT INTO users (
         first_name,
@@ -193,20 +210,17 @@ export async function registerNewPatient(prevState, formData) {
       RETURNING *
     `;
 
-    // Check if we got a valid result
     if (!insertResult || insertResult.length === 0) {
       throw new Error("Failed to create user");
     }
 
     const newUser = insertResult[0];
 
-    // Create RMT location relationship
     await sql`
-    INSERT INTO user_rmt_locations (user_id, rmt_location_id, is_primary)
-    VALUES (${newUser.id}, ${DEFAULT_RMT_LOCATION_ID}::uuid, true)
-  `;
+      INSERT INTO user_rmt_locations (user_id, rmt_location_id, is_primary)
+      VALUES (${newUser.id}, ${DEFAULT_RMT_LOCATION_ID}::uuid, true)
+    `;
 
-    // Create session
     const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
     const resultObj = {
       id: newUser.id,
@@ -215,15 +229,14 @@ export async function registerNewPatient(prevState, formData) {
       lastName: newUser.last_name,
       email: newUser.email,
       phoneNumber: newUser.phone_number,
-      userType: newUser.user_type, // This should be 'patient' based on your insert
+      userType: newUser.user_type,
       rmtId: newUser.rmt_id,
       createdAt: newUser.created_at,
-      lastHealthHistoryUpdate: null, // New users won't have a health history yet
+      lastHealthHistoryUpdate: null,
     };
 
     const session = await encrypt({ resultObj, expires });
 
-    // Set cookie
     const cookieStore = await cookies();
     cookieStore.set("session", session, {
       expires,
@@ -260,7 +273,6 @@ export async function registerNewPatient(prevState, formData) {
 
     revalidatePath("/");
 
-    // Instead of redirect("/dashboard"), return success and redirectUrl
     return {
       success: true,
       redirectUrl: "/dashboard",
@@ -273,6 +285,24 @@ export async function registerNewPatient(prevState, formData) {
         message: "Email already registered",
         errors: {
           email: ["This email is already registered"],
+        },
+      };
+    }
+
+    if (error.message?.includes("Rate limit exceeded")) {
+      return {
+        message: "Too many attempts. Please try again shortly.",
+        errors: {
+          form: ["Too many attempts. Please try again shortly."],
+        },
+      };
+    }
+
+    if (error.message?.includes("Turnstile")) {
+      return {
+        message: "Verification failed. Please try again.",
+        errors: {
+          form: ["Verification failed. Please try again."],
         },
       };
     }
@@ -448,6 +478,11 @@ export async function submitScheduleSetup(prevState, formData) {
 
 export async function getAllUsers() {
   try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can view users");
+    }
+
     // Query all users from the PostgreSQL database
     const { rows: users } = await sql`
       SELECT 
@@ -2471,6 +2506,11 @@ export const cancelAppointment = async (prevState, formData) => {
 
 export async function getAppointmentById(id) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
     const { rows } = await sql`
       SELECT * FROM treatments
       WHERE id = ${id}
@@ -2480,7 +2520,44 @@ export async function getAppointmentById(id) {
       return null;
     }
 
-    return rows[0];
+    const appointment = rows[0];
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      appointment.client_id === session.resultObj.id ||
+      appointment.client_id === null;
+
+    if (!canAccess) {
+      throw new Error(
+        "Unauthorized: User does not have permission to access this appointment"
+      );
+    }
+
+    if (appointment.client_id) {
+      try {
+        let reasonForAccess = "Self-access to appointment";
+        if (session.resultObj.userType === "rmt") {
+          reasonForAccess = "Provider accessing patient appointment";
+        }
+
+        await logAuditEvent({
+          typeOfInfo: "appointment",
+          actionPerformed: "viewed",
+          accessedById: session.resultObj.id,
+          whoseInfoId: appointment.client_id,
+          reasonForAccess,
+          additionalDetails: {
+            accessedByUserType: session.resultObj.userType,
+            appointmentId: appointment.id,
+            appointmentDate: appointment.date,
+            accessMethod: "web application",
+          },
+        });
+      } catch (logError) {
+        console.error("Error logging audit event:", logError);
+      }
+    }
+
+    return appointment;
   } catch (error) {
     console.error("Error fetching appointment:", error);
     throw new Error("Failed to fetch appointment");
@@ -4286,6 +4363,14 @@ Reply by phone: ${currentUser.resultObj.phoneNumber || "N/A"}`,
 
 export async function getAllMessagesByRMTId(rmtId) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can access messages");
+    }
+    if (session.resultObj.rmtId !== rmtId) {
+      throw new Error("Unauthorized: RMT mismatch");
+    }
+
     // Use the sql template literal from @vercel/postgres
     const { rows: messages } = await sql`
       SELECT 
@@ -4313,6 +4398,11 @@ export async function getAllMessagesByRMTId(rmtId) {
 
 export async function sendReply(messageId, replyText) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can reply");
+    }
+
     // First, find the message
     const { rows: messages } = await sql`
       SELECT * FROM messages
@@ -4324,6 +4414,9 @@ export async function sendReply(messageId, replyText) {
     }
 
     const message = messages[0];
+    if (message.rmt_id !== session.resultObj.rmtId) {
+      throw new Error("Unauthorized: RMT mismatch");
+    }
 
     // Update message status
     await sql`
@@ -4355,6 +4448,11 @@ export async function sendReply(messageId, replyText) {
 
 export async function updateMessageStatus(formData) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can update messages");
+    }
+
     const messageId = formData.get("messageId");
     const status = formData.get("status");
 
@@ -4367,6 +4465,7 @@ export async function updateMessageStatus(formData) {
       UPDATE messages
       SET status = ${status}
       WHERE id = ${messageId}
+        AND rmt_id = ${session.resultObj.rmtId}
     `;
 
     if (rowCount === 0) {
@@ -5281,6 +5380,28 @@ export async function getTreatmentById(id) {
 
 export async function getTreatmentsForPlan(treatmentPlanId) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const { rows: planRows } = await sql`
+      SELECT client_id
+      FROM treatment_plans
+      WHERE id = ${treatmentPlanId}
+    `;
+
+    if (planRows.length === 0) {
+      throw new Error("Treatment plan not found");
+    }
+
+    const canAccess =
+      session.resultObj.userType === "rmt" ||
+      planRows[0].client_id === session.resultObj.id;
+    if (!canAccess) {
+      throw new Error("Unauthorized: Access denied");
+    }
+
     const { rows: treatments } = await sql`
       SELECT
         t.id,
@@ -6231,6 +6352,17 @@ export async function searchUsers(query) {
 
 export async function getClientWithHealthHistory(userId) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const canAccess =
+      session.resultObj.userType === "rmt" || session.resultObj.id === userId;
+    if (!canAccess) {
+      throw new Error("Unauthorized: Access denied");
+    }
+
     // Get client information
     const { rows: clientRows } = await sql`
       SELECT
@@ -6289,6 +6421,28 @@ export async function getClientWithHealthHistory(userId) {
         ...(decryptedData || {}),
       };
     });
+
+    try {
+      let reasonForAccess = "Self-access to health history";
+      if (session.resultObj.userType === "rmt") {
+        reasonForAccess = "Provider accessing patient health history";
+      }
+
+      await logAuditEvent({
+        typeOfInfo: "health history",
+        actionPerformed: "viewed",
+        accessedById: session.resultObj.id,
+        whoseInfoId: userId,
+        reasonForAccess,
+        additionalDetails: {
+          accessedByUserType: session.resultObj.userType,
+          numberOfHistories: healthHistory.length,
+          accessMethod: "web application",
+        },
+      });
+    } catch (logError) {
+      console.error("Error logging audit event:", logError);
+    }
 
     return { client, healthHistory };
   } catch (error) {
@@ -6429,6 +6583,17 @@ export async function getClientProfileData(userId) {
 
 export async function getTreatmentPlansForUser(userId) {
   try {
+    const session = await getSession();
+    if (!session?.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    const canAccess =
+      session.resultObj.userType === "rmt" || session.resultObj.id === userId;
+    if (!canAccess) {
+      throw new Error("Unauthorized: Access denied");
+    }
+
     const { rows: plans } = await sql`
       SELECT
         tp.id,

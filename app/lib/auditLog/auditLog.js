@@ -22,7 +22,7 @@ export async function logAuditEvent({
 }) {
   try {
     // Get client IP address using the utility function
-    const ipAddress = getClientIp();
+    const ipAddress = await getClientIp();
 
     // Rest of the function remains the same
     const enhancedDetails = {

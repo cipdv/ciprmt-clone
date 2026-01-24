@@ -200,25 +200,61 @@ export const healthHistorySchema = z.object({
 //   }),
 // });
 
+const emptyToUndefined = (value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+};
+
+const nameNoiseCheck = (value) => !/([A-Za-z])\1{3,}/.test(value);
+
+const nameSchema = z
+  .string()
+  .trim()
+  .min(1, "Name is required")
+  .max(60, "Name is too long")
+  .regex(/^[A-Za-z' -]+$/, "Only letters, spaces, hyphens, and apostrophes")
+  .refine(nameNoiseCheck, "Name looks invalid")
+  .transform((s) => s.charAt(0).toUpperCase() + s.slice(1));
+
+const optionalNameSchema = z.preprocess(
+  emptyToUndefined,
+  z
+    .string()
+    .trim()
+    .max(60, "Name is too long")
+    .regex(/^[A-Za-z' -]+$/, "Only letters, spaces, hyphens, and apostrophes")
+    .refine(nameNoiseCheck, "Name looks invalid")
+    .transform((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .optional()
+);
+
 export const registerPatientSchema = z
   .object({
-    firstName: z
+    firstName: nameSchema,
+    lastName: nameSchema,
+    preferredName: optionalNameSchema,
+    phoneNumber: z.preprocess(
+      (value) =>
+        typeof value === "string" ? value.replace(/[^\d]/g, "") : value,
+      z
+        .string()
+        .min(10, "Phone number must be at least 10 digits")
+        .max(15, "Phone number is too long")
+        .regex(/^\d+$/, "Phone number must only contain digits")
+    ),
+    pronouns: z
+      .enum(["they/them", "she/her", "he/him", "other"])
+      .optional(),
+    email: z.string().email().max(254).toLowerCase().trim(),
+    password: z
       .string()
-      .min(1)
-      .transform((s) => s.charAt(0).toUpperCase() + s.slice(1)),
-    lastName: z.string().min(1),
-    preferredName: z
-      .string()
-      .transform((s) => s.charAt(0).toUpperCase() + s.slice(1)),
-    phoneNumber: z
-      .string()
-      .regex(/^\d+$/, "Phone number must only contain digits"),
-    pronouns: z.string().optional(),
-    email: z.string().email().toLowerCase().trim(),
-    password: z.string().min(8, "Password must be at least 8 characters long"),
+      .min(8, "Password must be at least 8 characters long")
+      .max(128, "Password is too long"),
     confirmPassword: z
       .string()
-      .min(8, "Password must be at least 8 characters long"),
+      .min(8, "Password must be at least 8 characters long")
+      .max(128, "Password is too long"),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
