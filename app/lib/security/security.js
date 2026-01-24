@@ -2,12 +2,13 @@ import crypto from "crypto";
 
 const ALGORITHM = "aes-256-cbc";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
-
-if (!ENCRYPTION_KEY) {
-  throw new Error("ENCRYPTION_KEY is not set in environment variables");
-}
+const HAS_ENCRYPTION_KEY = Boolean(ENCRYPTION_KEY);
 
 export function encryptData(data) {
+  if (!HAS_ENCRYPTION_KEY) {
+    console.warn("Encryption skipped: ENCRYPTION_KEY is not set.");
+    return null;
+  }
   try {
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(
@@ -27,6 +28,10 @@ export function encryptData(data) {
 }
 
 export function decryptData(encryptedData) {
+  if (!HAS_ENCRYPTION_KEY) {
+    console.warn("Decryption skipped: ENCRYPTION_KEY is not set.");
+    return null;
+  }
   try {
     if (typeof encryptedData !== "string") {
       console.error("Invalid encrypted data type:", typeof encryptedData);
