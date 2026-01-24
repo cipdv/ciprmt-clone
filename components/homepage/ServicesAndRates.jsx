@@ -63,7 +63,7 @@ const ServicesAndRates = () => {
                     href="mailto:cipdevries@ciprmt.com"
                     className="underline hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
                   >
-                    cipdevries@ciprmt.com
+                    cip.devries@gmail.com
                   </a>
                 </p>
               </div>
