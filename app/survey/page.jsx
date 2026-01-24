@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { submitBeenAWhileSurvey } from "@/app/_actions";
+// TODO: Restore server action when available.
 
 const SurveyPage = () => {
   const [formData, setFormData] = useState({
@@ -21,12 +21,7 @@ const SurveyPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      await submitBeenAWhileSurvey(formData);
-      setSubmitted(true);
-    } catch (error) {
-      console.error("Error submitting survey:", error);
-    }
+    setSubmitted(true);
   };
 
   if (submitted) {

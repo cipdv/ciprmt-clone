@@ -1,6 +1,6 @@
 "use client";
 
-import { login, registerNewWorkplacePatient } from "@/app/_actions";
+import { login } from "@/app/_actions";
 import { useFormStatus } from "react-dom";
 import { useState } from "react";
 import Link from "next/link";
@@ -60,8 +60,10 @@ const AuthForm = ({ officename }) => {
     login,
     initialSignInState
   );
+  // TODO: Restore server action when available.
+  const noopSignUpAction = async (state) => state;
   const [state, signUpFormAction] = useActionState(
-    registerNewWorkplacePatient,
+    noopSignUpAction,
     initialSignUpState
   );
 
