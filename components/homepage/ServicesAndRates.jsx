@@ -45,7 +45,7 @@ const ServicesAndRates = () => {
                   Hours:
                 </h3>
                 <p className="text-white text-sm sm:text-base">
-                  Monday - Thursday: 11:00am - 6:30pm
+                  Sunday - Tuesday: 11:00am - 6:30pm
                 </p>
                 <p className="text-white text-sm sm:text-base">
                   Friday: 11:00am - 4:30pm
