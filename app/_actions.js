@@ -5,7 +5,6 @@ import { z } from "zod";
 import { encryptData, decryptData } from "@/app/lib/security/security";
 import { logAuditEvent } from "@/app/lib/auditLog/auditLog";
 import { checkRateLimit } from "@/app/lib/security/rate-limit";
-import { verifyTurnstileToken } from "@/app/lib/security/turnstile";
 import { getClientIp } from "@/app/lib/auditLog/getClientIp";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
@@ -149,9 +148,6 @@ export async function registerNewPatient(prevState, formData) {
 
     const clientIp = await getClientIp();
     await checkRateLimit(clientIp, "registerNewPatient", 5, 60);
-
-    const turnstileToken = formData.get("cf-turnstile-response");
-    await verifyTurnstileToken(turnstileToken, clientIp);
 
     // Validate without destructuring
     const validation = registerPatientSchema.safeParse(data);

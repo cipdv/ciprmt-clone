@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Script from "next/script";
 import { registerNewPatient } from "@/app/_actions";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
@@ -29,7 +28,6 @@ const SignupForm = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const router = useRouter();
-  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     if (state.success && state.redirectUrl) {
@@ -209,22 +207,6 @@ const SignupForm = () => {
           >
             {state.message}
           </p>
-        )}
-        {turnstileSiteKey && (
-          <>
-            <div className="mt-2">
-              <div
-                className="cf-turnstile"
-                data-sitekey={turnstileSiteKey}
-                data-theme="light"
-              />
-            </div>
-            <Script
-              src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-              async
-              defer
-            />
-          </>
         )}
         <SubmitButton />
       </div>
