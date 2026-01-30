@@ -1,0 +1,13 @@
+User-agent: *
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /auth/
+Disallow: /password-reset
+Disallow: /reset-password
+Disallow: /signup
+Disallow: /survey
+Disallow: /unsubscribe
+Disallow: /benefits-calculator
+Disallow: /workplace-wellness/
+Disallow: /gift/
+Allow: /

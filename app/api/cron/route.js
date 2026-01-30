@@ -18,6 +18,24 @@ async function handleRequest(request) {
   console.log(`Handler invoked at ${new Date().toISOString()}`);
   console.log(`Request method: ${request.method}`);
 
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return NextResponse.json(
+      { message: "Cron secret not configured" },
+      { status: 500 }
+    );
+  }
+
+  const authHeader = request.headers.get("authorization") || "";
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : "";
+  const headerToken = request.headers.get("x-cron-secret") || "";
+
+  if (bearerToken !== cronSecret && headerToken !== cronSecret) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     await resetStaleReschedulingAppointments();
     console.log("Stale appointments reset successfully");

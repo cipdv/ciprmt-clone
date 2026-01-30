@@ -7,6 +7,32 @@ import { NextResponse } from "next/server";
 export async function middleware(request) {
   console.log("middleware ran successfully");
 
+  const blockedPathPatterns = [
+    /^\/\.env/i,
+    /^\/\.git/i,
+    /^\/\.DS_Store/i,
+    /^\/\.vscode/i,
+    /^\/server-status/i,
+    /^\/actuator/i,
+    /^\/telescope/i,
+    /^\/swagger/i,
+    /^\/api-docs/i,
+    /^\/v[23]\/api-docs/i,
+    /^\/webjars\/swagger-ui/i,
+    /^\/wp(-|\/)/i,
+    /^\/wp-content/i,
+    /^\/wp-includes/i,
+    /^\/wp-admin/i,
+    /^\/xmlrpc\.php$/i,
+    /^\/wp-login\.php$/i,
+    /^\/cgi-bin/i,
+    /\.php$/i,
+  ];
+
+  if (blockedPathPatterns.some((pattern) => pattern.test(request.nextUrl.pathname))) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   if (request.nextUrl.pathname === "/api/cron") {
     return NextResponse.next();
   }
