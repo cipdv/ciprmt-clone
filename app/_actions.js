@@ -5537,47 +5537,126 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     const encryptedNotes = JSON.stringify(notes);
     // const encryptedNotes = encrypt(JSON.stringify(notes)); // Use this with actual encryption
 
-    // Update the treatment with the notes and associated plan
-    const { rows: updatedTreatment } = await sql`
-      UPDATE treatments
-      SET 
-        encrypted_treatment_notes = ${encryptedNotes},
-        status = 'completed',
-        price = ${finalPrice},
-        payment_type = ${notes?.paymentType || null},
-        treatment_plan_id = ${treatmentPlanId}
-      WHERE id = ${treatmentId}
-      RETURNING 
-        id, 
-        client_id,
-        rmt_id,
-        date,
-        appointment_begins_at,
-        appointment_ends_at,
-        status,
-        location,
-        duration,
-        workplace,
-        price,
-        payment_type,
-        encrypted_treatment_notes
-    `;
+    const receiptIssued =
+      typeof notes?.receiptIssued === "boolean"
+        ? notes.receiptIssued
+        : notes?.receiptIssued === "true"
+        ? true
+        : notes?.receiptIssued === "false"
+        ? false
+        : true;
+
+    let updatedTreatment = [];
+
+    if (receiptIssued) {
+      // Update the treatment with the notes and associated plan
+      const { rows } = await sql`
+        UPDATE treatments
+        SET 
+          encrypted_treatment_notes = ${encryptedNotes},
+          status = 'completed',
+          price = ${finalPrice},
+          payment_type = ${notes?.paymentType || null},
+          treatment_plan_id = ${treatmentPlanId},
+          receipt_issued = ${receiptIssued}
+        WHERE id = ${treatmentId}
+        RETURNING 
+          id, 
+          client_id,
+          rmt_id,
+          date,
+          appointment_begins_at,
+          appointment_ends_at,
+          status,
+          location,
+          duration,
+          workplace,
+          price,
+          payment_type,
+          encrypted_treatment_notes
+      `;
+
+      updatedTreatment = rows;
+    } else {
+      // Store full notes in additional_treatments only
+      await sql`
+        INSERT INTO additional_treatments
+        SELECT * FROM treatments
+        WHERE id = ${treatmentId}
+        ON CONFLICT (id) DO NOTHING
+      `;
+
+      const { rows } = await sql`
+        UPDATE additional_treatments
+        SET 
+          encrypted_treatment_notes = ${encryptedNotes},
+          status = 'completed',
+          price = ${finalPrice},
+          payment_type = ${notes?.paymentType || null},
+          treatment_plan_id = ${treatmentPlanId},
+          receipt_issued = ${receiptIssued}
+        WHERE id = ${treatmentId}
+        RETURNING 
+          id, 
+          client_id,
+          rmt_id,
+          date,
+          appointment_begins_at,
+          appointment_ends_at,
+          status,
+          location,
+          duration,
+          workplace,
+          price,
+          payment_type,
+          encrypted_treatment_notes
+      `;
+
+      updatedTreatment = rows;
+
+      // Remove from treatments and any existing plan associations
+      await sql`
+        DELETE FROM incomes
+        WHERE treatment_id = ${treatmentId}
+      `;
+
+      await sql`
+        DELETE FROM treatment_plan_treatments
+        WHERE treatment_id = ${treatmentId}
+      `;
+
+      await sql`
+        DELETE FROM treatments
+        WHERE id = ${treatmentId}
+      `;
+    }
 
     if (!updatedTreatment || updatedTreatment.length === 0) {
       throw new Error("Failed to update treatment with notes");
     }
 
     // Get client information for the treatment
-    const { rows: clientInfo } = await sql`
-      SELECT 
-        u.id, 
-        u.first_name, 
-        u.last_name, 
-        u.email
-      FROM users u
-      JOIN treatments t ON u.id = t.client_id
-      WHERE t.id = ${treatmentId}
-    `;
+    const { rows: clientInfo } = receiptIssued
+      ? await sql`
+          SELECT 
+            u.id, 
+            u.first_name, 
+            u.last_name, 
+            u.email
+          FROM users u
+          JOIN treatments t ON u.id = t.client_id
+          WHERE t.id = ${treatmentId}
+        `
+      : await sql`
+          SELECT 
+            u.id, 
+            u.first_name, 
+            u.last_name, 
+            u.email
+          FROM users u
+          JOIN additional_treatments t ON u.id = t.client_id
+          WHERE t.id = ${treatmentId}
+        `;
 
     if (!clientInfo || clientInfo.length === 0) {
       throw new Error("Failed to retrieve client information");
@@ -5587,7 +5666,7 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
 
     // Associate the treatment with the treatment plan
     // This should only happen if treatmentPlanId is provided and valid
-    if (treatmentPlanId) {
+    if (receiptIssued && treatmentPlanId) {
       await sql`
         INSERT INTO treatment_plan_treatments (treatment_plan_id, treatment_id)
         VALUES (${treatmentPlanId}, ${treatmentId})
@@ -5606,7 +5685,7 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     const appointmentDate = new Date(updatedTreatment[0].date);
 
     // Only insert income if the final price is greater than 0 (i.e., not fully covered by gift card)
-    if (totalPrice > 0) {
+    if (receiptIssued && totalPrice > 0) {
       const { rows: incomeResult } = await sql`
         INSERT INTO incomes (
           rmt_id,
@@ -5677,17 +5756,18 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       console.error("Error logging audit event:", logError);
     }
 
-    // Send email to the client
-    const transporter = getEmailTransporter();
-    const formattedDate = new Date(
-      updatedTreatment[0].date
-    ).toLocaleDateString();
+    if (receiptIssued) {
+      // Send email to the client
+      const transporter = getEmailTransporter();
+      const formattedDate = new Date(
+        updatedTreatment[0].date
+      ).toLocaleDateString();
 
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: client.email,
-      subject: "Your Receipt is Ready to Download",
-      text: `Hi ${client.first_name},
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: client.email,
+        subject: "Your Receipt is Ready to Download",
+        text: `Hi ${client.first_name},
 
 Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at www.ciprmt.com.
 
@@ -5695,14 +5775,15 @@ Thank you for your visit!
 
 Stay healthy,
 Cip`,
-      html: `
-        <h2>Your Receipt is Ready to Download</h2>
-        <p>Dear ${client.first_name},</p>
-        <p>Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at <a href="https://www.ciprmt.com">www.ciprmt.com</a>.</p>
-        <p>Thank you for your visit!</p>
-        <p>Stay healthy,<br>Cip</p>
-      `,
-    });
+        html: `
+          <h2>Your Receipt is Ready to Download</h2>
+          <p>Dear ${client.first_name},</p>
+          <p>Your receipt from ${formattedDate} is now ready to download. You can access it by logging into your account at <a href="https://www.ciprmt.com">www.ciprmt.com</a>.</p>
+          <p>Thank you for your visit!</p>
+          <p>Stay healthy,<br>Cip</p>
+        `,
+      });
+    }
 
     revalidatePath("/dashboard/rmt");
     return { success: true, message: "Treatment notes saved successfully" };
@@ -6283,10 +6364,6 @@ export async function searchUsers(query) {
         FROM information_schema.tables 
         WHERE table_schema = 'public'
       `;
-      console.log(
-        "Available tables:",
-        tables.map((t) => t.table_name)
-      );
     } catch (tableError) {
       console.error("Error listing tables:", tableError);
     }
@@ -8706,6 +8783,32 @@ export async function getAdditionalIncomeByMonth(year) {
   } catch (error) {
     console.error("Error fetching additional income:", error);
     return { success: false, error: "Failed to fetch additional income" };
+  }
+}
+
+export async function getAdditionalTreatmentsRevenueByMonth(year) {
+  try {
+    const queryResult = await sql`
+      SELECT 
+        EXTRACT(MONTH FROM t.date) as month,
+        t.date,
+        t.price,
+        u.first_name,
+        u.last_name
+      FROM additional_treatments t
+      LEFT JOIN users u ON t.client_id = u.id
+      WHERE EXTRACT(YEAR FROM t.date) = ${year}
+        AND t.status = 'completed'
+      ORDER BY t.date
+    `;
+    const result = queryResult.rows || queryResult;
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error fetching additional treatments revenue:", error);
+    return {
+      success: false,
+      error: "Failed to fetch additional treatments revenue",
+    };
   }
 }
 

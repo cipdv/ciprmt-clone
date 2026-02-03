@@ -2,6 +2,7 @@ import {
   getTreatmentsRevenueByMonth,
   getAvailableYears,
   getAdditionalIncomeByMonth,
+  getAdditionalTreatmentsRevenueByMonth,
   getExpensesByMonth,
 } from "@/app/_actions";
 import { YearSelector } from "./year-selector";
@@ -21,13 +22,17 @@ export default async function FinancesPage({ searchParams }) {
     selectedYear
   );
   const additionalIncomeResult = await getAdditionalIncomeByMonth(selectedYear);
+  const additionalTreatmentsResult =
+    await getAdditionalTreatmentsRevenueByMonth(selectedYear);
   const expensesResult = await getExpensesByMonth(selectedYear);
 
   const treatmentsByMonth = {};
   const additionalIncomeByMonth = {};
+  const additionalTreatmentsByMonth = {};
   const expensesByMonth = {};
   const yearTotals = {
     totalRevenue: 0,
+    additionalTreatmentsIncome: 0,
     hstCollected: 0,
     hstPaid: 0,
     totalExpenses: 0,
@@ -35,6 +40,7 @@ export default async function FinancesPage({ searchParams }) {
     incomeAfterExpenses: 0,
     estimatedTax: 0,
     netIncome: 0,
+    netIncomeWithAdditional: 0,
   };
 
   if (treatmentsRevenueResult.success) {
@@ -46,6 +52,7 @@ export default async function FinancesPage({ searchParams }) {
         treatmentsByMonth[month] = {
           treatments: [],
           totalRevenue: 0,
+          additionalTreatmentsIncome: 0,
           hstCollected: 0,
           hstPaid: 0,
           hstDifference: 0,
@@ -54,6 +61,7 @@ export default async function FinancesPage({ searchParams }) {
           incomeAfterExpenses: 0,
           estimatedTax: 0,
           netIncome: 0,
+          netIncomeWithAdditional: 0,
         };
       }
 
@@ -76,6 +84,23 @@ export default async function FinancesPage({ searchParams }) {
 
       additionalIncomeByMonth[month].incomes.push(income);
       additionalIncomeByMonth[month].totalAmount += amount;
+    });
+  }
+
+  if (additionalTreatmentsResult.success) {
+    additionalTreatmentsResult.data.forEach((treatment) => {
+      const month = Number.parseInt(treatment.month);
+      const amount = Number(treatment.price) || 0;
+
+      if (!additionalTreatmentsByMonth[month]) {
+        additionalTreatmentsByMonth[month] = {
+          treatments: [],
+          totalAmount: 0,
+        };
+      }
+
+      additionalTreatmentsByMonth[month].treatments.push(treatment);
+      additionalTreatmentsByMonth[month].totalAmount += amount;
     });
   }
 
@@ -168,6 +193,7 @@ export default async function FinancesPage({ searchParams }) {
     treatmentsByMonth[monthNum] = {
       treatments: [],
       totalRevenue,
+      additionalTreatmentsIncome: 0,
       hstCollected,
       hstPaid,
       hstDifference: hstCollected - hstPaid,
@@ -176,6 +202,7 @@ export default async function FinancesPage({ searchParams }) {
       incomeAfterExpenses,
       estimatedTax,
       netIncome,
+      netIncomeWithAdditional: netIncome,
     };
 
     yearTotals.totalRevenue += totalRevenue;
@@ -201,6 +228,7 @@ export default async function FinancesPage({ searchParams }) {
     treatmentsByMonth[monthNum] = {
       treatments: [],
       totalRevenue: 0,
+      additionalTreatmentsIncome: 0,
       hstCollected: 0,
       hstPaid: 0,
       hstDifference: 0,
@@ -209,6 +237,7 @@ export default async function FinancesPage({ searchParams }) {
       incomeAfterExpenses: -expensesAmount,
       estimatedTax,
       netIncome,
+      netIncomeWithAdditional: netIncome,
     };
 
     yearTotals.totalExpenses += expensesAmount;
@@ -220,6 +249,7 @@ export default async function FinancesPage({ searchParams }) {
       treatmentsByMonth[month] = {
         treatments: [],
         totalRevenue: 0,
+        additionalTreatmentsIncome: 0,
         hstCollected: 0,
         hstPaid: 0,
         hstDifference: 0,
@@ -228,9 +258,21 @@ export default async function FinancesPage({ searchParams }) {
         incomeAfterExpenses: 0,
         estimatedTax: 0,
         netIncome: 0,
+        netIncomeWithAdditional: 0,
       };
     }
   }
+
+  Object.keys(treatmentsByMonth).forEach((month) => {
+    const monthNum = Number(month);
+    const additionalTreatmentsAmount =
+      additionalTreatmentsByMonth[monthNum]?.totalAmount || 0;
+    treatmentsByMonth[monthNum].additionalTreatmentsIncome =
+      additionalTreatmentsAmount;
+    treatmentsByMonth[monthNum].netIncomeWithAdditional =
+      treatmentsByMonth[monthNum].netIncome + additionalTreatmentsAmount;
+    yearTotals.additionalTreatmentsIncome += additionalTreatmentsAmount;
+  });
 
   // Estimated Tax = 20% of (Yearly Income After HST - Yearly Total Expenses)
   // Net Income = Yearly Income After HST - Estimated Tax
@@ -239,6 +281,8 @@ export default async function FinancesPage({ searchParams }) {
   yearTotals.estimatedTax =
     yearlyIncomeAfterExpenses > 0 ? yearlyIncomeAfterExpenses * 0.2 : 0;
   yearTotals.netIncome = yearTotals.incomeAfterHST - yearTotals.estimatedTax;
+  yearTotals.netIncomeWithAdditional =
+    yearTotals.netIncome + yearTotals.additionalTreatmentsIncome;
 
   const formatCurrency = (value) => {
     return `$${value.toLocaleString("en-US", {
@@ -302,6 +346,12 @@ export default async function FinancesPage({ searchParams }) {
                           totalAmount: 0,
                         }
                       }
+                      additionalTreatments={
+                        additionalTreatmentsByMonth[month] || {
+                          treatments: [],
+                          totalAmount: 0,
+                        }
+                      }
                       expenses={
                         expensesByMonth[month] || {
                           expenses: [],
@@ -316,13 +366,21 @@ export default async function FinancesPage({ searchParams }) {
                 <h3 className="text-xl font-bold mb-4">
                   Year Total ({selectedYear})
                 </h3>
-                <div className="grid grid-cols-5 gap-4">
+                <div className="grid grid-cols-6 gap-4">
                   <div className="bg-white p-4 rounded-md border border-gray-200">
                     <div className="text-sm text-gray-600 mb-1">
                       Total Revenue
                     </div>
                     <div className="text-lg font-semibold">
                       {formatCurrency(yearTotals.totalRevenue)}
+                    </div>
+                  </div>
+                  <div className="bg-white p-4 rounded-md border border-gray-200">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Additional Treatments
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {formatCurrency(yearTotals.additionalTreatmentsIncome)}
                     </div>
                   </div>
                   <div className="bg-white p-4 rounded-md border border-gray-200">
@@ -352,7 +410,7 @@ export default async function FinancesPage({ searchParams }) {
                   <div className="bg-white p-4 rounded-md border border-gray-200">
                     <div className="text-sm text-gray-600 mb-1">Net Income</div>
                     <div className="text-lg font-semibold">
-                      {formatCurrency(yearTotals.netIncome)}
+                      {formatCurrency(yearTotals.netIncomeWithAdditional)}
                     </div>
                   </div>
                 </div>

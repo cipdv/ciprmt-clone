@@ -19,7 +19,13 @@ const monthNames = [
   "December",
 ];
 
-export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
+export function MonthlyBreakdown({
+  month,
+  data,
+  additionalIncome,
+  additionalTreatments,
+  expenses,
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const router = useRouter();
 
@@ -31,10 +37,6 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
     expenses?.expenses.filter(
       (exp) => exp.category !== "Home Office Expenses"
     ) || [];
-
-  if (homeOfficeExpenses.length > 0) {
-    console.log("[v0] Home office expenses:", homeOfficeExpenses);
-  }
 
   const formatCurrency = (value) => {
     return `$${value.toLocaleString("en-US", {
@@ -107,6 +109,12 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
             </div>
           </div>
           <div className="text-right">
+            <div className="text-xs text-gray-600">Additional Treatments</div>
+            <div className="font-semibold">
+              {formatCurrency(data.additionalTreatmentsIncome || 0)}
+            </div>
+          </div>
+          <div className="text-right">
             <div className="text-xs text-gray-600">HST (8.8%)</div>
             <div className="font-semibold">{formatCurrency(data.hstPaid)}</div>
           </div>
@@ -119,7 +127,9 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
           <div className="text-right">
             <div className="text-xs text-gray-600">Net Income</div>
             <div className="font-semibold">
-              {formatCurrency(data.netIncome)}
+              {formatCurrency(
+                data.netIncomeWithAdditional || data.netIncome
+              )}
             </div>
           </div>
         </div>
@@ -220,6 +230,49 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
                               Delete
                             </span>
                           </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Additional Treatments (post-tax add-on) */}
+          {additionalTreatments?.treatments?.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                Additional Treatments (No HST/Tax)
+              </h4>
+              <div className="rounded-md border border-gray-200 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">
+                        Date
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">
+                        Client Name
+                      </th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-700">
+                        Amount
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {additionalTreatments.treatments.map((treatment, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm">
+                          {formatDate(treatment.date)}
+                        </td>
+                        <td className="px-4 py-2 text-sm">
+                          {treatment.first_name && treatment.last_name
+                            ? `${treatment.first_name} ${treatment.last_name}`
+                            : "Unknown Client"}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-right">
+                          {formatCurrency(Number(treatment.price))}
                         </td>
                       </tr>
                     ))}
@@ -447,6 +500,15 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
                 </div>
               </div>
 
+              <div className="bg-slate-50 p-3 rounded-md border border-slate-200">
+                <div className="text-xs text-slate-600 mb-1">
+                  1b. Additional Treatments (post-tax add-on)
+                </div>
+                <div className="font-semibold text-slate-900">
+                  {formatCurrency(data.additionalTreatmentsIncome || 0)}
+                </div>
+              </div>
+
               {/* 2. HST Calculations */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-gray-50 p-3 rounded-md border border-gray-200">
@@ -518,10 +580,12 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
               {/* 7. Net Income */}
               <div className="bg-green-50 p-3 rounded-md border-2 border-green-300">
                 <div className="text-xs text-green-800 mb-1">
-                  7. Net Income (Income After HST - Estimated Tax)
+                  7. Net Income (Income After HST - Estimated Tax + Additional)
                 </div>
                 <div className="font-bold text-green-900 text-lg">
-                  {formatCurrency(data.netIncome)}
+                  {formatCurrency(
+                    data.netIncomeWithAdditional || data.netIncome
+                  )}
                 </div>
               </div>
             </div>
@@ -532,7 +596,9 @@ export function MonthlyBreakdown({ month, data, additionalIncome, expenses }) {
             <div className="flex justify-between items-center">
               <span className="font-semibold">Total Monthly Income</span>
               <span className="font-bold text-lg">
-                {formatCurrency(data.netIncome)}
+                {formatCurrency(
+                  data.netIncomeWithAdditional || data.netIncome
+                )}
               </span>
             </div>
           </div>

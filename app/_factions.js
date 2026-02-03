@@ -73,8 +73,6 @@ export async function bookAppointment({
       LIMIT 1
     `;
 
-    console.log("Available appointments found:", availableAppointments);
-
     if (availableAppointments.length === 0) {
       console.error("No matching appointment found");
       return {

@@ -35,8 +35,6 @@ export default function WeeklyScheduleEditor({
     try {
       const result = await loadScheduleData(locationId);
 
-      console.log("[v0] Schedule data from database:", result.data);
-
       if (result.success) {
         const scheduleData = {};
         const timesData = {};
@@ -59,8 +57,6 @@ export default function WeeklyScheduleEditor({
           }
         });
 
-        console.log("[v0] Processed schedule data:", scheduleData);
-        console.log("[v0] Processed appointment times:", timesData);
         setSchedule(scheduleData);
         setAppointmentTimes(timesData);
       }

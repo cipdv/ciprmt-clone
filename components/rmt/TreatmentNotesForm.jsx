@@ -33,6 +33,7 @@ const TreatmentNotesForm = ({
     price: treatment?.code ? "0" : "",
     otherPrice: "",
     giftCardCode: treatment?.code || "",
+    receiptIssued: true,
   });
 
   const [previousTreatments, setPreviousTreatments] = useState([]);
@@ -56,19 +57,20 @@ const TreatmentNotesForm = ({
   }, [planId, treatment?.id]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
+    const nextValue = type === "checkbox" ? checked : value;
 
-    if (name === "paymentType" && value === "gift_card") {
+    if (name === "paymentType" && nextValue === "gift_card") {
       setFormData((prevData) => ({
         ...prevData,
-        [name]: value,
+        [name]: nextValue,
         price: "0",
         giftCardCode: treatment?.code || prevData.giftCardCode,
       }));
     } else {
       setFormData((prevData) => ({
         ...prevData,
-        [name]: value,
+        [name]: nextValue,
       }));
     }
   };
@@ -286,7 +288,7 @@ const TreatmentNotesForm = ({
                               {formatDate(prevTreatment.date)}
                               {prevTreatment.appointmentBeginsAt &&
                                 ` at ${formatTime(
-                                  prevTreatment.appointmentBeginsAt
+                                  prevTreatment.appointmentBeginsAt,
                                 )}`}
                             </p>
                             <p className="text-gray-600">
@@ -377,7 +379,7 @@ const TreatmentNotesForm = ({
                     handleFindingChange(
                       index,
                       "subjectiveResults",
-                      e.target.value
+                      e.target.value,
                     )
                   }
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
@@ -396,7 +398,7 @@ const TreatmentNotesForm = ({
                     handleFindingChange(
                       index,
                       "objectiveResults",
-                      e.target.value
+                      e.target.value,
                     )
                   }
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
@@ -469,7 +471,7 @@ const TreatmentNotesForm = ({
         ></textarea>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
             Payment Type
@@ -519,6 +521,22 @@ const TreatmentNotesForm = ({
               className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
             />
           )}
+        </div>
+        <div className="flex items-center gap-2 md:mt-6">
+          <input
+            id="receiptIssued"
+            name="receiptIssued"
+            type="checkbox"
+            checked={formData.receiptIssued}
+            onChange={handleChange}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <label
+            htmlFor="receiptIssued"
+            className="text-sm font-medium text-gray-700"
+          >
+            Receipt?
+          </label>
         </div>
       </div>
 

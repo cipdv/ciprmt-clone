@@ -41,8 +41,6 @@ export default function RescheduleMassageForm({
             currentAppointment.googleCalendarEventId
           );
 
-          console.log("times", times);
-
           const sortedTimes = times.sort(
             (a, b) => new Date(a.date) - new Date(b.date)
           );

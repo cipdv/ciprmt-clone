@@ -34,8 +34,6 @@ function BookMassageForm({ rmtSetup, user }) {
     ? user.resultObj.canBookAtIds
     : [];
 
-  console.log("can  book at", canBookAtIds);
-
   const handleLocationChange = (event) => {
     const { value } = event.target;
     const selectedSetup = rmtSetup.find((setup) => setup._id === value);

@@ -35,11 +35,7 @@ const TreatmentPage = ({ params }) => {
         const { id } = await params; // Await params for Next.js 15 compatibility
         const result = await getTreatmentAndPlans(id);
 
-        console.log("[v0] Client received result:", result);
-
         if (result.success) {
-          console.log("[v0] Setting treatment:", result.treatment);
-          console.log("[v0] Setting treatment plans:", result.treatmentPlans);
           setTreatment(result.treatment);
           setTreatmentPlans(result.treatmentPlans);
 
@@ -349,7 +345,6 @@ const TreatmentPage = ({ params }) => {
 
                 <div className="space-y-4">
                   {treatmentPlans.map((plan) => {
-                    console.log("[v0] Rendering plan:", plan);
                     return (
                       <div
                         key={plan.id}
