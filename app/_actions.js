@@ -61,7 +61,7 @@ const jwtClient = new google.auth.JWT(
   GOOGLE_CLIENT_EMAIL,
   null,
   GOOGLE_PRIVATE_KEY,
-  SCOPES
+  SCOPES,
 );
 
 const calendar = google.calendar({
@@ -328,7 +328,7 @@ export async function getUserRmtLocations(userId) {
 export async function addUserRmtLocation(
   userId,
   locationId,
-  isPrimary = false
+  isPrimary = false,
 ) {
   await sql`
     INSERT INTO user_rmt_locations (user_id, rmt_location_id, is_primary)
@@ -455,7 +455,7 @@ export const verifyAuth = async (token) => {
   try {
     const verified = await jwtVerify(
       token,
-      new TextEncoder().encode(getJwtSecretKey())
+      new TextEncoder().encode(getJwtSecretKey()),
     );
     return verified.payload;
   } catch (error) {
@@ -521,7 +521,7 @@ export async function getReceipts(id) {
 
     if (!canAccess) {
       throw new Error(
-        "Unauthorized: User does not have permission to access these treatments"
+        "Unauthorized: User does not have permission to access these treatments",
       );
     }
 
@@ -639,7 +639,7 @@ export async function getReceiptById(id) {
 
     if (!canAccess) {
       throw new Error(
-        "Unauthorized: User does not have permission to access this receipt"
+        "Unauthorized: User does not have permission to access this receipt",
       );
     }
 
@@ -1130,7 +1130,7 @@ export async function getDataForBookAppointmentsForm() {
             payment: location.payment,
           },
         };
-      })
+      }),
     );
 
     return { user, rmtSetup };
@@ -1507,7 +1507,7 @@ export async function getUsersAppointments(id) {
 
     if (!canAccess) {
       throw new Error(
-        "Unauthorized: User does not have permission to access these appointments"
+        "Unauthorized: User does not have permission to access these appointments",
       );
     }
 
@@ -1614,7 +1614,7 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
       // Parse start and end times
       const startTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_start}`
+        `${appointmentDate}T${appointment.appointment_window_start}`,
       );
       const endTime = new Date(`${appointmentDate}T${appointment.end}`);
 
@@ -1637,10 +1637,10 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
       // Parse start and end times
       const startTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_start}`
+        `${appointmentDate}T${appointment.appointment_window_start}`,
       );
       const endTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_end}`
+        `${appointmentDate}T${appointment.appointment_window_end}`,
       );
 
       let currentTime = new Date(startTime);
@@ -1712,7 +1712,7 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
         startTime: formatDateTime(bufferedStart).time,
         endTime: formatDateTime(bufferedEnd).time,
       };
-    }
+    },
   );
 
   // Filter out conflicting times
@@ -1730,15 +1730,24 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     });
   });
 
+  // Deduplicate identical slots that can occur from duplicate availability rows
+  const uniqueSlotKeys = new Set();
+  const dedupedAvailableTimes = filteredAvailableTimes.filter((available) => {
+    const key = `${available.date}|${available.startTime}|${available.endTime}`;
+    if (uniqueSlotKeys.has(key)) return false;
+    uniqueSlotKeys.add(key);
+    return true;
+  });
+
   // Filter out dates that are not greater than today
   const today = new Date().toISOString().split("T")[0];
-  const futureAvailableTimes = filteredAvailableTimes.filter(
-    (available) => available.date > today
+  const futureAvailableTimes = dedupedAvailableTimes.filter(
+    (available) => available.date > today,
   );
 
   // Sort the results by date
   const sortedAvailableTimes = futureAvailableTimes.sort(
-    (a, b) => new Date(a.date) - new Date(b.date)
+    (a, b) => new Date(a.date) - new Date(b.date),
   );
 
   return sortedAvailableTimes;
@@ -1826,7 +1835,7 @@ export async function bookAppointment({
 
   // Calculate end time
   const endDateTime = new Date(
-    startDateTime.getTime() + Number.parseInt(duration) * 60000
+    startDateTime.getTime() + Number.parseInt(duration) * 60000,
   );
   const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
     hour12: false,
@@ -2345,7 +2354,7 @@ export const cancelAppointment = async (prevState, formData) => {
       const transporter = getEmailTransporter();
       const formattedDate = formatDateForDisplay(appointment.date);
       const formattedTime = formatTimeForDisplay(
-        appointment.appointment_begins_at
+        appointment.appointment_begins_at,
       );
 
       await transporter.sendMail({
@@ -2523,7 +2532,7 @@ export async function getAppointmentById(id) {
 
     if (!canAccess) {
       throw new Error(
-        "Unauthorized: User does not have permission to access this appointment"
+        "Unauthorized: User does not have permission to access this appointment",
       );
     }
 
@@ -2586,7 +2595,7 @@ export async function submitConsentForm(data) {
     // Check if the user has permission to submit this consent form
     if (appointment.client_id !== userId) {
       throw new Error(
-        "Unauthorized: User does not have permission to submit this consent form"
+        "Unauthorized: User does not have permission to submit this consent form",
       );
     }
 
@@ -2702,7 +2711,7 @@ export async function setAppointmentStatus(appointmentId, status) {
 export const getAllAvailableAppointments = async (
   rmtLocationId,
   duration,
-  currentEventGoogleId
+  currentEventGoogleId,
 ) => {
   // Convert duration to an integer
   const durationMinutes = parseInt(duration, 10);
@@ -2749,10 +2758,10 @@ export const getAllAvailableAppointments = async (
 
       // Parse start and end times
       const startTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_start}`
+        `${appointmentDate}T${appointment.appointment_window_start}`,
       );
       const endTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_end}`
+        `${appointmentDate}T${appointment.appointment_window_end}`,
       );
 
       // Check if the appointment duration fits within the available time slot
@@ -2774,10 +2783,10 @@ export const getAllAvailableAppointments = async (
 
       // Parse start and end times
       const startTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_start}`
+        `${appointmentDate}T${appointment.appointment_window_start}`,
       );
       const endTime = new Date(
-        `${appointmentDate}T${appointment.appointment_window_end}`
+        `${appointmentDate}T${appointment.appointment_window_end}`,
       );
 
       let currentTime = new Date(startTime);
@@ -2831,10 +2840,10 @@ export const getAllAvailableAppointments = async (
 
   if (event) {
     const eventStart = new Date(
-      event.data.start.dateTime || event.data.start.date
+      event.data.start.dateTime || event.data.start.date,
     ).toISOString();
     const eventEnd = new Date(
-      event.data.end.dateTime || event.data.end.date
+      event.data.end.dateTime || event.data.end.date,
     ).toISOString();
 
     filteredBusyTimes = busyTimes.data.calendars[
@@ -2903,12 +2912,12 @@ export const getAllAvailableAppointments = async (
   const today = new Date().toISOString().split("T")[0];
 
   const futureAvailableTimes = filteredAvailableTimes.filter(
-    (available) => available.date > today
+    (available) => available.date > today,
   );
 
   // Sort the results by date
   const sortedAvailableTimes = futureAvailableTimes.sort(
-    (a, b) => new Date(a.date) - new Date(b.date)
+    (a, b) => new Date(a.date) - new Date(b.date),
   );
 
   return sortedAvailableTimes;
@@ -3209,7 +3218,7 @@ export async function rescheduleAppointment(
     workplace,
     appointmentDate,
     RMTLocationId,
-  }
+  },
 ) {
   const session = await getSession();
   if (!session) {
@@ -3227,14 +3236,14 @@ export async function rescheduleAppointment(
   // Convert appointmentTime from "HH:MM AM/PM - HH:MM AM/PM" to "HH:MM" (24-hour format)
   const [startTime, endTime] = appointmentTime.split(" - ");
   const formattedStartTime = new Date(
-    `${appointmentDate} ${startTime}`
+    `${appointmentDate} ${startTime}`,
   ).toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
   });
   const formattedEndTime = new Date(
-    `${appointmentDate} ${endTime}`
+    `${appointmentDate} ${endTime}`,
   ).toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
@@ -3271,14 +3280,14 @@ export async function rescheduleAppointment(
 
     console.log(
       "[v0] Current appointment object:",
-      JSON.stringify(currentAppointment, null, 2)
+      JSON.stringify(currentAppointment, null, 2),
     );
     console.log("[v0] Gift card code from database:", currentAppointment.code);
     console.log("[v0] Code type:", typeof currentAppointment.code);
     console.log("[v0] Code is null?", currentAppointment.code === null);
     console.log(
       "[v0] Code is undefined?",
-      currentAppointment.code === undefined
+      currentAppointment.code === undefined,
     );
 
     const consentForm = currentAppointment.consent_form;
@@ -3287,7 +3296,7 @@ export async function rescheduleAppointment(
 
     console.log(
       "[v0] Rescheduling appointment - Gift card code from old appointment:",
-      giftCardCode
+      giftCardCode,
     );
 
     // Update Google Calendar if there's an event ID
@@ -3355,7 +3364,7 @@ export async function rescheduleAppointment(
       console.log("[v0] Transferring gift card code:", giftCardCode);
       console.log(
         "[v0] Gift card code value being inserted:",
-        giftCardCode || null
+        giftCardCode || null,
       );
 
       const updateResult = await sql`
@@ -3383,11 +3392,11 @@ export async function rescheduleAppointment(
 
       console.log(
         "[v0] New appointment updated. Result:",
-        updateResult.rows[0]
+        updateResult.rows[0],
       );
       console.log(
         "[v0] Code successfully transferred?",
-        updateResult.rows[0].code === giftCardCode
+        updateResult.rows[0].code === giftCardCode,
       );
 
       try {
@@ -3450,7 +3459,7 @@ export async function rescheduleAppointment(
         } catch (calendarError) {
           console.error(
             "Error reverting Google Calendar event:",
-            calendarError
+            calendarError,
           );
         }
       }
@@ -3480,7 +3489,7 @@ export async function rescheduleAppointment(
   } catch (error) {
     console.error(
       "An error occurred while rescheduling the appointment:",
-      error
+      error,
     );
     return {
       success: false,
@@ -3737,7 +3746,7 @@ export async function rescheduleAppointment(
 async function sendRescheduleNotificationEmail(
   currentAppointment,
   user,
-  newAppointment
+  newAppointment,
 ) {
   const transporter = getEmailTransporter();
 
@@ -3751,8 +3760,8 @@ async function sendRescheduleNotificationEmail(
       Current Appointment:
       Date: ${currentAppointment.appointmentDate}
       Time: ${currentAppointment.appointmentBeginsAt} - ${
-      currentAppointment.appointmentEndsAt
-    }
+        currentAppointment.appointmentEndsAt
+      }
 
       Requested New Appointment:
       Date: ${newAppointment.appointmentDate}
@@ -3770,15 +3779,15 @@ async function sendRescheduleNotificationEmail(
     html: `
       <h2>Appointment Reschedule Request</h2>
       <p>A reschedule request has been made by ${user.firstName} ${
-      user.lastName
-    }.</p>
+        user.lastName
+      }.</p>
 
       <h3>Current Appointment:</h3>
       <p>
         Date: ${currentAppointment.appointmentDate}<br>
         Time: ${currentAppointment.appointmentBeginsAt} - ${
-      currentAppointment.appointmentEndsAt
-    }
+          currentAppointment.appointmentEndsAt
+        }
       </p>
 
       <h3>Requested New Appointment:</h3>
@@ -3913,7 +3922,7 @@ export async function addHealthHistory(data) {
     console.error("Error adding health history:", error);
     if (error.name === "ZodError") {
       throw new Error(
-        `Validation error: ${error.errors.map((e) => e.message).join(", ")}`
+        `Validation error: ${error.errors.map((e) => e.message).join(", ")}`,
       );
     }
     throw new Error(error.message || "Failed to add health history");
@@ -3983,7 +3992,7 @@ export async function getClientHealthHistories(id) {
             userId: history.user_id,
             createdAt: history.created_at.toISOString(),
             ...decryptedData,
-          })
+          }),
         );
       })
       .filter(Boolean); // Remove any null entries from failed decryption
@@ -4295,7 +4304,7 @@ export async function sendMessageToCip(prevState, formData) {
       <div style="background-color: #f0f0f0; padding: 20px; border-radius: 5px;">
         <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">New message from CipRMT.com</h2>
         <p style="font-weight: bold;">This is a message from ${he.encode(
-          userName
+          userName,
         )}:</p>
         <div style="background-color: #ffffff; border-left: 4px solid #3498db; padding: 15px; margin: 10px 0;">
           <p style="margin: 0;">${he.encode(message)}</p>
@@ -4304,18 +4313,18 @@ export async function sendMessageToCip(prevState, formData) {
           <p style="margin: 5px 0;">
             <strong>Reply by email:</strong> 
             <a href="mailto:${he.encode(
-              currentUser.resultObj.email
+              currentUser.resultObj.email,
             )}" style="color: #3498db; text-decoration: none;">${he.encode(
-      currentUser.resultObj.email
-    )}</a>
+              currentUser.resultObj.email,
+            )}</a>
           </p>
           <p style="margin: 5px 0;">
             <strong>Reply by phone:</strong> 
             <a href="tel:${he.encode(
-              currentUser.resultObj.phoneNumber || "N/A"
+              currentUser.resultObj.phoneNumber || "N/A",
             )}" style="color: #3498db; text-decoration: none;">${he.encode(
-      currentUser.resultObj.phoneNumber || "N/A"
-    )}</a>
+              currentUser.resultObj.phoneNumber || "N/A",
+            )}</a>
           </p>
         </div>
         <div style="margin-top: 20px; font-size: 12px; color: #7f8c8d; text-align: center;">
@@ -4542,7 +4551,7 @@ export async function resetPassword(email) {
   } catch (error) {
     console.error("Error in resetPassword:", error);
     throw new Error(
-      "Failed to process password reset request. Please try again."
+      "Failed to process password reset request. Please try again.",
     );
   }
 }
@@ -4594,7 +4603,7 @@ export async function getDashboardAppointments(rmtId) {
     // Get current date and time in Toronto timezone
     const now = new Date();
     const torontoTime = new Date(
-      now.toLocaleString("en-US", { timeZone: "America/Toronto" })
+      now.toLocaleString("en-US", { timeZone: "America/Toronto" }),
     );
     const currentDateString = torontoTime.toISOString().split("T")[0];
     const currentHour = torontoTime.getHours();
@@ -5315,7 +5324,7 @@ export async function getTreatmentById(id) {
 
     if (!canAccess) {
       throw new Error(
-        "Unauthorized: User does not have permission to access this treatment"
+        "Unauthorized: User does not have permission to access this treatment",
       );
     }
 
@@ -5541,10 +5550,10 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       typeof notes?.receiptIssued === "boolean"
         ? notes.receiptIssued
         : notes?.receiptIssued === "true"
-        ? true
-        : notes?.receiptIssued === "false"
-        ? false
-        : true;
+          ? true
+          : notes?.receiptIssued === "false"
+            ? false
+            : true;
 
     let updatedTreatment = [];
 
@@ -5760,7 +5769,7 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       // Send email to the client
       const transporter = getEmailTransporter();
       const formattedDate = new Date(
-        updatedTreatment[0].date
+        updatedTreatment[0].date,
       ).toLocaleDateString();
 
       await transporter.sendMail({
@@ -6477,7 +6486,7 @@ export async function getClientWithHealthHistory(userId) {
         } catch (error) {
           console.error(
             `[v0] Error decrypting health history ${record.id}:`,
-            error
+            error,
           );
         }
       }
@@ -6730,7 +6739,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     }
     if (session.resultObj.userType !== "rmt") {
       throw new Error(
-        "Unauthorized: Only RMTs can book appointments for clients"
+        "Unauthorized: Only RMTs can book appointments for clients",
       );
     }
 
@@ -6774,7 +6783,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
 
     // Calculate end time
     const endDateTime = new Date(
-      startDateTime.getTime() + Number(duration) * 60000
+      startDateTime.getTime() + Number(duration) * 60000,
     );
 
     const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
@@ -7590,6 +7599,10 @@ export async function clearAppointment(appointmentId) {
 ////////////////////////////////////////
 // Cron Jobs////////////////////////////
 ////////////////////////////////////////
+const CRON_LOCK_KEYS = {
+  addAppointments: { key1: 712345001, key2: 1 },
+  sendAppointmentReminders: { key1: 712345001, key2: 2 },
+};
 
 export async function resetStaleReschedulingAppointments() {
   try {
@@ -7622,12 +7635,12 @@ export async function resetStaleReschedulingAppointments() {
       console.log(
         `Reset stale appointment: ${appointment.id} to status: ${
           appointment.previousStatus || "booked"
-        }`
+        }`,
       );
     }
 
     console.log(
-      `Stale appointment check executed at ${new Date().toISOString()}`
+      `Stale appointment check executed at ${new Date().toISOString()}`,
     );
 
     return {
@@ -7644,7 +7657,23 @@ export async function resetStaleReschedulingAppointments() {
 }
 
 export async function addAppointments() {
+  const lock = CRON_LOCK_KEYS.addAppointments;
+  let lockAcquired = false;
+
   try {
+    const { rows: lockRows } = await sql`
+      SELECT pg_try_advisory_lock(${lock.key1}, ${lock.key2}) AS locked
+    `;
+    lockAcquired = lockRows?.[0]?.locked === true;
+
+    if (!lockAcquired) {
+      console.log("Skipping addAppointments: cron lock is already held.");
+      return {
+        success: true,
+        message: "Skipped addAppointments: another run is already in progress.",
+      };
+    }
+
     console.log("Starting addAppointments cron job...");
 
     const today = new Date();
@@ -7690,7 +7719,7 @@ export async function addAppointments() {
 
     if (!workDays || workDays.length === 0) {
       console.log(
-        `No work day found for ${currentDay} for the specified RMT location`
+        `No work day found for ${currentDay} for the specified RMT location`,
       );
       return { success: false, message: `No work day found for ${currentDay}` };
     }
@@ -7721,12 +7750,8 @@ export async function addAppointments() {
     let insertedCount = 0;
 
     for (const timeSlot of appointmentTimes) {
-      // Calculate expiry date (7 days after appointment date)
-      const expiryDate = new Date(appointmentDate);
-      expiryDate.setDate(appointmentDate.getDate() + 7);
-
-      // Insert the appointment
-      await sql`
+      // Insert only if this exact available window does not already exist
+      const insertResult = await sql`
         INSERT INTO treatments (
           rmt_id,
           rmt_location_id,
@@ -7744,13 +7769,25 @@ export async function addAppointments() {
           'available',
           CURRENT_TIMESTAMP
         )
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM treatments t
+          WHERE t.rmt_location_id = ${location.id}
+            AND t.date = ${formattedDate}::date
+            AND t.appointment_window_start = ${timeSlot.start_time}::time
+            AND t.appointment_window_end = ${timeSlot.end_time}::time
+            AND t.status = 'available'
+        )
+        RETURNING id
       `;
 
-      insertedCount++;
+      if (insertResult.rows.length > 0) {
+        insertedCount++;
+      }
     }
 
     console.log(
-      `Inserted ${insertedCount} appointments for RMT ${location.user_id}`
+      `Inserted ${insertedCount} appointments for RMT ${location.user_id}`,
     );
 
     // Note: PostgreSQL doesn't have the exact equivalent of MongoDB's TTL indexes
@@ -7767,6 +7804,16 @@ export async function addAppointments() {
       success: false,
       message: error.message,
     };
+  } finally {
+    if (lockAcquired) {
+      try {
+        await sql`
+          SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
+        `;
+      } catch (unlockError) {
+        console.error("Failed to release addAppointments cron lock:", unlockError);
+      }
+    }
   }
 }
 
@@ -7932,7 +7979,24 @@ export async function deleteExpiredAppointments() {
 }
 
 export async function sendAppointmentReminders() {
+  const lock = CRON_LOCK_KEYS.sendAppointmentReminders;
+  let lockAcquired = false;
+
   try {
+    const { rows: lockRows } = await sql`
+      SELECT pg_try_advisory_lock(${lock.key1}, ${lock.key2}) AS locked
+    `;
+    lockAcquired = lockRows?.[0]?.locked === true;
+
+    if (!lockAcquired) {
+      console.log("Skipping sendAppointmentReminders: cron lock is already held.");
+      return {
+        success: true,
+        message:
+          "Skipped sendAppointmentReminders: another run is already in progress.",
+      };
+    }
+
     console.log("Starting appointment reminder process...");
     const transporter = getEmailTransporter();
 
@@ -7967,7 +8031,7 @@ export async function sendAppointmentReminders() {
     `;
 
     console.log(
-      `Found ${appointments.length} appointments to send reminders for`
+      `Found ${appointments.length} appointments to send reminders for`,
     );
 
     // Add a delay between sending emails to avoid rate limiting
@@ -7992,7 +8056,7 @@ export async function sendAppointmentReminders() {
           email: appointment.email,
           appointmentDate: formatDateForDisplay(appointment.date),
           appointmentBeginsAt: formatTimeForDisplay(
-            appointment.appointment_begins_at
+            appointment.appointment_begins_at,
           ),
           location: appointment.location || "Not specified",
           duration: appointment.duration || "60",
@@ -8014,7 +8078,7 @@ export async function sendAppointmentReminders() {
         });
 
         console.log(
-          `Sent reminder email to ${appointmentData.email} for appointment on ${appointmentData.appointmentDate}. MessageId: ${info.messageId}`
+          `Sent reminder email to ${appointmentData.email} for appointment on ${appointmentData.appointmentDate}. MessageId: ${info.messageId}`,
         );
 
         successCount++;
@@ -8024,7 +8088,7 @@ export async function sendAppointmentReminders() {
       } catch (emailError) {
         console.error(
           `Error sending email for appointment ${appointment.id}:`,
-          emailError
+          emailError,
         );
         failCount++;
         // Continue with the next appointment even if this one fails
@@ -8032,7 +8096,7 @@ export async function sendAppointmentReminders() {
     }
 
     console.log(
-      `Appointment reminder process completed. Success: ${successCount}, Failed: ${failCount}`
+      `Appointment reminder process completed. Success: ${successCount}, Failed: ${failCount}`,
     );
     return {
       success: true,
@@ -8041,6 +8105,19 @@ export async function sendAppointmentReminders() {
   } catch (error) {
     console.error("Error in sendAppointmentReminders:", error);
     return { success: false, message: error.message };
+  } finally {
+    if (lockAcquired) {
+      try {
+        await sql`
+          SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
+        `;
+      } catch (unlockError) {
+        console.error(
+          "Failed to release sendAppointmentReminders cron lock:",
+          unlockError,
+        );
+      }
+    }
   }
 }
 //save this in case i need to populate appointments in the future
@@ -8252,7 +8329,7 @@ export async function migrateTreatmentsWithTimeWindows() {
       } catch (error) {
         console.error(
           `Error migrating treatment plan ${plan._id.toString()}:`,
-          error
+          error,
         );
       }
     }
@@ -8276,7 +8353,7 @@ export async function migrateTreatmentsWithTimeWindows() {
 
       if (columnCheck.length < 2) {
         console.log(
-          "Adding appointment time window columns to treatments table..."
+          "Adding appointment time window columns to treatments table...",
         );
         await sql`
           ALTER TABLE treatments 
@@ -8302,13 +8379,13 @@ export async function migrateTreatmentsWithTimeWindows() {
         const rmtId = treatment.RMTId
           ? treatment.RMTId.toString()
           : treatment.rmtId
-          ? treatment.rmtId.toString()
-          : null;
+            ? treatment.rmtId.toString()
+            : null;
         const clientId = treatment.userId
           ? treatment.userId.toString()
           : treatment.clientId
-          ? treatment.clientId.toString()
-          : null;
+            ? treatment.clientId.toString()
+            : null;
         const treatmentPlanId = treatment.treatmentPlanId
           ? treatment.treatmentPlanId.toString()
           : null;
@@ -8482,7 +8559,7 @@ export async function migrateTreatmentsWithTimeWindows() {
       } catch (error) {
         console.error(
           `Error migrating treatment ${treatment._id.toString()}:`,
-          error
+          error,
         );
       }
     }
@@ -8508,7 +8585,7 @@ export async function migrateTreatmentsWithTimeWindows() {
 
           if (!treatmentId) {
             console.log(
-              `No PostgreSQL ID found for treatment ${treatmentMongoId}`
+              `No PostgreSQL ID found for treatment ${treatmentMongoId}`,
             );
             continue;
           }
@@ -8527,12 +8604,12 @@ export async function migrateTreatmentsWithTimeWindows() {
               ON CONFLICT (treatment_plan_id, treatment_id) DO NOTHING
             `;
             console.log(
-              `Created relationship between plan ${planId} and treatment ${treatmentId}`
+              `Created relationship between plan ${planId} and treatment ${treatmentId}`,
             );
           } catch (error) {
             console.error(
               `Error creating relationship for plan ${planId} and treatment ${treatmentId}:`,
-              error
+              error,
             );
           }
         }
@@ -8550,7 +8627,7 @@ export async function migrateTreatmentsWithTimeWindows() {
     `;
 
     console.log(
-      `Found ${incompleteRecords.length} treatments with missing time window data`
+      `Found ${incompleteRecords.length} treatments with missing time window data`,
     );
 
     for (const record of incompleteRecords) {
@@ -8578,7 +8655,7 @@ export async function migrateTreatmentsWithTimeWindows() {
             WHERE id = ${record.id}
           `;
           console.log(
-            `Fixed missing appointment_start_time for treatment ${record.id}`
+            `Fixed missing appointment_start_time for treatment ${record.id}`,
           );
         }
 
@@ -8589,7 +8666,7 @@ export async function migrateTreatmentsWithTimeWindows() {
             WHERE id = ${record.id}
           `;
           console.log(
-            `Fixed missing appointment_end_time for treatment ${record.id}`
+            `Fixed missing appointment_end_time for treatment ${record.id}`,
           );
         }
       } catch (error) {
@@ -8676,7 +8753,7 @@ export async function consolidateUsers() {
     const migratedCount = await db.collection("migrateUsers").countDocuments();
 
     console.log(
-      `Original users: ${originalCount}, Migrated users: ${migratedCount}`
+      `Original users: ${originalCount}, Migrated users: ${migratedCount}`,
     );
 
     // Check for any missing fields in the migrated collection
@@ -9159,23 +9236,23 @@ function simpleMarkdownToHtml(markdown) {
   return markdown
     .replace(
       /^# (.*$)/gim,
-      '<h1 style="font-size: 24px; font-weight: bold; margin: 16px 0;">$1</h1>'
+      '<h1 style="font-size: 24px; font-weight: bold; margin: 16px 0;">$1</h1>',
     )
     .replace(
       /^## (.*$)/gim,
-      '<h2 style="font-size: 20px; font-weight: bold; margin: 14px 0;">$1</h2>'
+      '<h2 style="font-size: 20px; font-weight: bold; margin: 14px 0;">$1</h2>',
     )
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
     .replace(/^- (.*$)/gim, '<li style="margin: 4px 0;">$1</li>')
     .replace(
       /\[([^\]]+)\]$$([^)]+)$$/g,
-      '<a href="$2" style="color: #2563eb; text-decoration: underline;">$1</a>'
+      '<a href="$2" style="color: #2563eb; text-decoration: underline;">$1</a>',
     )
     .replace(/\n/g, "<br>")
     .replace(
       /(<li.*?>.*?<\/li>)/gs,
-      '<ul style="margin: 8px 0; padding-left: 20px;">$1</ul>'
+      '<ul style="margin: 8px 0; padding-left: 20px;">$1</ul>',
     );
 }
 
@@ -9237,8 +9314,8 @@ export async function sendEmailBlast(formData) {
 
       console.log(
         `[v0] Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(
-          shuffledUsers.length / batchSize
-        )} (${batch.length} emails)`
+          shuffledUsers.length / batchSize,
+        )} (${batch.length} emails)`,
       );
 
       // Send emails in current batch
@@ -9288,14 +9365,14 @@ export async function sendEmailBlast(formData) {
         console.log(
           `[v0] Waiting ${
             delayBetweenBatches / 1000
-          } seconds before next batch...`
+          } seconds before next batch...`,
         );
         await delay(delayBetweenBatches);
       }
     }
 
     console.log(
-      `[v0] Email blast completed: ${successCount} sent, ${failureCount} failed`
+      `[v0] Email blast completed: ${successCount} sent, ${failureCount} failed`,
     );
 
     return {
@@ -9631,11 +9708,11 @@ async function generateReceiptPDF(purchaseData) {
     process.cwd(),
     "public",
     "images",
-    "stripe-logo.png"
+    "stripe-logo.png",
   );
   const stripeLogoBuffer = fs.readFileSync(stripeLogoPath);
   const stripeLogoBase64 = `data:image/png;base64,${stripeLogoBuffer.toString(
-    "base64"
+    "base64",
   )}`;
 
   const docDefinition = {

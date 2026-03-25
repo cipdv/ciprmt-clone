@@ -16,7 +16,7 @@ export function getStandardReminderEmail(appointment) {
       Please plan to arrive no earlier than 10 minutes before your appointment as I may still need time to clean and disinfect after the previous appointment.
 
       Parking:
-      There is free parking for up to 1 hour available at the side of the building, on Berkeley Street and free street parking available on Shuter Street and Berkeley Street.
+      There is parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
 
       What to wear:
       Thai massage is practiced over clothing, so please bring comfortable, loose fitting clothing that you will be able to stretch in, including shorts or pants, and a short sleeved t-shirt made from soft natural fabric like cotton, bamboo, or hemp. You may change clothing here, or come fully dressed.
@@ -53,7 +53,8 @@ export function getStandardReminderEmail(appointment) {
       <p>Please plan to arrive no earlier than 10 minutes before your appointment as I may still need time to clean and disinfect after the previous appointment.</p>
       
       <h4>Parking:</h4>
-      <p>There is free parking for up to 1 hour available at the side of the building, on Berkeley Street and free street parking available on Shuter Street and Berkeley Street.</p>
+      <p>There is parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
+</p>
       
       <h4>What to wear:</h4>
       <p>Thai massage is practiced over clothing, so please bring <strong>comfortable, loose fitting clothing</strong> that you will be able to stretch in, including shorts or pants, and a short sleeved t-shirt made from soft natural fabric like cotton, bamboo, or hemp.</p>
@@ -103,7 +104,7 @@ export function getConsentFormReminderEmail(appointment) {
       Please plan to arrive no earlier than 10 minutes before your appointment as I may still need time to clean and disinfect after the previous appointment.
 
       Parking:
-      There is free parking for up to 1 hour available at the side of the building, on Berkeley Street and free street parking available on Shuter Street and Berkeley Street.
+      There is parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
 
       What to wear:
       Thai massage is practiced over clothing, so please bring comfortable, loose fitting clothing that you will be able to stretch in, including shorts or pants, and a short sleeved t-shirt made from soft natural fabric like cotton, bamboo, or hemp. You may change clothing here, or come fully dressed.
@@ -143,7 +144,7 @@ export function getConsentFormReminderEmail(appointment) {
       <p>Please plan to arrive no earlier than 10 minutes before your appointment as I may still need time to clean and disinfect after the previous appointment.</p>
       
       <h4>Parking:</h4>
-      <p>There is free parking for up to 1 hour available at the side of the building, on Berkeley Street and free street parking available on Shuter Street and Berkeley Street.</p>
+      <p>There is parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.</p>
       
       <h4>What to wear:</h4>
       <p>Thai massage is practiced over clothing, so please bring <strong>comfortable, loose fitting clothing</strong> that you will be able to stretch in, including shorts or pants, and a short sleeved t-shirt made from soft natural fabric like cotton, bamboo, or hemp.</p>

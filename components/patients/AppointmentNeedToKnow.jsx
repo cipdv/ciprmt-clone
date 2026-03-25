@@ -104,7 +104,8 @@ const AppointmentNeedToKnow = ({ location }) => {
               you have not notified Cip de Vries, RMT, you will be required to
               pay the full cost of the treatment as booked. This fee will be due
               prior to your next treatment. A request for an
-              email-money-transfer will be sent to your email address on file.{" "}
+              email-money-transfer will be sent to your email address on
+              file.{" "}
             </p>
           </div>
         </div>
@@ -129,9 +130,9 @@ const AppointmentNeedToKnow = ({ location }) => {
             the previous appointment.
           </p>
           <p>
-            There is free parking for up to 1 hour available at the side of the
-            building, on Berkeley Street and free street parking available on
-            Shuter Street and Berkeley Street.
+            There is parking available at the side of the building; you can park
+            in any open spot. There is also free parking for up to 1 hour
+            available on Berkeley Street and Shuter Street.
           </p>
         </div>
         <div className="space-y-2">
