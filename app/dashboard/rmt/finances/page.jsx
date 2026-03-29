@@ -47,10 +47,12 @@ export default async function FinancesPage({ searchParams }) {
     treatmentsRevenueResult.data.forEach((treatment) => {
       const month = Number.parseInt(treatment.month);
       const price = Number(treatment.price) || 0;
+      const durationInMinutes = Number(treatment.duration) || 0;
 
       if (!treatmentsByMonth[month]) {
         treatmentsByMonth[month] = {
           treatments: [],
+          totalTreatmentHours: 0,
           totalRevenue: 0,
           additionalTreatmentsIncome: 0,
           hstCollected: 0,
@@ -67,6 +69,7 @@ export default async function FinancesPage({ searchParams }) {
 
       treatmentsByMonth[month].treatments.push(treatment);
       treatmentsByMonth[month].totalRevenue += price;
+      treatmentsByMonth[month].totalTreatmentHours += durationInMinutes / 60;
     });
   }
 
@@ -192,6 +195,7 @@ export default async function FinancesPage({ searchParams }) {
 
     treatmentsByMonth[monthNum] = {
       treatments: [],
+      totalTreatmentHours: 0,
       totalRevenue,
       additionalTreatmentsIncome: 0,
       hstCollected,
@@ -227,6 +231,7 @@ export default async function FinancesPage({ searchParams }) {
 
     treatmentsByMonth[monthNum] = {
       treatments: [],
+      totalTreatmentHours: 0,
       totalRevenue: 0,
       additionalTreatmentsIncome: 0,
       hstCollected: 0,
@@ -248,6 +253,7 @@ export default async function FinancesPage({ searchParams }) {
     if (!treatmentsByMonth[month]) {
       treatmentsByMonth[month] = {
         treatments: [],
+        totalTreatmentHours: 0,
         totalRevenue: 0,
         additionalTreatmentsIncome: 0,
         hstCollected: 0,

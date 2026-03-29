@@ -4,6 +4,7 @@ import {
   resetStaleReschedulingAppointments,
   sendAppointmentReminders,
   deleteExpiredAppointments,
+  autoCompleteMonthlyMaintenanceLog,
 } from "@/app/_actions";
 
 export async function GET(request) {
@@ -48,6 +49,33 @@ async function handleRequest(request) {
 
     await sendAppointmentReminders();
     console.log("Appointment reminders sent successfully");
+
+    const torontoDayOfMonth = Number(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Toronto",
+        day: "numeric",
+      }).format(new Date()),
+    );
+
+    if (torontoDayOfMonth === 1) {
+      const maintenanceResult = await autoCompleteMonthlyMaintenanceLog();
+      if (!maintenanceResult.success) {
+        throw new Error(
+          maintenanceResult.error ||
+            "Failed to auto-complete monthly maintenance log",
+        );
+      }
+
+      if (maintenanceResult.skipped) {
+        console.log("Monthly maintenance log already exists for this month");
+      } else {
+        console.log("Monthly maintenance log auto-completed successfully");
+      }
+    } else {
+      console.log(
+        `Skipping monthly maintenance auto-complete (Toronto day ${torontoDayOfMonth})`,
+      );
+    }
 
     return NextResponse.json({
       message: "Cron job executed successfully",

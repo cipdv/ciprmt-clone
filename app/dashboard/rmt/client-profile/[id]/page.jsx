@@ -6,6 +6,7 @@ import {
   createTreatmentPlan,
   setDNSTreatmentStatusAttachment,
   deleteAppointment,
+  emailClientToUpdateHealthHistory,
 } from "@/app/_actions";
 import TreatmentNotesForm from "@/components/rmt/TreatmentNotesForm";
 import NewTreatmentPlanForm from "@/components/rmt/NewTreatmentPlanForm";
@@ -31,6 +32,10 @@ const ClientProfilePage = ({ params }) => {
 
   const [showNewPlanForm, setShowNewPlanForm] = useState(false);
   const [dnsLoading, setDnsLoading] = useState(false);
+  const [isSendingHealthHistoryReminder, setIsSendingHealthHistoryReminder] =
+    useState(false);
+  const [healthHistoryReminderStatus, setHealthHistoryReminderStatus] =
+    useState(null);
 
   const [autoScrollInterval, setAutoScrollInterval] = useState(null);
 
@@ -214,6 +219,47 @@ const ClientProfilePage = ({ params }) => {
     return `${display}:${m.toString().padStart(2, "0")} ${ampm}`;
   };
 
+  const isHealthHistoryOutOfDate = (lastUpdate) => {
+    if (!lastUpdate) return true;
+
+    const lastUpdateDate = new Date(lastUpdate);
+    if (Number.isNaN(lastUpdateDate.getTime())) return true;
+
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    return lastUpdateDate < oneYearAgo;
+  };
+
+  const handleSendHealthHistoryReminder = async () => {
+    if (!client?.id) return;
+
+    setHealthHistoryReminderStatus(null);
+    setIsSendingHealthHistoryReminder(true);
+    try {
+      const result = await emailClientToUpdateHealthHistory(client.id);
+      if (!result.success) {
+        setHealthHistoryReminderStatus({
+          type: "error",
+          text: result.message || "Failed to send reminder email.",
+        });
+        return;
+      }
+
+      setHealthHistoryReminderStatus({
+        type: "success",
+        text: result.message || "Reminder email sent.",
+      });
+    } catch {
+      setHealthHistoryReminderStatus({
+        type: "error",
+        text: "Failed to send reminder email.",
+      });
+    } finally {
+      setIsSendingHealthHistoryReminder(false);
+    }
+  };
+
   if (loading) return <div className="text-center py-8">Loading...</div>;
 
   if (error)
@@ -223,11 +269,53 @@ const ClientProfilePage = ({ params }) => {
     <div className="max-w-4xl mx-auto p-4 sm:p-6 bg-formBackground min-h-screen">
       {/* HEADER */}
       {client && (
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-semibold text-white/90 bg-black/40 px-3 py-1 rounded-md">
-            {" "}
-            {client.firstName} {client.lastName}
-          </h1>
+        <div className="flex justify-between items-start mb-6 gap-4">
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-3xl font-semibold text-white/90 bg-black/40 px-3 py-1 rounded-md">
+                {client.firstName} {client.lastName}
+              </h1>
+              {isHealthHistoryOutOfDate(client.lastHealthHistoryUpdate) && (
+                <span className="text-sm font-medium text-amber-900 bg-amber-100 border border-amber-300 px-2 py-1 rounded">
+                  Health history out of date
+                </span>
+              )}
+            </div>
+
+            <p className="text-sm text-white/90 mt-2">
+              Email: {client.email || "Not provided"}
+            </p>
+            <p className="text-sm text-white/90">
+              Phone: {client.phoneNumber || "Not provided"}
+            </p>
+
+            {isHealthHistoryOutOfDate(client.lastHealthHistoryUpdate) && (
+              <div className="mt-3 space-y-2">
+                <button
+                  onClick={handleSendHealthHistoryReminder}
+                  disabled={isSendingHealthHistoryReminder}
+                  className="px-3 py-2 bg-amber-500 text-white rounded-md shadow hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSendingHealthHistoryReminder
+                    ? "Sending reminder..."
+                    : "Email Health History Reminder"}
+                </button>
+
+                {healthHistoryReminderStatus && (
+                  <div
+                    className={`text-sm rounded-md px-3 py-2 border ${
+                      healthHistoryReminderStatus.type === "success"
+                        ? "bg-green-50 border-green-200 text-green-800"
+                        : "bg-red-50 border-red-200 text-red-800"
+                    }`}
+                  >
+                    {healthHistoryReminderStatus.text}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <button
             onClick={() => setIsBookingModalOpen(true)}
             className="px-4 py-2 bg-buttons text-white rounded-md shadow hover:bg-buttonsHover"

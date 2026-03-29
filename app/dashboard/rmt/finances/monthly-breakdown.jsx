@@ -53,6 +53,13 @@ export function MonthlyBreakdown({
     });
   };
 
+  const formatHours = (hours) => {
+    return `${Number(hours || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })}h`;
+  };
+
   const handleDeleteExpense = async (expenseId) => {
     if (!confirm("Are you sure you want to delete this expense?")) return;
 
@@ -102,6 +109,12 @@ export function MonthlyBreakdown({
           <span className="font-semibold text-lg">{monthNames[month - 1]}</span>
         </div>
         <div className="flex gap-8">
+          <div className="text-right">
+            <div className="text-xs text-gray-600">Treatment Hours</div>
+            <div className="font-semibold">
+              {formatHours(data.totalTreatmentHours)}
+            </div>
+          </div>
           <div className="text-right">
             <div className="text-xs text-gray-600">Total Revenue</div>
             <div className="font-semibold">

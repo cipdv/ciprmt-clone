@@ -6453,6 +6453,7 @@ export async function getClientWithHealthHistory(userId) {
         preferred_name AS "preferredName",
         email,
         phone_number AS "phoneNumber",
+        last_health_history_update AS "lastHealthHistoryUpdate",
         pronouns,
         rmt_id AS "rmtId",
         user_type AS "userType"
@@ -6590,6 +6591,69 @@ export async function getClientProfileData(userId) {
     return {
       success: false,
       message: "Failed to fetch client profile data: " + error.message,
+    };
+  }
+}
+
+export async function emailClientToUpdateHealthHistory(clientId) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can send this reminder");
+    }
+
+    const { rows: clients } = await sql`
+      SELECT
+        id,
+        first_name AS "firstName",
+        last_name AS "lastName",
+        email,
+        rmt_id AS "rmtId"
+      FROM users
+      WHERE id = ${clientId}
+    `;
+
+    if (!clients || clients.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    const client = clients[0];
+    if (client.rmtId !== session.resultObj.id) {
+      throw new Error("Unauthorized: You do not manage this client");
+    }
+
+    if (!client.email) {
+      throw new Error("Client does not have an email address");
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.ciprmt.com";
+    const healthHistoryUrl = `${appUrl}/dashboard/patient/health-history`;
+
+    const transporter = getEmailTransporter();
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: client.email,
+      bcc: process.env.EMAIL_USER,
+      subject: "Please Update Your Health History",
+      text: `Hi ${client.firstName},\n\nPlease log in to your account and update your health history before your next appointment.\n\nUpdate here: ${healthHistoryUrl}\n\nThank you,\nCip De Vries, RMT`,
+      html: `
+        <p>Hi ${client.firstName},</p>
+        <p>Please log in to your account and update your health history before your next appointment.</p>
+        <p><a href="${healthHistoryUrl}">Update Your Health History</a></p>
+        <p>Thank you,<br/>Cip De Vries, RMT</p>
+      `,
+    });
+
+    return {
+      success: true,
+      message: `Health history reminder sent to ${client.firstName} ${client.lastName}`,
+    };
+  } catch (error) {
+    console.error("Error sending health history reminder:", error);
+    return {
+      success: false,
+      message:
+        error.message || "Failed to send health history update reminder email",
     };
   }
 }
@@ -6951,6 +7015,343 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     return {
       success: false,
       message: error.message || "Failed to book appointment",
+    };
+  }
+}
+
+export async function getRMTAppointmentForReschedule(appointmentId) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+    if (session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can access this page");
+    }
+
+    const { rows } = await sql`
+      SELECT
+        t.id,
+        t.rmt_id AS "rmtId",
+        t.client_id AS "clientId",
+        t.rmt_location_id AS "rmtLocationId",
+        t.date AS "appointmentDate",
+        t.appointment_begins_at AS "appointmentBeginsAt",
+        t.appointment_ends_at AS "appointmentEndsAt",
+        t.duration,
+        t.status,
+        t.location,
+        t.workplace,
+        t.price,
+        t.payment_type AS "paymentType",
+        t.google_calendar_event_id AS "googleCalendarEventId",
+        t.google_calendar_event_link AS "googleCalendarEventLink",
+        t.consent_form AS "consentForm",
+        t.consent_form_submitted_at AS "consentFormSubmittedAt",
+        t.code,
+        u.first_name AS "clientFirstName",
+        u.last_name AS "clientLastName",
+        u.email AS "clientEmail",
+        u.phone_number AS "clientPhoneNumber"
+      FROM treatments t
+      LEFT JOIN users u ON t.client_id = u.id
+      WHERE t.id = ${appointmentId}
+      LIMIT 1
+    `;
+
+    if (!rows || rows.length === 0) {
+      return { success: false, message: "Appointment not found." };
+    }
+
+    const appointment = rows[0];
+    if (appointment.rmtId !== session.resultObj.id) {
+      return {
+        success: false,
+        message: "Unauthorized: You do not have access to this appointment.",
+      };
+    }
+
+    return { success: true, appointment };
+  } catch (error) {
+    console.error("Error fetching RMT reschedule appointment:", error);
+    return {
+      success: false,
+      message: "Failed to fetch appointment details.",
+    };
+  }
+}
+
+export async function rescheduleAppointmentByRMT(
+  currentAppointmentId,
+  { date, time, duration },
+) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj) {
+      return {
+        success: false,
+        message: "Unauthorized: User not logged in",
+      };
+    }
+    if (session.resultObj.userType !== "rmt") {
+      return {
+        success: false,
+        message: "Unauthorized: Only RMTs can reschedule appointments",
+      };
+    }
+
+    if (!date || !time || !duration) {
+      return {
+        success: false,
+        message: "Missing required fields: date, time, or duration",
+      };
+    }
+
+    const { rows: currentRows } = await sql`
+      SELECT
+        treatments.id,
+        treatments.rmt_id AS "rmtId",
+        treatments.client_id AS "clientId",
+        u.first_name AS "clientFirstName",
+        u.last_name AS "clientLastName",
+        u.email AS "clientEmail",
+        treatments.rmt_location_id AS "rmtLocationId",
+        treatments.status,
+        treatments.location,
+        treatments.workplace,
+        treatments.consent_form AS "consentForm",
+        treatments.consent_form_submitted_at AS "consentFormSubmittedAt",
+        treatments.google_calendar_event_id AS "googleCalendarEventId",
+        treatments.google_calendar_event_link AS "googleCalendarEventLink",
+        treatments.code,
+        treatments.date AS "appointmentDate",
+        treatments.appointment_begins_at AS "appointmentBeginsAt",
+        treatments.appointment_ends_at AS "appointmentEndsAt"
+      FROM treatments
+      LEFT JOIN users u ON treatments.client_id = u.id
+      WHERE treatments.id = ${currentAppointmentId}
+      LIMIT 1
+    `;
+
+    if (!currentRows || currentRows.length === 0) {
+      return { success: false, message: "Current appointment not found." };
+    }
+
+    const currentAppointment = currentRows[0];
+    if (currentAppointment.rmtId !== session.resultObj.id) {
+      return {
+        success: false,
+        message: "Unauthorized: You do not manage this appointment.",
+      };
+    }
+    if (!currentAppointment.clientId) {
+      return {
+        success: false,
+        message: "This appointment has no client assigned.",
+      };
+    }
+
+    const startDateTime = new Date(`${date}T${time}:00`);
+    const formattedStartTime = startDateTime.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const endDateTime = new Date(startDateTime.getTime() + Number(duration) * 60000);
+    const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const formattedDate = new Date(date).toISOString().split("T")[0];
+
+    const { rows: targetSlots } = await sql`
+      SELECT id
+      FROM treatments
+      WHERE
+        rmt_id = ${currentAppointment.rmtId}
+        AND rmt_location_id = ${currentAppointment.rmtLocationId}
+        AND date = ${formattedDate}::date
+        AND status = 'available'
+        AND appointment_window_start <= ${formattedStartTime}::time
+        AND appointment_window_end >= ${formattedEndTime}::time
+      LIMIT 1
+    `;
+    let newAppointmentId = null;
+
+    if (currentAppointment.googleCalendarEventId) {
+      try {
+        await calendar.events.update({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: currentAppointment.googleCalendarEventId,
+          resource: {
+            summary: `[Booked] Mx ${currentAppointment.clientFirstName || ""} ${
+              currentAppointment.clientLastName || ""
+            }`.trim(),
+            location: currentAppointment.location || "Not specified",
+            start: {
+              dateTime: `${formattedDate}T${formattedStartTime}`,
+              timeZone: "America/Toronto",
+            },
+            end: {
+              dateTime: `${formattedDate}T${formattedEndTime}`,
+              timeZone: "America/Toronto",
+            },
+          },
+        });
+      } catch (calendarError) {
+        console.error("Error updating Google Calendar event:", calendarError);
+      }
+    }
+
+    // Clear old appointment so it becomes bookable again
+    await sql`
+      UPDATE treatments
+      SET 
+        status = 'available',
+        client_id = NULL,
+        duration = NULL,
+        workplace = NULL,
+        consent_form = NULL,
+        consent_form_submitted_at = NULL,
+        google_calendar_event_id = NULL,
+        google_calendar_event_link = NULL,
+        appointment_begins_at = NULL,
+        appointment_ends_at = NULL,
+        location = NULL,
+        code = NULL
+      WHERE id = ${currentAppointmentId}
+    `;
+
+    if (targetSlots && targetSlots.length > 0) {
+      newAppointmentId = targetSlots[0].id;
+
+      await sql`
+        UPDATE treatments
+        SET
+          status = ${
+            currentAppointment.status === "requested" ? "requested" : "booked"
+          },
+          client_id = ${currentAppointment.clientId},
+          appointment_begins_at = ${formattedStartTime}::time,
+          appointment_ends_at = ${formattedEndTime}::time,
+          duration = ${Number(duration)},
+          workplace = ${currentAppointment.workplace},
+          location = ${currentAppointment.location},
+          consent_form = ${currentAppointment.consentForm},
+          consent_form_submitted_at = ${currentAppointment.consentFormSubmittedAt},
+          google_calendar_event_id = ${currentAppointment.googleCalendarEventId},
+          google_calendar_event_link = ${currentAppointment.googleCalendarEventLink},
+          code = ${currentAppointment.code || null}
+        WHERE id = ${newAppointmentId}
+      `;
+    } else {
+      const { rows: createdRows } = await sql`
+        INSERT INTO treatments (
+          rmt_id,
+          rmt_location_id,
+          client_id,
+          date,
+          appointment_begins_at,
+          appointment_ends_at,
+          duration,
+          status,
+          location,
+          workplace,
+          consent_form,
+          consent_form_submitted_at,
+          google_calendar_event_id,
+          google_calendar_event_link,
+          code
+        )
+        VALUES (
+          ${currentAppointment.rmtId},
+          ${currentAppointment.rmtLocationId},
+          ${currentAppointment.clientId},
+          ${formattedDate}::date,
+          ${formattedStartTime}::time,
+          ${formattedEndTime}::time,
+          ${Number(duration)},
+          ${currentAppointment.status === "requested" ? "requested" : "booked"},
+          ${currentAppointment.location},
+          ${currentAppointment.workplace},
+          ${currentAppointment.consentForm},
+          ${currentAppointment.consentFormSubmittedAt},
+          ${currentAppointment.googleCalendarEventId},
+          ${currentAppointment.googleCalendarEventLink},
+          ${currentAppointment.code || null}
+        )
+        RETURNING id
+      `;
+
+      newAppointmentId = createdRows[0].id;
+    }
+
+    if (currentAppointment.clientEmail) {
+      try {
+        const transporter = getEmailTransporter();
+        const formattedDisplayDate = new Date(
+          `${formattedDate}T00:00:00`,
+        ).toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        });
+
+        const [startHour, startMinute] = formattedStartTime.split(":").map(Number);
+        const [endHour, endMinute] = formattedEndTime.split(":").map(Number);
+        const startSuffix = startHour >= 12 ? "PM" : "AM";
+        const endSuffix = endHour >= 12 ? "PM" : "AM";
+        const displayStart = `${startHour % 12 || 12}:${String(startMinute).padStart(2, "0")} ${startSuffix}`;
+        const displayEnd = `${endHour % 12 || 12}:${String(endMinute).padStart(2, "0")} ${endSuffix}`;
+
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: currentAppointment.clientEmail,
+          bcc: process.env.EMAIL_USER,
+          subject: "Your Appointment Has Been Rescheduled",
+          text: `Hi ${currentAppointment.clientFirstName || "there"},\n\nYour appointment has been rescheduled.\n\nNew appointment details:\nDate: ${formattedDisplayDate}\nTime: ${displayStart} - ${displayEnd}\nDuration: ${Number(duration)} minutes\nLocation: ${currentAppointment.location || "Not specified"}\n\nIf this time no longer works for you, please log in to your account to request another change.\n\nThank you,\nCip De Vries, RMT`,
+          html: `
+            <h2>Your Appointment Has Been Rescheduled</h2>
+            <p>Hi ${currentAppointment.clientFirstName || "there"},</p>
+            <p>Your appointment has been rescheduled.</p>
+            <p><strong>New appointment details:</strong></p>
+            <ul>
+              <li><strong>Date:</strong> ${formattedDisplayDate}</li>
+              <li><strong>Time:</strong> ${displayStart} - ${displayEnd}</li>
+              <li><strong>Duration:</strong> ${Number(duration)} minutes</li>
+              <li><strong>Location:</strong> ${
+                currentAppointment.location || "Not specified"
+              }</li>
+            </ul>
+            <p>If this time no longer works for you, please log in to your account to request another change.</p>
+            <p>Thank you,<br/>Cip De Vries, RMT</p>
+          `,
+        });
+      } catch (emailError) {
+        console.error(
+          "Failed to send RMT reschedule notification email:",
+          emailError,
+        );
+      }
+    }
+
+    revalidatePath("/dashboard/rmt");
+    revalidatePath(`/dashboard/rmt/reschedule-appointment/${currentAppointmentId}`);
+
+    return {
+      success: true,
+      message: "Appointment rescheduled successfully.",
+      newAppointmentId,
+    };
+  } catch (error) {
+    console.error("Error rescheduling appointment from RMT side:", error);
+    return {
+      success: false,
+      message: "Failed to reschedule appointment.",
     };
   }
 }
@@ -8789,12 +9190,14 @@ export async function getTreatmentsRevenueByMonth(year) {
         EXTRACT(MONTH FROM t.date) as month,
         t.date,
         t.price,
+        t.duration,
         u.first_name,
         u.last_name
       FROM treatments t
       LEFT JOIN users u ON t.client_id = u.id
       WHERE EXTRACT(YEAR FROM t.date) = ${year}
         AND t.status = 'completed'
+        AND t.date < CURRENT_DATE
       ORDER BY t.date
     `;
     const result = queryResult.rows || queryResult;
@@ -8876,6 +9279,7 @@ export async function getAdditionalTreatmentsRevenueByMonth(year) {
       LEFT JOIN users u ON t.client_id = u.id
       WHERE EXTRACT(YEAR FROM t.date) = ${year}
         AND t.status = 'completed'
+        AND t.date < CURRENT_DATE
       ORDER BY t.date
     `;
     const result = queryResult.rows || queryResult;
@@ -8977,6 +9381,96 @@ export async function deleteAdditionalIncome(incomeId) {
   } catch (error) {
     console.error("Error deleting additional income:", error);
     return { success: false, error: "Failed to delete additional income" };
+  }
+}
+
+export async function addMaintenanceLog(formData) {
+  try {
+    const massageMat = formData.get("massage_mat") === "on";
+    const speakerAndCables = formData.get("speaker_and_cables") === "on";
+    const towelsAndLinens = formData.get("towels_and_linens") === "on";
+    const lighting = formData.get("lighting") === "on";
+    const accessories = formData.get("accessories") === "on";
+    const notes = (formData.get("notes") || "").toString().trim() || null;
+
+    const queryResult = await sql`
+      INSERT INTO maintenance_log (
+        massage_mat,
+        speaker_and_cables,
+        towels_and_linens,
+        lighting,
+        accessories,
+        notes
+      )
+      VALUES (
+        ${massageMat},
+        ${speakerAndCables},
+        ${towelsAndLinens},
+        ${lighting},
+        ${accessories},
+        ${notes}
+      )
+      RETURNING *
+    `;
+
+    const result = queryResult.rows || queryResult;
+    revalidatePath("/dashboard/rmt/logs/maintenance");
+    return { success: true, data: result[0] };
+  } catch (error) {
+    console.error("Error adding maintenance log:", error);
+    return { success: false, error: "Failed to save maintenance log" };
+  }
+}
+
+export async function autoCompleteMonthlyMaintenanceLog() {
+  try {
+    const queryResult = await sql`
+      INSERT INTO maintenance_log (
+        massage_mat,
+        speaker_and_cables,
+        towels_and_linens,
+        lighting,
+        accessories,
+        notes
+      )
+      SELECT
+        TRUE,
+        TRUE,
+        TRUE,
+        TRUE,
+        TRUE,
+        NULL
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM maintenance_log
+        WHERE date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE::timestamp)
+      )
+      RETURNING *
+    `;
+
+    const result = queryResult.rows || queryResult;
+    revalidatePath("/dashboard/rmt/logs/maintenance");
+
+    if (result.length === 0) {
+      return {
+        success: true,
+        skipped: true,
+        message: "Monthly maintenance log already exists for this month.",
+      };
+    }
+
+    return {
+      success: true,
+      skipped: false,
+      message: "Monthly maintenance log auto-completed.",
+      data: result[0],
+    };
+  } catch (error) {
+    console.error("Error auto-completing monthly maintenance log:", error);
+    return {
+      success: false,
+      error: "Failed to auto-complete monthly maintenance log",
+    };
   }
 }
 
