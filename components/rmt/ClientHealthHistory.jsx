@@ -1,6 +1,12 @@
 import React from "react";
 
-const ClientHealthHistory = ({ healthHistory }) => {
+const ClientHealthHistory = ({
+  healthHistory,
+  isOutOfDate = false,
+  onSendReminder,
+  isSendingReminder = false,
+  reminderStatus = null,
+}) => {
   if (!healthHistory || healthHistory.length === 0) {
     return <div>No health history available.</div>;
   }
@@ -77,10 +83,42 @@ const ClientHealthHistory = ({ healthHistory }) => {
   };
 
   return (
-    <div className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-      <h2 className="text-lg font-bold mb-4">
-        Updated on: {renderValue(latestHistory.createdAt)}
-      </h2>
+    <div className="bg-white/90 shadow-md rounded border border-[#d5e0d1] px-8 pt-6 pb-8 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 className="text-lg font-bold text-[#233022]">
+          Updated on: {renderValue(latestHistory.createdAt)}
+        </h2>
+
+        <div className="flex items-center gap-2">
+          {isOutOfDate && (
+            <span className="text-xs font-medium px-2 py-1 rounded border border-amber-300 bg-amber-100 text-amber-900">
+              Health history out of date
+            </span>
+          )}
+          {isOutOfDate && onSendReminder && (
+            <button
+              type="button"
+              onClick={onSendReminder}
+              disabled={isSendingReminder}
+              className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded-md shadow hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSendingReminder ? "Sending..." : "Email Reminder"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {reminderStatus && (
+        <div
+          className={`mb-4 text-sm rounded-md px-3 py-2 border ${
+            reminderStatus.type === "success"
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
+          {reminderStatus.text}
+        </div>
+      )}
 
       {renderSection("Personal Information", [
         ["occupation", "Occupation"],

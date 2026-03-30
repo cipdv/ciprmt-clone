@@ -12,6 +12,7 @@ import TreatmentNotesForm from "@/components/rmt/TreatmentNotesForm";
 import NewTreatmentPlanForm from "@/components/rmt/NewTreatmentPlanForm";
 import BookAppointmentModal from "@/components/rmt/BookAppointmentModal";
 import ClientHealthHistory from "@/components/rmt/ClientHealthHistory";
+import ClientBenefitsCalculator from "@/components/rmt/ClientBenefitsCalculator";
 
 const ClientProfilePage = ({ params }) => {
   const [clientId, setClientId] = useState(null);
@@ -266,76 +267,52 @@ const ClientProfilePage = ({ params }) => {
     return <div className="text-center py-8 text-red-500">{error}</div>;
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-6 bg-formBackground min-h-screen">
+    <div className="max-w-4xl mx-auto mt-6 sm:mt-8 p-4 sm:p-6 bg-[#8aa97f]/70 min-h-screen rounded-xl">
       {/* HEADER */}
       {client && (
         <div className="flex justify-between items-start mb-6 gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-3xl font-semibold text-white/90 bg-black/40 px-3 py-1 rounded-md">
+              <h1 className="text-3xl font-semibold text-white/95 bg-[#4d5f43] px-3 py-1 rounded-md">
                 {client.firstName} {client.lastName}
               </h1>
-              {isHealthHistoryOutOfDate(client.lastHealthHistoryUpdate) && (
-                <span className="text-sm font-medium text-amber-900 bg-amber-100 border border-amber-300 px-2 py-1 rounded">
-                  Health history out of date
-                </span>
-              )}
             </div>
 
-            <p className="text-sm text-white/90 mt-2">
+            <p className="text-sm text-white/95 mt-2">
               Email: {client.email || "Not provided"}
             </p>
-            <p className="text-sm text-white/90">
+            <p className="text-sm text-white/95">
               Phone: {client.phoneNumber || "Not provided"}
             </p>
-
-            {isHealthHistoryOutOfDate(client.lastHealthHistoryUpdate) && (
-              <div className="mt-3 space-y-2">
-                <button
-                  onClick={handleSendHealthHistoryReminder}
-                  disabled={isSendingHealthHistoryReminder}
-                  className="px-3 py-2 bg-amber-500 text-white rounded-md shadow hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSendingHealthHistoryReminder
-                    ? "Sending reminder..."
-                    : "Email Health History Reminder"}
-                </button>
-
-                {healthHistoryReminderStatus && (
-                  <div
-                    className={`text-sm rounded-md px-3 py-2 border ${
-                      healthHistoryReminderStatus.type === "success"
-                        ? "bg-green-50 border-green-200 text-green-800"
-                        : "bg-red-50 border-red-200 text-red-800"
-                    }`}
-                  >
-                    {healthHistoryReminderStatus.text}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           <button
             onClick={() => setIsBookingModalOpen(true)}
-            className="px-4 py-2 bg-buttons text-white rounded-md shadow hover:bg-buttonsHover"
+            className="px-4 py-2 bg-[#3f3a34] text-white rounded-md shadow hover:bg-[#2f2a25]"
           >
             Book appointment
           </button>
         </div>
       )}
 
+      <div className="mb-6">
+        <ClientBenefitsCalculator
+          clientId={client?.id}
+          initialCoverage={client?.benefitsCoverage ?? null}
+        />
+      </div>
+
       {/* MAIN CARD */}
-      <div className="border border-gray-300 bg-white rounded-xl shadow-lg overflow-hidden">
+      <div className="border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl shadow-lg overflow-hidden">
         {/* TABS */}
-        <div className="flex border-b border-gray-300">
+        <div className="flex border-b border-[#c8d4c3]">
           <button
             onClick={() => setActiveTab("treatment-notes")}
             className={`flex-1 py-4 px-6 text-lg font-semibold border-r border-gray-300 transition-colors duration-200
               ${
                 activeTab === "treatment-notes"
-                  ? "bg-white text-black"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  ? "bg-[#f4f7f2] text-[#1f2a1f]"
+                  : "bg-[#e8efe4] text-[#475447] hover:bg-[#dfe8da]"
               }
             `}
           >
@@ -347,12 +324,23 @@ const ClientProfilePage = ({ params }) => {
             className={`flex-1 py-4 px-6 text-lg font-semibold transition-colors duration-200
               ${
                 activeTab === "health-history"
-                  ? "bg-white text-black"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  ? isHealthHistoryOutOfDate(client?.lastHealthHistoryUpdate)
+                    ? "bg-amber-50 text-amber-900"
+                    : "bg-[#f4f7f2] text-[#1f2a1f]"
+                  : isHealthHistoryOutOfDate(client?.lastHealthHistoryUpdate)
+                    ? "bg-amber-100 text-amber-900 hover:bg-amber-200"
+                    : "bg-[#e8efe4] text-[#475447] hover:bg-[#dfe8da]"
               }
             `}
           >
-            Health History
+            <span className="inline-flex items-center gap-2">
+              Health History
+              {isHealthHistoryOutOfDate(client?.lastHealthHistoryUpdate) && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded border border-amber-300 bg-amber-100 text-amber-900">
+                  Out of date
+                </span>
+              )}
+            </span>
           </button>
         </div>
 
@@ -569,14 +557,22 @@ const ClientProfilePage = ({ params }) => {
           {/* HEALTH HISTORY TAB */}
           {activeTab === "health-history" && (
             <div>
-              <h2 className="text-xl font-semibold mb-6">Health History</h2>
+              <h2 className="text-xl font-semibold mb-6 text-[#1f2a1f]">Health History</h2>
 
               {!healthHistory || healthHistory.length === 0 ? (
                 <p className="text-gray-600 italic">
                   No health history found for this client.
                 </p>
               ) : (
-                <ClientHealthHistory healthHistory={healthHistory} />
+                <ClientHealthHistory
+                  healthHistory={healthHistory}
+                  isOutOfDate={isHealthHistoryOutOfDate(
+                    client?.lastHealthHistoryUpdate,
+                  )}
+                  onSendReminder={handleSendHealthHistoryReminder}
+                  isSendingReminder={isSendingHealthHistoryReminder}
+                  reminderStatus={healthHistoryReminderStatus}
+                />
               )}
             </div>
           )}

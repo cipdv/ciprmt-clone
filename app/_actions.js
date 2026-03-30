@@ -6445,21 +6445,53 @@ export async function getClientWithHealthHistory(userId) {
     }
 
     // Get client information
-    const { rows: clientRows } = await sql`
-      SELECT
-        id,
-        first_name AS "firstName",
-        last_name AS "lastName",
-        preferred_name AS "preferredName",
-        email,
-        phone_number AS "phoneNumber",
-        last_health_history_update AS "lastHealthHistoryUpdate",
-        pronouns,
-        rmt_id AS "rmtId",
-        user_type AS "userType"
-      FROM users
-      WHERE id = ${userId}
-    `;
+    let clientRows;
+    try {
+      const queryResult = await sql`
+        SELECT
+          id,
+          first_name AS "firstName",
+          last_name AS "lastName",
+          preferred_name AS "preferredName",
+          email,
+          phone_number AS "phoneNumber",
+          last_health_history_update AS "lastHealthHistoryUpdate",
+          benefits_coverage AS "benefitsCoverage",
+          benefits_renewal_date AS "benefitsRenewalDate",
+          pronouns,
+          rmt_id AS "rmtId",
+          user_type AS "userType"
+        FROM users
+        WHERE id = ${userId}
+      `;
+      clientRows = queryResult.rows;
+    } catch (error) {
+      if (error?.code !== "42703") {
+        throw error;
+      }
+
+      // Fallback for environments where benefits_coverage migration has not run yet.
+      const fallbackResult = await sql`
+        SELECT
+          id,
+          first_name AS "firstName",
+          last_name AS "lastName",
+          preferred_name AS "preferredName",
+          email,
+          phone_number AS "phoneNumber",
+          last_health_history_update AS "lastHealthHistoryUpdate",
+          pronouns,
+          rmt_id AS "rmtId",
+          user_type AS "userType"
+        FROM users
+        WHERE id = ${userId}
+      `;
+      clientRows = fallbackResult.rows.map((row) => ({
+        ...row,
+        benefitsCoverage: null,
+        benefitsRenewalDate: null,
+      }));
+    }
 
     if (clientRows.length === 0) {
       throw new Error("Client not found");
@@ -6654,6 +6686,330 @@ export async function emailClientToUpdateHealthHistory(clientId) {
       success: false,
       message:
         error.message || "Failed to send health history update reminder email",
+    };
+  }
+}
+
+export async function getClientBenefitsCoverage(clientId) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can access benefits coverage");
+    }
+
+    let rows;
+    try {
+      const queryResult = await sql`
+        SELECT
+          id,
+          rmt_id AS "rmtId",
+          benefits_coverage AS "benefitsCoverage",
+          benefits_renewal_date AS "benefitsRenewalDate",
+          send_reminders AS "sendReminders",
+          reminder_frequency AS "reminderFrequency"
+        FROM users
+        WHERE id = ${clientId}
+        LIMIT 1
+      `;
+      rows = queryResult.rows;
+    } catch (error) {
+      if (error?.code !== "42703") {
+        throw error;
+      }
+
+      // Fallback for environments that only have the first benefits migration.
+      try {
+        const fallbackWithBenefits = await sql`
+          SELECT
+            id,
+            rmt_id AS "rmtId",
+            benefits_coverage AS "benefitsCoverage",
+            benefits_renewal_date AS "benefitsRenewalDate"
+          FROM users
+          WHERE id = ${clientId}
+          LIMIT 1
+        `;
+        rows = fallbackWithBenefits.rows.map((row) => ({
+          ...row,
+          sendReminders: false,
+          reminderFrequency: null,
+        }));
+      } catch (fallbackError) {
+        if (fallbackError?.code !== "42703") {
+          throw fallbackError;
+        }
+
+        const fallbackResult = await sql`
+          SELECT id, rmt_id AS "rmtId"
+          FROM users
+          WHERE id = ${clientId}
+          LIMIT 1
+        `;
+        rows = fallbackResult.rows.map((row) => ({
+          ...row,
+          benefitsCoverage: null,
+          benefitsRenewalDate: null,
+          sendReminders: false,
+          reminderFrequency: null,
+        }));
+      }
+    }
+
+    if (!rows || rows.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    const client = rows[0];
+    if (client.rmtId !== session.resultObj.id) {
+      throw new Error("Unauthorized: You do not manage this client");
+    }
+
+    const renewalRaw = client.benefitsRenewalDate;
+
+    const todayParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Toronto",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const todayYear = Number(
+      todayParts.find((part) => part.type === "year")?.value || "1970",
+    );
+    const todayMonth = Number(
+      todayParts.find((part) => part.type === "month")?.value || "01",
+    );
+    const todayDay = Number(
+      todayParts.find((part) => part.type === "day")?.value || "01",
+    );
+
+    const parseMonthDay = (value) => {
+      if (!value) return { month: 1, day: 1 };
+
+      if (typeof value === "string") {
+        const parts = value.split("-");
+        if (parts.length >= 3) {
+          return {
+            month: Number(parts[1]) || 1,
+            day: Number(parts[2]) || 1,
+          };
+        }
+      }
+
+      const dateObj = new Date(value);
+      if (!Number.isNaN(dateObj.getTime())) {
+        return {
+          month: dateObj.getUTCMonth() + 1,
+          day: dateObj.getUTCDate(),
+        };
+      }
+
+      return { month: 1, day: 1 };
+    };
+
+    const pad2 = (num) => String(num).padStart(2, "0");
+    const { month, day } = parseMonthDay(renewalRaw);
+    const torontoTodayString = `${todayYear}-${pad2(todayMonth)}-${pad2(todayDay)}`;
+
+    const thisYearRenewal = `${todayYear}-${pad2(month)}-${pad2(day)}`;
+    const cycleStart =
+      torontoTodayString >= thisYearRenewal
+        ? thisYearRenewal
+        : `${todayYear - 1}-${pad2(month)}-${pad2(day)}`;
+    const cycleEnd = `${Number(cycleStart.slice(0, 4)) + 1}-${pad2(month)}-${pad2(
+      day,
+    )}`;
+
+    const { rows: usedRows } = await sql`
+      SELECT COALESCE(SUM(price), 0) AS "usedAmount"
+      FROM treatments
+      WHERE client_id = ${clientId}
+        AND status = 'completed'
+        AND date >= ${cycleStart}::date
+        AND date < ${cycleEnd}::date
+    `;
+
+    const usedAmount = Number(usedRows?.[0]?.usedAmount) || 0;
+
+    return {
+      success: true,
+      data: {
+        benefitsCoverage:
+          client.benefitsCoverage === null
+            ? null
+            : Number(client.benefitsCoverage),
+        benefitsRenewalDate:
+          renewalRaw === null
+            ? `${todayYear}-01-01`
+            : new Date(renewalRaw).toISOString().split("T")[0],
+        sendReminders: Boolean(client.sendReminders),
+        reminderFrequency:
+          client.reminderFrequency === null
+            ? null
+            : Number(client.reminderFrequency),
+        usedAmount,
+        cycleStart,
+        cycleEnd,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching client benefits coverage:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to fetch benefits coverage",
+    };
+  }
+}
+
+export async function saveClientBenefitsCoverage(
+  clientId,
+  coverageAmount,
+  renewalDate,
+  sendReminders,
+  reminderFrequency,
+) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can save benefits coverage");
+    }
+
+    const parsedCoverage =
+      coverageAmount === null ||
+      coverageAmount === undefined ||
+      coverageAmount === ""
+        ? null
+        : Number(coverageAmount);
+
+    if (parsedCoverage !== null && (!Number.isFinite(parsedCoverage) || parsedCoverage < 0)) {
+      throw new Error("Coverage amount must be a non-negative number");
+    }
+
+    const parsedRenewalDate = renewalDate || "2000-01-01";
+    if (Number.isNaN(new Date(parsedRenewalDate).getTime())) {
+      throw new Error("Renewal date is invalid");
+    }
+
+    const parsedSendReminders = Boolean(sendReminders);
+    const parsedReminderFrequency =
+      reminderFrequency === null ||
+      reminderFrequency === undefined ||
+      reminderFrequency === ""
+        ? null
+        : Number(reminderFrequency);
+
+    if (
+      parsedReminderFrequency !== null &&
+      (!Number.isFinite(parsedReminderFrequency) || parsedReminderFrequency < 0)
+    ) {
+      throw new Error("Reminder frequency must be a non-negative number");
+    }
+
+    if (parsedSendReminders) {
+      if (
+        parsedReminderFrequency === null ||
+        !Number.isFinite(parsedReminderFrequency) ||
+        parsedReminderFrequency <= 0
+      ) {
+        throw new Error(
+          "Select a valid reminder frequency option before enabling reminders",
+        );
+      }
+    }
+
+    const { rows: clients } = await sql`
+      SELECT id, rmt_id AS "rmtId"
+      FROM users
+      WHERE id = ${clientId}
+      LIMIT 1
+    `;
+
+    if (!clients || clients.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    if (clients[0].rmtId !== session.resultObj.id) {
+      throw new Error("Unauthorized: You do not manage this client");
+    }
+
+    let updatedRows;
+    try {
+      const queryResult = await sql`
+        UPDATE users
+        SET
+          benefits_coverage = ${parsedCoverage},
+          benefits_renewal_date = ${parsedRenewalDate}::date,
+          send_reminders = ${parsedSendReminders},
+          reminder_frequency = ${parsedReminderFrequency}
+        WHERE id = ${clientId}
+        RETURNING
+          benefits_coverage AS "benefitsCoverage",
+          benefits_renewal_date AS "benefitsRenewalDate",
+          send_reminders AS "sendReminders",
+          reminder_frequency AS "reminderFrequency"
+      `;
+      updatedRows = queryResult.rows;
+    } catch (error) {
+      if (error?.code === "42703") {
+        // Fallback for environments that only have the first benefits migration.
+        try {
+          const fallbackUpdate = await sql`
+            UPDATE users
+            SET
+              benefits_coverage = ${parsedCoverage},
+              benefits_renewal_date = ${parsedRenewalDate}::date
+            WHERE id = ${clientId}
+            RETURNING
+              benefits_coverage AS "benefitsCoverage",
+              benefits_renewal_date AS "benefitsRenewalDate"
+          `;
+          updatedRows = fallbackUpdate.rows.map((row) => ({
+            ...row,
+            sendReminders: false,
+            reminderFrequency: null,
+          }));
+        } catch (fallbackError) {
+          if (fallbackError?.code === "42703") {
+            return {
+              success: false,
+              message:
+                "Benefits columns are not in the database yet. Run the migration SQL first.",
+            };
+          }
+          throw fallbackError;
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    revalidatePath(`/dashboard/rmt/client-profile/${clientId}`);
+
+    return {
+      success: true,
+      data: {
+        benefitsCoverage:
+          updatedRows[0].benefitsCoverage === null
+            ? null
+            : Number(updatedRows[0].benefitsCoverage),
+        benefitsRenewalDate:
+          updatedRows[0].benefitsRenewalDate === null
+            ? null
+            : new Date(updatedRows[0].benefitsRenewalDate)
+                .toISOString()
+                .split("T")[0],
+        sendReminders: Boolean(updatedRows[0].sendReminders),
+        reminderFrequency:
+          updatedRows[0].reminderFrequency === null
+            ? null
+            : Number(updatedRows[0].reminderFrequency),
+      },
+      message: "Benefits coverage saved.",
+    };
+  } catch (error) {
+    console.error("Error saving client benefits coverage:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to save benefits coverage",
     };
   }
 }
@@ -8003,6 +8359,7 @@ export async function clearAppointment(appointmentId) {
 const CRON_LOCK_KEYS = {
   addAppointments: { key1: 712345001, key2: 1 },
   sendAppointmentReminders: { key1: 712345001, key2: 2 },
+  sendBenefitReminders: { key1: 712345001, key2: 3 },
 };
 
 export async function resetStaleReschedulingAppointments() {
@@ -8515,6 +8872,167 @@ export async function sendAppointmentReminders() {
       } catch (unlockError) {
         console.error(
           "Failed to release sendAppointmentReminders cron lock:",
+          unlockError,
+        );
+      }
+    }
+  }
+}
+
+export async function sendBenefitReminders() {
+  const lock = CRON_LOCK_KEYS.sendBenefitReminders;
+  let lockAcquired = false;
+
+  try {
+    const { rows: lockRows } = await sql`
+      SELECT pg_try_advisory_lock(${lock.key1}, ${lock.key2}) AS locked
+    `;
+    lockAcquired = lockRows?.[0]?.locked === true;
+
+    if (!lockAcquired) {
+      console.log("Skipping sendBenefitReminders: cron lock is already held.");
+      return {
+        success: true,
+        message: "Skipped sendBenefitReminders: another run is already in progress.",
+      };
+    }
+
+    let candidates = [];
+    try {
+      const { rows } = await sql`
+        SELECT
+          u.id,
+          u.first_name AS "firstName",
+          u.last_name AS "lastName",
+          u.email,
+          u.reminder_frequency AS "reminderFrequency",
+          u.last_reminder_sent_at AS "lastReminderSentAt",
+          latest.last_completed_date AS "lastCompletedDate"
+        FROM users u
+        JOIN LATERAL (
+          SELECT t.date AS last_completed_date
+          FROM treatments t
+          WHERE t.client_id = u.id
+            AND t.status = 'completed'
+            AND t.date IS NOT NULL
+          ORDER BY t.date DESC
+          LIMIT 1
+        ) latest ON TRUE
+        WHERE u.send_reminders = TRUE
+          AND u.reminder_frequency IS NOT NULL
+          AND u.reminder_frequency > 0
+          AND u.email IS NOT NULL
+      `;
+      candidates = rows;
+    } catch (queryError) {
+      if (queryError?.code === "42703") {
+        return {
+          success: true,
+          message:
+            "Benefits reminder columns are not present yet. Skipping benefit reminders.",
+        };
+      }
+      throw queryError;
+    }
+
+    if (!candidates.length) {
+      return {
+        success: true,
+        message: "No clients eligible for benefit reminder checks.",
+      };
+    }
+
+    const transporter = getEmailTransporter();
+    const torontoToday = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "America/Toronto" }),
+    );
+
+    const weeksBetween = (startDate, endDate) => {
+      const ms = endDate.getTime() - startDate.getTime();
+      return ms / (1000 * 60 * 60 * 24 * 7);
+    };
+
+    const dueClients = candidates.filter((client) => {
+      const reminderFrequency = Number(client.reminderFrequency);
+      if (!Number.isFinite(reminderFrequency) || reminderFrequency <= 0) {
+        return false;
+      }
+
+      const lastCompletedDate = client.lastCompletedDate
+        ? new Date(client.lastCompletedDate)
+        : null;
+      const lastReminderSentAt = client.lastReminderSentAt
+        ? new Date(client.lastReminderSentAt)
+        : null;
+
+      if (!lastCompletedDate || Number.isNaN(lastCompletedDate.getTime())) {
+        return false;
+      }
+
+      const referenceDate =
+        lastReminderSentAt && lastReminderSentAt > lastCompletedDate
+          ? lastReminderSentAt
+          : lastCompletedDate;
+
+      const elapsedWeeks = weeksBetween(referenceDate, torontoToday);
+      return elapsedWeeks > reminderFrequency;
+    });
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const client of dueClients) {
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.ciprmt.com";
+        const bookingUrl = `${appUrl}/auth/sign-in`;
+
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: client.email,
+          bcc: process.env.EMAIL_USER,
+          subject: "Time to Book Your Next Massage",
+          text: `Hi ${client.firstName || "there"},\n\nIt's been a while since your last massage. If you're due for your next treatment, you can log in and book an appointment here:\n\n${bookingUrl}\n\nThank you,\nCip De Vries, RMT`,
+          html: `
+            <h2>Time to Book Your Next Massage</h2>
+            <p>Hi ${client.firstName || "there"},</p>
+            <p>It's been a while since your last massage. If you're due for your next treatment, you can log in and book an appointment here:</p>
+            <p><a href="${bookingUrl}">Book Your Next Appointment</a></p>
+            <p>Thank you,<br/>Cip De Vries, RMT</p>
+          `,
+        });
+
+        await sql`
+          UPDATE users
+          SET last_reminder_sent_at = NOW()
+          WHERE id = ${client.id}
+        `;
+
+        sentCount++;
+      } catch (emailError) {
+        console.error(
+          `Failed sending benefit reminder to ${client.email}:`,
+          emailError,
+        );
+        failedCount++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Benefit reminders processed. Sent: ${sentCount}, Failed: ${failedCount}, Considered: ${dueClients.length}`,
+    };
+  } catch (error) {
+    console.error("Error sending benefit reminders:", error);
+    return { success: false, message: error.message };
+  } finally {
+    if (lockAcquired) {
+      try {
+        await sql`
+          SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
+        `;
+      } catch (unlockError) {
+        console.error(
+          "Failed to release sendBenefitReminders cron lock:",
           unlockError,
         );
       }

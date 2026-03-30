@@ -5,6 +5,7 @@ import {
   sendAppointmentReminders,
   deleteExpiredAppointments,
   autoCompleteMonthlyMaintenanceLog,
+  sendBenefitReminders,
 } from "@/app/_actions";
 
 export async function GET(request) {
@@ -71,9 +72,21 @@ async function handleRequest(request) {
       } else {
         console.log("Monthly maintenance log auto-completed successfully");
       }
+
+      const benefitReminderResult = await sendBenefitReminders();
+      if (!benefitReminderResult.success) {
+        throw new Error(
+          benefitReminderResult.message ||
+            "Failed to process monthly benefit reminders",
+        );
+      }
+      console.log(benefitReminderResult.message);
     } else {
       console.log(
         `Skipping monthly maintenance auto-complete (Toronto day ${torontoDayOfMonth})`,
+      );
+      console.log(
+        `Skipping monthly benefit reminders (Toronto day ${torontoDayOfMonth})`,
       );
     }
 
