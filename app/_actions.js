@@ -11,7 +11,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { google } from "googleapis";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import he from "he";
 import Stripe from "stripe";
 
@@ -8957,6 +8957,125 @@ const CRON_LOCK_KEYS = {
   sendBenefitReminders: { key1: 712345001, key2: 3 },
 };
 
+const EMAIL_IDEMPOTENCY_STALE_PROCESSING_HOURS = 6;
+
+const hashEmailPayload = (payload) =>
+  createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+
+async function ensureEmailIdempotencyTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS email_idempotency_keys (
+      key TEXT PRIMARY KEY,
+      email_type TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'processing',
+      message_id TEXT,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+}
+
+async function claimEmailIdempotencyKey({ key, emailType, payload }) {
+  const payloadHash = hashEmailPayload(payload);
+
+  const { rows: insertedRows } = await sql`
+    INSERT INTO email_idempotency_keys (
+      key,
+      email_type,
+      payload_hash,
+      status,
+      first_seen_at,
+      updated_at
+    ) VALUES (
+      ${key},
+      ${emailType},
+      ${payloadHash},
+      'processing',
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+  `;
+
+  if (insertedRows.length > 0) {
+    return { shouldSend: true, payloadHash };
+  }
+
+  const { rows: existingRows } = await sql`
+    SELECT key, payload_hash AS "payloadHash", status, first_seen_at AS "firstSeenAt"
+    FROM email_idempotency_keys
+    WHERE key = ${key}
+    LIMIT 1
+  `;
+
+  if (!existingRows.length) {
+    return { shouldSend: false, reason: "missing_existing_record" };
+  }
+
+  const existing = existingRows[0];
+
+  if (existing.payloadHash !== payloadHash) {
+    return { shouldSend: false, reason: "payload_mismatch" };
+  }
+
+  if (existing.status === "sent") {
+    return { shouldSend: false, reason: "already_sent" };
+  }
+
+  const staleCutoff = new Date(
+    Date.now() - EMAIL_IDEMPOTENCY_STALE_PROCESSING_HOURS * 60 * 60 * 1000,
+  );
+  const isStaleProcessing =
+    existing.status === "processing" &&
+    existing.firstSeenAt &&
+    new Date(existing.firstSeenAt) < staleCutoff;
+
+  if (existing.status === "failed" || isStaleProcessing) {
+    const { rowCount } = await sql`
+      UPDATE email_idempotency_keys
+      SET
+        status = 'processing',
+        updated_at = NOW()
+      WHERE key = ${key}
+        AND payload_hash = ${payloadHash}
+    `;
+
+    if (rowCount > 0) {
+      return { shouldSend: true, payloadHash };
+    }
+  }
+
+  return { shouldSend: false, reason: "in_progress" };
+}
+
+async function markEmailIdempotencySent({ key, payloadHash, messageId }) {
+  await sql`
+    UPDATE email_idempotency_keys
+    SET
+      status = 'sent',
+      message_id = ${messageId || null},
+      sent_at = NOW(),
+      updated_at = NOW()
+    WHERE key = ${key}
+      AND payload_hash = ${payloadHash}
+  `;
+}
+
+async function markEmailIdempotencyFailed({ key, payloadHash }) {
+  await sql`
+    UPDATE email_idempotency_keys
+    SET
+      status = 'failed',
+      updated_at = NOW()
+    WHERE key = ${key}
+      AND payload_hash = ${payloadHash}
+      AND status = 'processing'
+  `;
+}
+
 export async function resetStaleReschedulingAppointments() {
   try {
     console.log("Starting stale appointment check...");
@@ -9357,6 +9476,7 @@ export async function sendAppointmentReminders() {
 
     console.log("Starting appointment reminder process...");
     const transporter = getEmailTransporter();
+    await ensureEmailIdempotencyTable();
 
     // Get the date 2 days from now in YYYY-MM-DD format
     const twoDaysFromNow = new Date();
@@ -9400,6 +9520,8 @@ export async function sendAppointmentReminders() {
     let failCount = 0;
 
     for (const appointment of appointments) {
+      let claimedKey = null;
+      let claimedPayloadHash = null;
       try {
         // Determine if the consent form is completed
         // Check both the consent_form field and the submission timestamp
@@ -9425,6 +9547,30 @@ export async function sendAppointmentReminders() {
           ? getStandardReminderEmail(appointmentData)
           : getConsentFormReminderEmail(appointmentData);
 
+        const idempotencyKey = `appointment-reminder/${appointment.id}/${targetDate}`;
+        const claimResult = await claimEmailIdempotencyKey({
+          key: idempotencyKey,
+          emailType: "appointment_reminder",
+          payload: {
+            to: appointmentData.email,
+            subject: "Reminder: Your Upcoming Massage Appointment",
+            appointmentId: appointment.id,
+            appointmentDate: appointmentData.appointmentDate,
+            appointmentBeginsAt: appointmentData.appointmentBeginsAt,
+            consentVariant: isConsentFormCompleted ? "standard" : "consent",
+          },
+        });
+
+        if (!claimResult.shouldSend) {
+          console.log(
+            `Skipping duplicate appointment reminder for appointment ${appointment.id}: ${claimResult.reason}`,
+          );
+          continue;
+        }
+
+        claimedKey = idempotencyKey;
+        claimedPayloadHash = claimResult.payloadHash;
+
         // Send reminder email
         const info = await transporter.sendMail({
           from: process.env.EMAIL_USER,
@@ -9433,6 +9579,12 @@ export async function sendAppointmentReminders() {
           subject: "Reminder: Your Upcoming Massage Appointment",
           text: emailContent.text,
           html: emailContent.html,
+        });
+
+        await markEmailIdempotencySent({
+          key: claimedKey,
+          payloadHash: claimedPayloadHash,
+          messageId: info?.messageId || null,
         });
 
         console.log(
@@ -9444,6 +9596,19 @@ export async function sendAppointmentReminders() {
         // Add a delay between emails (1 second)
         await delay(1000);
       } catch (emailError) {
+        if (claimedKey && claimedPayloadHash) {
+          try {
+            await markEmailIdempotencyFailed({
+              key: claimedKey,
+              payloadHash: claimedPayloadHash,
+            });
+          } catch (markFailedError) {
+            console.error(
+              `Failed to update appointment reminder idempotency status for ${claimedKey}:`,
+              markFailedError,
+            );
+          }
+        }
         console.error(
           `Error sending email for appointment ${appointment.id}:`,
           emailError,
@@ -9544,6 +9709,7 @@ export async function sendBenefitReminders() {
     }
 
     const transporter = getEmailTransporter();
+    await ensureEmailIdempotencyTable();
     const torontoToday = new Date(
       new Date().toLocaleString("en-US", { timeZone: "America/Toronto" }),
     );
@@ -9583,12 +9749,44 @@ export async function sendBenefitReminders() {
     let failedCount = 0;
 
     for (const client of dueClients) {
+      let claimedKey = null;
+      let claimedPayloadHash = null;
       try {
         const appUrl =
           process.env.NEXT_PUBLIC_APP_URL || "https://www.ciprmt.com";
         const bookingUrl = `${appUrl}/auth/sign-in`;
+        const reminderAnchor = client.lastReminderSentAt
+          ? new Date(client.lastReminderSentAt)
+          : new Date(client.lastCompletedDate);
+        const reminderAnchorKey = Number.isNaN(reminderAnchor.getTime())
+          ? "unknown-anchor"
+          : reminderAnchor.toISOString().split("T")[0];
+        const idempotencyKey = `benefit-reminder/${client.id}/${reminderAnchorKey}`;
 
-        await transporter.sendMail({
+        const claimResult = await claimEmailIdempotencyKey({
+          key: idempotencyKey,
+          emailType: "benefit_reminder",
+          payload: {
+            to: client.email,
+            subject: "Time to Book Your Next Massage",
+            clientId: client.id,
+            reminderFrequency: client.reminderFrequency,
+            lastCompletedDate: client.lastCompletedDate,
+            lastReminderSentAt: client.lastReminderSentAt,
+          },
+        });
+
+        if (!claimResult.shouldSend) {
+          console.log(
+            `Skipping duplicate benefit reminder for client ${client.id}: ${claimResult.reason}`,
+          );
+          continue;
+        }
+
+        claimedKey = idempotencyKey;
+        claimedPayloadHash = claimResult.payloadHash;
+
+        const info = await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: client.email,
           bcc: process.env.EMAIL_USER,
@@ -9603,6 +9801,12 @@ export async function sendBenefitReminders() {
           `,
         });
 
+        await markEmailIdempotencySent({
+          key: claimedKey,
+          payloadHash: claimedPayloadHash,
+          messageId: info?.messageId || null,
+        });
+
         await sql`
           UPDATE users
           SET last_reminder_sent_at = NOW()
@@ -9611,6 +9815,19 @@ export async function sendBenefitReminders() {
 
         sentCount++;
       } catch (emailError) {
+        if (claimedKey && claimedPayloadHash) {
+          try {
+            await markEmailIdempotencyFailed({
+              key: claimedKey,
+              payloadHash: claimedPayloadHash,
+            });
+          } catch (markFailedError) {
+            console.error(
+              `Failed to update benefit reminder idempotency status for ${claimedKey}:`,
+              markFailedError,
+            );
+          }
+        }
         console.error(
           `Failed sending benefit reminder to ${client.email}:`,
           emailError,
