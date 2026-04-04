@@ -84,7 +84,7 @@ const NotesToComplete = ({ appointments }) => {
       {error && <p className="text-red-500 mb-4">{error}</p>}
 
       {notesToComplete.length === 0 ? (
-        <div className="p-8 bg-white rounded-md shadow-sm">
+        <div className="p-8 bg-[#f4f7f2] rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
             There are currently no notes to complete.
           </p>
@@ -94,7 +94,7 @@ const NotesToComplete = ({ appointments }) => {
           {notesToComplete.map((appointment) => (
             <div
               key={appointment.id}
-              className="bg-yellow-50 shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
+              className="bg-[#f4f7f2] shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
               onClick={() => handleAppointmentClick(appointment.clientId)}
             >
               <div>
@@ -122,7 +122,7 @@ const NotesToComplete = ({ appointments }) => {
                       px-3 py-1
                       border border-red-400 text-red-600
                       rounded-md text-sm font-medium
-                      hover:bg-red-50 hover:border-red-500
+                      hover:bg-[#f4f7f2] hover:border-red-500
                       transition
                     "
                   >
@@ -137,7 +137,7 @@ const NotesToComplete = ({ appointments }) => {
                       px-3 py-1
                       border border-amber-400 text-amber-600
                       rounded-md text-sm font-medium
-                      hover:bg-amber-50 hover:border-amber-500
+                      hover:bg-[#f4f7f2] hover:border-amber-500
                       transition
                     "
                   >

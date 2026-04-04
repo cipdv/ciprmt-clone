@@ -51,7 +51,7 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <header className="sticky top-0">
+        <header className="sticky top-0 z-50">
           <Navbar session={session} logout={logout} />
         </header>
         {session &&

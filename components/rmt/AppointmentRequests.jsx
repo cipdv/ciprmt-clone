@@ -8,12 +8,12 @@ function SubmitButton({ children }) {
     <button
       type="submit"
       disabled={pending}
-      className={`w-full px-3 py-1.5 rounded text-sm font-medium text-white transition-colors duration-200 ${
+      className={`w-full px-3 py-1.5 rounded text-sm font-medium text-[#1f2a1f] border border-gray-300 transition-colors duration-200 ${
         pending
-          ? "bg-gray-400 cursor-not-allowed"
+          ? "bg-[#f4f7f2] cursor-not-allowed"
           : children === "Accept"
-          ? "bg-green-500 hover:bg-green-600"
-          : "bg-red-500 hover:bg-red-600"
+          ? "bg-[#f4f7f2] hover:bg-[#f4f7f2]"
+          : "bg-[#f4f7f2] hover:bg-[#f4f7f2]"
       }`}
     >
       {pending ? "Processing..." : children}
@@ -48,7 +48,7 @@ const AppointmentRequests = ({ requestedAppointments }) => {
     <div>
       <h2 className="text-xl font-semibold mb-4">Appointment Requests</h2>
       {requestedAppointments.length === 0 ? (
-        <div className="p-8 bg-yellow-50 rounded-md shadow-sm">
+        <div className="p-8 bg-[#f4f7f2] rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
             There are currently no appointment requests.
           </p>
@@ -60,8 +60,8 @@ const AppointmentRequests = ({ requestedAppointments }) => {
               key={appointment.id || `appointment-${index}`}
               className={`shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 ${
                 appointment.code
-                  ? "bg-red-50 border-2 border-red-300"
-                  : "bg-yellow-50"
+                  ? "bg-[#f4f7f2] border-2 border-red-300"
+                  : "bg-[#f4f7f2]"
               }`}
             >
               <div className="mb-4">
@@ -70,7 +70,7 @@ const AppointmentRequests = ({ requestedAppointments }) => {
                   {appointment.lastName || "N/A"}
                 </h3>
                 {appointment.code && (
-                  <div className="inline-block bg-red-600 text-white text-xs font-semibold px-2 py-1 rounded mb-2">
+                  <div className="inline-block bg-[#f4f7f2] border border-red-300 text-red-700 text-xs font-semibold px-2 py-1 rounded mb-2">
                     Gift Card
                   </div>
                 )}

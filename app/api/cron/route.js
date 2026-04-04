@@ -24,7 +24,7 @@ async function handleRequest(request) {
   if (!cronSecret) {
     return NextResponse.json(
       { message: "Cron secret not configured" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -58,7 +58,7 @@ async function handleRequest(request) {
       }).format(new Date()),
     );
 
-    if (torontoDayOfMonth === 1) {
+    if (torontoDayOfMonth === 5) {
       const maintenanceResult = await autoCompleteMonthlyMaintenanceLog();
       if (!maintenanceResult.success) {
         throw new Error(
@@ -101,7 +101,7 @@ async function handleRequest(request) {
         message: "Error executing cron job",
         error: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

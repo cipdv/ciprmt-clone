@@ -1,8 +1,8 @@
 import AppointmentRequests from "@/components/rmt/AppointmentRequests";
-import Calendar from "@/components/rmt/Calendar";
 import NotesToComplete from "@/components/rmt/NotesToComplete";
 import SearchBar from "@/components/rmt/SearchBar";
 import Messages from "@/components/rmt/Messages";
+import RMTCalendarClient from "@/app/dashboard/rmt/calendar/RMTCalendarClient";
 
 import {
   getSession,
@@ -28,7 +28,10 @@ export default async function Dashboard() {
         <AppointmentRequests
           requestedAppointments={appointmentData.requested || []}
         />
-        <Calendar appointments={appointmentData.upcoming || []} />
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Calendar</h2>
+          <RMTCalendarClient />
+        </div>
         <NotesToComplete appointments={appointmentData.past || []} />
         {/* <IncomeTracker /> */}
         {/* <div className="pt-8">

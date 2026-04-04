@@ -1,7 +1,5 @@
-import React from "react";
+import RMTCalendarClient from "./RMTCalendarClient";
 
-const rmtCalendarPage = () => {
-  return <section>rmtCalendarPage</section>;
-};
-
-export default rmtCalendarPage;
+export default function RMTCalendarPage() {
+  return <RMTCalendarClient />;
+}

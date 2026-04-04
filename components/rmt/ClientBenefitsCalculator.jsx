@@ -32,6 +32,7 @@ export default function ClientBenefitsCalculator({
   const [renewalDate, setRenewalDate] = useState("");
   const [sendReminders, setSendReminders] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(null);
+  const [manualReminderFrequency, setManualReminderFrequency] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
@@ -59,6 +60,11 @@ export default function ClientBenefitsCalculator({
         setRenewalDate(renewal || `${new Date().getFullYear()}-01-01`);
         setUsedAmount(used);
         setSendReminders(remindersEnabled);
+        setManualReminderFrequency(
+          reminderFreq === null || reminderFreq === undefined
+            ? ""
+            : String(reminderFreq),
+        );
 
         if (reminderFreq !== null && reminderFreq !== undefined) {
           const allowanceValue =
@@ -84,6 +90,7 @@ export default function ClientBenefitsCalculator({
         setAllowance(String(initialCoverage));
       }
       setRenewalDate(`${new Date().getFullYear()}-01-01`);
+      setManualReminderFrequency("");
     };
 
     loadCoverage();
@@ -92,12 +99,9 @@ export default function ClientBenefitsCalculator({
   const handleSave = async () => {
     if (!clientId) return;
 
-    const selectedOption = MASSAGE_OPTIONS.find(
-      (option) => option.minutes === selectedDuration,
-    );
     const reminderFrequencyValue =
-      sendReminders && parsedAllowance > 0 && selectedOption
-        ? Number((52 / (parsedAllowance / selectedOption.cost)).toFixed(2))
+      sendReminders && manualReminderFrequency !== ""
+        ? Number(manualReminderFrequency)
         : null;
 
     setSaveStatus(null);
@@ -150,7 +154,7 @@ export default function ClientBenefitsCalculator({
   };
 
   return (
-    <div className="border border-gray-300 bg-white rounded-lg p-4 shadow-sm">
+    <div className="border border-[#b7c7b0] bg-[#f4f7f2] rounded-lg p-4 shadow-sm">
       <button
         type="button"
         onClick={() => setIsExpanded((prev) => !prev)}
@@ -170,7 +174,7 @@ export default function ClientBenefitsCalculator({
       {isExpanded && (
         <>
           <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-3">
+            <div className="rounded-md border border-[#d5e0d1] bg-[#f4f7f2] p-4 space-y-3">
               <div>
                 <label
                   htmlFor="allowance"
@@ -221,9 +225,31 @@ export default function ClientBenefitsCalculator({
                   Send reminders
                 </label>
               </div>
+
+              <div>
+                <label
+                  htmlFor="manualReminderFrequency"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Weeks between appointments
+                </label>
+                <input
+                  id="manualReminderFrequency"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualReminderFrequency}
+                  onChange={(event) => {
+                    setManualReminderFrequency(event.target.value);
+                    setSelectedDuration(null);
+                  }}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                  placeholder="e.g. 6.0"
+                />
+              </div>
             </div>
 
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <div className="rounded-md border border-[#d5e0d1] bg-[#f4f7f2] p-4">
               <p className="text-sm font-medium text-gray-700">
                 Benefit Usage Summary
               </p>
@@ -258,17 +284,21 @@ export default function ClientBenefitsCalculator({
                   key={option.minutes}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setSelectedDuration(option.minutes)}
+                  onClick={() => {
+                    setSelectedDuration(option.minutes);
+                    setManualReminderFrequency(weeksBetween.toFixed(2));
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       setSelectedDuration(option.minutes);
+                      setManualReminderFrequency(weeksBetween.toFixed(2));
                     }
                   }}
                   className={`rounded-md border p-3 cursor-pointer transition ${
                     isSelected
-                      ? "border-blue-500 bg-blue-50 shadow-sm"
-                      : "border-gray-200 bg-gray-50 hover:border-blue-300"
+                      ? "border-blue-500 bg-[#f4f7f2] shadow-sm"
+                      : "border-[#d5e0d1] bg-[#f4f7f2] hover:border-blue-300"
                   }`}
                 >
                   <p className="text-sm font-semibold">{option.minutes} min</p>

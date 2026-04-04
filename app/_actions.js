@@ -69,6 +69,51 @@ const calendar = google.calendar({
   auth: jwtClient,
 });
 
+function normalizePhoneToDigits(phoneNumber) {
+  if (typeof phoneNumber !== "string") return "";
+  return phoneNumber.replace(/\D/g, "");
+}
+
+function isLikelyEncryptedPayload(value) {
+  if (typeof value !== "string") return false;
+  const parts = value.split(":");
+  if (parts.length !== 2) return false;
+  const [ivHex, encryptedHex] = parts;
+  return (
+    /^[a-f0-9]+$/i.test(ivHex) &&
+    /^[a-f0-9]+$/i.test(encryptedHex) &&
+    ivHex.length === 32 &&
+    encryptedHex.length >= 32 &&
+    encryptedHex.length % 2 === 0
+  );
+}
+
+function parseStoredTreatmentNotes(storedNotes) {
+  if (!storedNotes) return null;
+
+  if (isLikelyEncryptedPayload(storedNotes)) {
+    try {
+      const decrypted = decryptData(storedNotes);
+      if (decrypted) return decrypted;
+    } catch (error) {
+      console.error("Error decrypting stored treatment notes:", error);
+    }
+  }
+
+  // Backward compatibility for older rows saved as plain JSON/text.
+  if (typeof storedNotes === "string") {
+    const trimmed = storedNotes.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return null;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //AUTH/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -161,6 +206,9 @@ export async function registerNewPatient(prevState, formData) {
     }
 
     const validatedData = validation.data;
+    const normalizedPhoneNumber = normalizePhoneToDigits(
+      validatedData.phoneNumber || "",
+    );
 
     // Check for existing user - FIX: access the rows property
     const { rows: existingUsers } = await sql`
@@ -196,7 +244,7 @@ export async function registerNewPatient(prevState, formData) {
         ${validatedData.preferredName || null},
         ${validatedData.pronouns || null},
         ${validatedData.email},
-        ${validatedData.phoneNumber || null},
+        ${normalizedPhoneNumber || null},
         ${hashedPassword},
         'patient',
         ${DEFAULT_RMT_ID}::uuid,
@@ -258,7 +306,7 @@ export async function registerNewPatient(prevState, formData) {
             }</li>
             <li>Pronouns: ${validatedData.pronouns || "Not specified"}</li>
             <li>Email: ${validatedData.email}</li>
-            <li>Phone: ${validatedData.phoneNumber || "Not specified"}</li>
+            <li>Phone: ${normalizedPhoneNumber || "Not specified"}</li>
           </ul>
         `,
       });
@@ -5361,10 +5409,10 @@ export async function getTreatmentById(id) {
       console.error("Error logging audit event:", logError);
     }
 
-    // If the treatment has encrypted notes, decrypt them
-    if (treatment.treatmentNotes) {
-      treatment.treatmentNotes = decryptData(treatment.treatmentNotes);
-    }
+    // Parse/decrypt treatment notes (supports encrypted and legacy plain JSON).
+    treatment.treatmentNotes = parseStoredTreatmentNotes(
+      treatment.treatmentNotes,
+    );
 
     // Parse JSON fields if needed
     if (treatment.consentForm && typeof treatment.consentForm === "string") {
@@ -5382,7 +5430,10 @@ export async function getTreatmentById(id) {
   }
 }
 
-export async function getTreatmentsForPlan(treatmentPlanId) {
+export async function getTreatmentsForPlan(
+  treatmentPlanId,
+  includeAllTreatments = false,
+) {
   try {
     const session = await getSession();
     if (!session?.resultObj) {
@@ -5410,17 +5461,29 @@ export async function getTreatmentsForPlan(treatmentPlanId) {
       SELECT
         t.id,
         t.date,
+        t.status,
+        t.location,
+        t.workplace,
         t.duration,
         t.price,
         t.payment_type AS "paymentType",
-        t.encrypted_treatment_notes AS "encryptedTreatmentNotes",
-        t.status,
         t.appointment_begins_at AS "appointmentBeginsAt",
-        t.appointment_ends_at AS "appointmentEndsAt"
+        t.appointment_ends_at AS "appointmentEndsAt",
+        t.encrypted_treatment_notes AS "encryptedTreatmentNotes",
+        t.treatment_plan_id AS "treatmentPlanId"
       FROM treatments t
-      WHERE t.treatment_plan_id = ${treatmentPlanId}
-        AND t.encrypted_treatment_notes IS NOT NULL
-      ORDER BY t.date DESC, t.appointment_begins_at DESC
+      WHERE
+        (
+          t.treatment_plan_id = ${treatmentPlanId}
+          OR EXISTS (
+            SELECT 1
+            FROM treatment_plan_treatments tpt
+            WHERE tpt.treatment_id = t.id
+              AND tpt.treatment_plan_id = ${treatmentPlanId}
+          )
+        )
+        AND (${includeAllTreatments} = true OR t.encrypted_treatment_notes IS NOT NULL)
+      ORDER BY t.date ASC, COALESCE(t.appointment_begins_at, t.appointment_window_start) ASC
     `;
 
     // Decrypt the treatment notes
@@ -5428,11 +5491,9 @@ export async function getTreatmentsForPlan(treatmentPlanId) {
       let decryptedNotes = null;
 
       if (treatment.encryptedTreatmentNotes) {
-        try {
-          decryptedNotes = decryptData(treatment.encryptedTreatmentNotes);
-        } catch (error) {
-          console.error(`Error decrypting treatment ${treatment.id}:`, error);
-        }
+        decryptedNotes = parseStoredTreatmentNotes(
+          treatment.encryptedTreatmentNotes,
+        );
       }
 
       return {
@@ -5541,10 +5602,8 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       finalPrice = Number.parseFloat(notes.price);
     }
 
-    // Encrypt the notes (you'll need to implement encryptData function)
-    // For now, stringify as placeholder, but should be encrypted in production.
-    const encryptedNotes = JSON.stringify(notes);
-    // const encryptedNotes = encrypt(JSON.stringify(notes)); // Use this with actual encryption
+    // Save encrypted when key exists; keep JSON fallback for environments without key.
+    const encryptedNotes = encryptData(notes) || JSON.stringify(notes);
 
     const receiptIssued =
       typeof notes?.receiptIssued === "boolean"
@@ -6608,6 +6667,35 @@ export async function getClientProfileData(userId) {
       ORDER BY date DESC, appointment_begins_at DESC
     `;
 
+    const decryptedTreatments = treatments.map((treatment) => {
+      let decryptedNotes = null;
+      if (treatment.treatmentNotes) {
+        decryptedNotes = parseStoredTreatmentNotes(treatment.treatmentNotes);
+        console.log("[notes-debug] getClientProfileData treatment notes", {
+          treatmentId: treatment.id,
+          rawStoredNotes: treatment.treatmentNotes,
+          parsedDecryptedNotes: decryptedNotes,
+          rawType: typeof treatment.treatmentNotes,
+          parsedType: typeof decryptedNotes,
+        });
+      }
+
+      return {
+        ...treatment,
+        treatmentNotes: decryptedNotes,
+      };
+    });
+
+    const clientNotes = decryptedTreatments
+      .filter((treatment) => treatment.treatmentNotes)
+      .map((treatment) => ({
+        id: treatment.id,
+        appointmentDate: treatment.appointmentDate,
+        appointmentBeginsAt: treatment.appointmentBeginsAt,
+        duration: treatment.duration,
+        treatmentNotes: treatment.treatmentNotes,
+      }));
+
     // Get treatment plans for this client
     const treatmentPlans = await getTreatmentPlansForUser(userId);
 
@@ -6615,7 +6703,8 @@ export async function getClientProfileData(userId) {
       success: true,
       client: clientData.client,
       healthHistory: clientData.healthHistory,
-      treatments, // ← NO DECRYPTION, original DB values
+      treatments: decryptedTreatments,
+      clientNotes,
       treatmentPlans: treatmentPlans.success ? treatmentPlans.data : [],
     };
   } catch (error) {
@@ -6623,6 +6712,405 @@ export async function getClientProfileData(userId) {
     return {
       success: false,
       message: "Failed to fetch client profile data: " + error.message,
+    };
+  }
+}
+
+export async function getRMTCalendarData(rangeStart, rangeEnd) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can access calendar data");
+    }
+
+    if (!rangeStart || !rangeEnd) {
+      throw new Error("Missing required date range");
+    }
+
+    const rmtId = session.resultObj.id;
+    const startDate = new Date(rangeStart);
+    const endDate = new Date(rangeEnd);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new Error("Invalid date range");
+    }
+
+    const startDateKey = startDate.toISOString().split("T")[0];
+    const endDateKey = endDate.toISOString().split("T")[0];
+
+    const { rows: treatmentRows } = await sql`
+      SELECT
+        t.id,
+        t.client_id AS "clientId",
+        t.date AS "appointmentDate",
+        t.appointment_begins_at AS "appointmentBeginsAt",
+        t.appointment_ends_at AS "appointmentEndsAt",
+        t.appointment_window_start AS "appointmentWindowStartsAt",
+        t.appointment_window_end AS "appointmentWindowEndsAt",
+        COALESCE(t.appointment_begins_at, t.appointment_window_start) AS "displayStartsAt",
+        COALESCE(t.appointment_ends_at, t.appointment_window_end) AS "displayEndsAt",
+        t.status,
+        t.duration,
+        t.location,
+        t.workplace,
+        t.google_calendar_event_id AS "googleCalendarEventId",
+        t.google_calendar_event_link AS "googleCalendarEventLink",
+        u.first_name AS "clientFirstName",
+        u.last_name AS "clientLastName",
+        u.email AS "clientEmail"
+      FROM treatments t
+      LEFT JOIN users u ON u.id = t.client_id
+      WHERE
+        t.rmt_id = ${rmtId}
+        AND t.date >= ${startDateKey}::date
+        AND t.date <= ${endDateKey}::date
+        AND COALESCE(t.appointment_begins_at, t.appointment_window_start) IS NOT NULL
+        AND COALESCE(t.appointment_ends_at, t.appointment_window_end) IS NOT NULL
+      ORDER BY t.date ASC, COALESCE(t.appointment_begins_at, t.appointment_window_start) ASC
+    `;
+
+    const statusPriority = (status) => {
+      const normalized = String(status || "").toLowerCase();
+      if (normalized === "completed") return 3;
+      if (normalized === "booked") return 2;
+      if (normalized === "available") return 1;
+      return 0;
+    };
+
+    const todayTorontoKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Toronto",
+    }).format(new Date());
+
+    const dedupedRowsBySlot = new Map();
+    for (const row of treatmentRows) {
+      const rowDateKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Toronto",
+      }).format(new Date(row.appointmentDate));
+      if (
+        String(row.status || "").toLowerCase() === "available" &&
+        rowDateKey < todayTorontoKey
+      ) {
+        continue;
+      }
+
+      const dateKey = new Date(row.appointmentDate).toISOString().split("T")[0];
+      const startKey = String(
+        row.appointmentWindowStartsAt || row.displayStartsAt || "",
+      ).slice(0, 8);
+      const endKey = String(
+        row.appointmentWindowEndsAt || row.displayEndsAt || "",
+      ).slice(0, 8);
+      const slotKey = `${dateKey}|${startKey}|${endKey}`;
+      const existing = dedupedRowsBySlot.get(slotKey);
+
+      if (!existing) {
+        dedupedRowsBySlot.set(slotKey, row);
+        continue;
+      }
+
+      const currentPriority = statusPriority(row.status);
+      const existingPriority = statusPriority(existing.status);
+      if (
+        currentPriority > existingPriority ||
+        (currentPriority === existingPriority &&
+          row.clientId &&
+          !existing.clientId)
+      ) {
+        dedupedRowsBySlot.set(slotKey, row);
+      }
+    }
+
+    const dedupedTreatmentRows = [...dedupedRowsBySlot.values()].sort(
+      (a, b) => {
+        const aTs = new Date(
+          `${new Date(a.appointmentDate).toISOString().split("T")[0]}T${String(a.displayStartsAt).slice(0, 8)}`,
+        ).getTime();
+        const bTs = new Date(
+          `${new Date(b.appointmentDate).toISOString().split("T")[0]}T${String(b.displayStartsAt).slice(0, 8)}`,
+        ).getTime();
+        return aTs - bTs;
+      },
+    );
+
+    const treatmentGoogleIds = new Set(
+      dedupedTreatmentRows
+        .map((row) => row.googleCalendarEventId)
+        .filter((id) => typeof id === "string" && id.length > 0),
+    );
+
+    let personalEvents = [];
+    try {
+      const googleResult = await calendar.events.list({
+        calendarId: GOOGLE_CALENDAR_ID,
+        timeMin: startDate.toISOString(),
+        timeMax: endDate.toISOString(),
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+
+      personalEvents = (googleResult.data.items || [])
+        .filter(
+          (event) =>
+            event?.id &&
+            !treatmentGoogleIds.has(event.id) &&
+            (event?.start?.dateTime || event?.start?.date),
+        )
+        .map((event) => ({
+          id: event.id,
+          title: event.summary || "Google Calendar Event",
+          description: event.description || "",
+          startDateTime:
+            event.start?.dateTime || `${event.start?.date}T00:00:00`,
+          endDateTime: event.end?.dateTime || `${event.end?.date}T00:00:00`,
+          isAllDay: Boolean(event.start?.date && !event.start?.dateTime),
+          source: "google",
+          htmlLink: event.htmlLink || null,
+        }));
+    } catch (calendarError) {
+      console.error(
+        "Error fetching personal Google Calendar events:",
+        calendarError,
+      );
+    }
+
+    const dbEvents = dedupedTreatmentRows.map((row) => ({
+      id: row.id,
+      title:
+        String(row.status || "").toLowerCase() === "available"
+          ? "Open Timeslot"
+          : `${row.clientFirstName || ""} ${row.clientLastName || ""}`.trim() ||
+            "Booked Appointment",
+      status: row.status,
+      clientId: row.clientId,
+      clientName: row.clientId
+        ? `${row.clientFirstName || ""} ${row.clientLastName || ""}`.trim()
+        : null,
+      clientEmail: row.clientEmail,
+      duration: row.duration,
+      location: row.location,
+      workplace: row.workplace,
+      startDateTime: `${
+        new Date(row.appointmentDate).toISOString().split("T")[0]
+      }T${String(row.displayStartsAt).slice(0, 8)}`,
+      endDateTime: `${
+        new Date(row.appointmentDate).toISOString().split("T")[0]
+      }T${String(row.displayEndsAt).slice(0, 8)}`,
+      source: "db",
+      googleCalendarEventId: row.googleCalendarEventId,
+      googleCalendarEventLink: row.googleCalendarEventLink,
+    }));
+
+    const { rows: clientRows } = await sql`
+      SELECT id, first_name AS "firstName", last_name AS "lastName"
+      FROM users
+      WHERE rmt_id = ${rmtId}
+        AND user_type = 'patient'
+      ORDER BY first_name ASC, last_name ASC
+    `;
+
+    return {
+      success: true,
+      events: [...dbEvents, ...personalEvents],
+      clients: clientRows,
+    };
+  } catch (error) {
+    console.error("Error fetching RMT calendar data:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load calendar data",
+      events: [],
+      clients: [],
+    };
+  }
+}
+
+export async function addAvailableAppointmentTimesForDate(
+  date,
+  times,
+  duration = 60,
+) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can add available appointments");
+    }
+
+    if (!date || !Array.isArray(times) || times.length === 0) {
+      throw new Error("Date and at least one time are required");
+    }
+
+    const durationMinutes = Number(duration);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      throw new Error("Invalid duration");
+    }
+
+    const normalizedDate = new Date(date).toISOString().split("T")[0];
+    const normalizedTimes = [
+      ...new Set(
+        times
+          .map((t) => String(t || "").trim())
+          .filter((t) => /^\d{2}:\d{2}$/.test(t)),
+      ),
+    ];
+
+    if (!normalizedTimes.length) {
+      throw new Error("No valid times provided");
+    }
+
+    const toEndTime = (startTime) => {
+      const [h, m] = startTime.split(":").map(Number);
+      const dt = new Date(Date.UTC(1970, 0, 1, h, m, 0));
+      dt.setUTCMinutes(dt.getUTCMinutes() + durationMinutes);
+      const hh = String(dt.getUTCHours()).padStart(2, "0");
+      const mm = String(dt.getUTCMinutes()).padStart(2, "0");
+      return `${hh}:${mm}:00`;
+    };
+
+    let createdCount = 0;
+    let skippedCount = 0;
+
+    for (const startTime of normalizedTimes) {
+      const startTimeFull = `${startTime}:00`;
+      const endTimeFull = toEndTime(startTime);
+
+      const { rows: existing } = await sql`
+        SELECT id
+        FROM treatments
+        WHERE
+          rmt_id = ${session.resultObj.id}
+          AND date = ${normalizedDate}::date
+          AND COALESCE(appointment_window_start, appointment_begins_at) = ${startTimeFull}::time
+        LIMIT 1
+      `;
+
+      if (existing.length > 0) {
+        skippedCount++;
+        continue;
+      }
+
+      await sql`
+        INSERT INTO treatments (
+          rmt_id,
+          rmt_location_id,
+          date,
+          status,
+          appointment_window_start,
+          appointment_window_end,
+          created_at
+        ) VALUES (
+          ${session.resultObj.id},
+          ${"ea5fbe60-7d3c-44ff-9307-b97ea3bc10f9"}::uuid,
+          ${normalizedDate}::date,
+          'available',
+          ${startTimeFull}::time,
+          ${endTimeFull}::time,
+          CURRENT_TIMESTAMP
+        )
+      `;
+
+      createdCount++;
+    }
+
+    revalidatePath("/dashboard/rmt/calendar");
+    revalidatePath("/dashboard/rmt");
+
+    return {
+      success: true,
+      message: `Added ${createdCount} slot(s). Skipped ${skippedCount} existing slot(s).`,
+      createdCount,
+      skippedCount,
+    };
+  } catch (error) {
+    console.error("Error adding available appointment times:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to add available appointment times",
+    };
+  }
+}
+
+export async function updateTreatmentPlan(planId, planData) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can update treatment plans");
+    }
+
+    const { rows: planRows } = await sql`
+      SELECT id, client_id AS "clientId", created_by AS "createdBy"
+      FROM treatment_plans
+      WHERE id = ${planId}
+      LIMIT 1
+    `;
+
+    if (!planRows || planRows.length === 0) {
+      throw new Error("Treatment plan not found");
+    }
+
+    const plan = planRows[0];
+
+    const { rows: clientRows } = await sql`
+      SELECT id, rmt_id AS "rmtId"
+      FROM users
+      WHERE id = ${plan.clientId}
+      LIMIT 1
+    `;
+
+    if (!clientRows || clientRows.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    if (clientRows[0].rmtId !== session.resultObj.id) {
+      throw new Error("Unauthorized: You do not manage this client");
+    }
+
+    const encryptedPlanData = encryptData({
+      objectivesOfTreatmentPlan: planData.objectivesOfTreatmentPlan || "",
+      clientGoals: planData.clientGoals || "",
+      areasToBeTreated: planData.areasToBeTreated || "",
+      durationAndFrequency: planData.durationAndFrequency || "",
+      typeAndFocusOfTreatments: planData.typeAndFocusOfTreatments || "",
+      recommendedSelfCare: planData.recommendedSelfCare || "",
+      scheduleForReassessment: planData.scheduleForReassessment || "",
+      anticipatedClientResponse: planData.anticipatedClientResponse || "",
+      conclusionOfTreatmentPlan: planData.conclusionOfTreatmentPlan || "",
+      endDate:
+        planData.endDate ||
+        (planData.conclusionOfTreatmentPlan
+          ? new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Toronto",
+            }).format(new Date())
+          : ""),
+    });
+
+    if (!encryptedPlanData) {
+      throw new Error("Failed to encrypt treatment plan data");
+    }
+
+    const normalizedStartDate = planData.startDate
+      ? new Date(planData.startDate).toISOString().split("T")[0]
+      : null;
+
+    await sql`
+      UPDATE treatment_plans
+      SET
+        encrypted_data = ${encryptedPlanData},
+        start_date = ${normalizedStartDate}
+      WHERE id = ${planId}
+    `;
+
+    revalidatePath("/dashboard/rmt");
+    revalidatePath(`/dashboard/rmt/client-profile/${plan.clientId}`);
+
+    return {
+      success: true,
+      message: "Treatment plan updated successfully.",
+    };
+  } catch (error) {
+    console.error("Error updating treatment plan:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to update treatment plan",
     };
   }
 }
@@ -6686,6 +7174,63 @@ export async function emailClientToUpdateHealthHistory(clientId) {
       success: false,
       message:
         error.message || "Failed to send health history update reminder email",
+    };
+  }
+}
+
+export async function saveClientPhoneNumber(clientId, phoneNumber) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can update client phone number");
+    }
+
+    const normalizedPhone = normalizePhoneToDigits(phoneNumber || "");
+    if (!normalizedPhone) {
+      throw new Error("Phone number is required");
+    }
+    if (normalizedPhone.length < 10 || normalizedPhone.length > 15) {
+      throw new Error("Phone number must be between 10 and 15 digits");
+    }
+
+    const { rows: clients } = await sql`
+      SELECT id, rmt_id AS "rmtId"
+      FROM users
+      WHERE id = ${clientId}
+      LIMIT 1
+    `;
+
+    if (!clients || clients.length === 0) {
+      throw new Error("Client not found");
+    }
+
+    if (clients[0].rmtId !== session.resultObj.id) {
+      throw new Error("Unauthorized: You do not manage this client");
+    }
+
+    const { rows: updatedRows } = await sql`
+      UPDATE users
+      SET phone_number = ${normalizedPhone}
+      WHERE id = ${clientId}
+      RETURNING id, phone_number AS "phoneNumber"
+    `;
+
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error("Failed to update client phone number");
+    }
+
+    revalidatePath(`/dashboard/rmt/client-profile/${clientId}`);
+
+    return {
+      success: true,
+      message: "Phone number saved.",
+      data: updatedRows[0],
+    };
+  } catch (error) {
+    console.error("Error saving client phone number:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to save phone number",
     };
   }
 }
@@ -6880,7 +7425,10 @@ export async function saveClientBenefitsCoverage(
         ? null
         : Number(coverageAmount);
 
-    if (parsedCoverage !== null && (!Number.isFinite(parsedCoverage) || parsedCoverage < 0)) {
+    if (
+      parsedCoverage !== null &&
+      (!Number.isFinite(parsedCoverage) || parsedCoverage < 0)
+    ) {
       throw new Error("Coverage amount must be a non-negative number");
     }
 
@@ -7163,7 +7711,12 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       );
     }
 
-    const { date, time, duration } = appointmentData;
+    const {
+      date,
+      time,
+      duration,
+      appointmentId: selectedAppointmentId,
+    } = appointmentData;
     if (!date || !time || !duration) {
       throw new Error("Missing required fields: date, time, or duration");
     }
@@ -7225,6 +7778,7 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
       WHERE rmt_id = ${client.rmtId}
       AND date = ${formattedDate}::date
       AND status = 'booked'
+      AND (${selectedAppointmentId || null}::uuid IS NULL OR id <> ${selectedAppointmentId || null}::uuid)
       AND (
             (appointment_begins_at <= ${formattedStartTime}::time 
               AND appointment_ends_at > ${formattedStartTime}::time)
@@ -7241,56 +7795,32 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
     // ---------------------
     // 5. FIND AVAILABLE SLOT OR CREATE NEW ONE
     // ---------------------
-    const { rows: availableSlots } = await sql`
-      SELECT id, rmt_location_id
-      FROM treatments
-      WHERE rmt_id = ${client.rmtId}
-      AND date = ${formattedDate}::date
-      AND status = 'available'
-      AND appointment_window_start <= ${formattedStartTime}::time
-      AND appointment_window_end >= ${formattedEndTime}::time
-      LIMIT 1
-    `;
-
     let appointmentId;
     let rmtLocationId;
-
-    if (availableSlots.length === 0) {
-      // Create new row
-      const { rows: created } = await sql`
-        INSERT INTO treatments (
-          rmt_id,
-          client_id,
-          date,
-          appointment_begins_at,
-          appointment_ends_at,
-          duration,
-          status,
-          location
-        )
-        VALUES (
-          ${client.rmtId},
-          ${clientId},
-          ${formattedDate}::date,
-          ${formattedStartTime}::time,
-          ${formattedEndTime}::time,
-          ${Number(duration)},
-          'booked',
-          '268 Shuter Street, Toronto, ON'
-        )
-        RETURNING id, rmt_location_id
+    if (selectedAppointmentId) {
+      const { rows: selectedSlotRows } = await sql`
+        SELECT id, rmt_location_id, rmt_id
+        FROM treatments
+        WHERE id = ${selectedAppointmentId}
+        LIMIT 1
       `;
 
-      appointmentId = created[0].id;
-      rmtLocationId = created[0].rmt_location_id;
-    } else {
-      // Use the existing slot
-      appointmentId = availableSlots[0].id;
-      rmtLocationId = availableSlots[0].rmt_location_id;
+      if (!selectedSlotRows.length) {
+        throw new Error("Selected appointment slot not found.");
+      }
+
+      const selectedSlot = selectedSlotRows[0];
+      if (selectedSlot.rmt_id !== client.rmtId) {
+        throw new Error("Selected slot does not belong to this RMT.");
+      }
+
+      appointmentId = selectedSlot.id;
+      rmtLocationId = selectedSlot.rmt_location_id;
 
       await sql`
         UPDATE treatments
-        SET 
+        SET
+          date = ${formattedDate}::date,
           status = 'booked',
           appointment_begins_at = ${formattedStartTime}::time,
           appointment_ends_at = ${formattedEndTime}::time,
@@ -7299,6 +7829,63 @@ export async function bookAppointmentForClient(clientId, appointmentData) {
           location = '268 Shuter Street, Toronto, ON'
         WHERE id = ${appointmentId}
       `;
+    } else {
+      const { rows: availableSlots } = await sql`
+        SELECT id, rmt_location_id
+        FROM treatments
+        WHERE rmt_id = ${client.rmtId}
+        AND date = ${formattedDate}::date
+        AND status = 'available'
+        AND appointment_window_start <= ${formattedStartTime}::time
+        AND appointment_window_end >= ${formattedEndTime}::time
+        LIMIT 1
+      `;
+
+      if (availableSlots.length === 0) {
+        // Create new row
+        const { rows: created } = await sql`
+          INSERT INTO treatments (
+            rmt_id,
+            client_id,
+            date,
+            appointment_begins_at,
+            appointment_ends_at,
+            duration,
+            status,
+            location
+          )
+          VALUES (
+            ${client.rmtId},
+            ${clientId},
+            ${formattedDate}::date,
+            ${formattedStartTime}::time,
+            ${formattedEndTime}::time,
+            ${Number(duration)},
+            'booked',
+            '268 Shuter Street, Toronto, ON'
+          )
+          RETURNING id, rmt_location_id
+        `;
+
+        appointmentId = created[0].id;
+        rmtLocationId = created[0].rmt_location_id;
+      } else {
+        // Use the existing slot
+        appointmentId = availableSlots[0].id;
+        rmtLocationId = availableSlots[0].rmt_location_id;
+
+        await sql`
+          UPDATE treatments
+          SET 
+            status = 'booked',
+            appointment_begins_at = ${formattedStartTime}::time,
+            appointment_ends_at = ${formattedEndTime}::time,
+            duration = ${Number(duration)},
+            client_id = ${clientId},
+            location = '268 Shuter Street, Toronto, ON'
+          WHERE id = ${appointmentId}
+        `;
+      }
     }
 
     // ---------------------
@@ -7514,7 +8101,9 @@ export async function rescheduleAppointmentByRMT(
       minute: "2-digit",
       second: "2-digit",
     });
-    const endDateTime = new Date(startDateTime.getTime() + Number(duration) * 60000);
+    const endDateTime = new Date(
+      startDateTime.getTime() + Number(duration) * 60000,
+    );
     const formattedEndTime = endDateTime.toLocaleTimeString("en-US", {
       hour12: false,
       hour: "2-digit",
@@ -7657,7 +8246,9 @@ export async function rescheduleAppointmentByRMT(
           day: "numeric",
         });
 
-        const [startHour, startMinute] = formattedStartTime.split(":").map(Number);
+        const [startHour, startMinute] = formattedStartTime
+          .split(":")
+          .map(Number);
         const [endHour, endMinute] = formattedEndTime.split(":").map(Number);
         const startSuffix = startHour >= 12 ? "PM" : "AM";
         const endSuffix = endHour >= 12 ? "PM" : "AM";
@@ -7696,7 +8287,9 @@ export async function rescheduleAppointmentByRMT(
     }
 
     revalidatePath("/dashboard/rmt");
-    revalidatePath(`/dashboard/rmt/reschedule-appointment/${currentAppointmentId}`);
+    revalidatePath(
+      `/dashboard/rmt/reschedule-appointment/${currentAppointmentId}`,
+    );
 
     return {
       success: true,
@@ -8252,6 +8845,7 @@ export async function deleteAppointment(appointmentId) {
   }
 
   revalidatePath("/dashboard/rmt");
+  revalidatePath("/dashboard/rmt/calendar");
 }
 
 export async function clearAppointment(appointmentId) {
@@ -8351,6 +8945,7 @@ export async function clearAppointment(appointmentId) {
   }
 
   revalidatePath("/dashboard/rmt");
+  revalidatePath("/dashboard/rmt/calendar");
 }
 
 ////////////////////////////////////////
@@ -8569,7 +9164,10 @@ export async function addAppointments() {
           SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
         `;
       } catch (unlockError) {
-        console.error("Failed to release addAppointments cron lock:", unlockError);
+        console.error(
+          "Failed to release addAppointments cron lock:",
+          unlockError,
+        );
       }
     }
   }
@@ -8747,7 +9345,9 @@ export async function sendAppointmentReminders() {
     lockAcquired = lockRows?.[0]?.locked === true;
 
     if (!lockAcquired) {
-      console.log("Skipping sendAppointmentReminders: cron lock is already held.");
+      console.log(
+        "Skipping sendAppointmentReminders: cron lock is already held.",
+      );
       return {
         success: true,
         message:
@@ -8893,7 +9493,8 @@ export async function sendBenefitReminders() {
       console.log("Skipping sendBenefitReminders: cron lock is already held.");
       return {
         success: true,
-        message: "Skipped sendBenefitReminders: another run is already in progress.",
+        message:
+          "Skipped sendBenefitReminders: another run is already in progress.",
       };
     }
 
@@ -8983,7 +9584,8 @@ export async function sendBenefitReminders() {
 
     for (const client of dueClients) {
       try {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.ciprmt.com";
+        const appUrl =
+          process.env.NEXT_PUBLIC_APP_URL || "https://www.ciprmt.com";
         const bookingUrl = `${appUrl}/auth/sign-in`;
 
         await transporter.sendMail({
@@ -8991,13 +9593,13 @@ export async function sendBenefitReminders() {
           to: client.email,
           bcc: process.env.EMAIL_USER,
           subject: "Time to Book Your Next Massage",
-          text: `Hi ${client.firstName || "there"},\n\nIt's been a while since your last massage. If you're due for your next treatment, you can log in and book an appointment here:\n\n${bookingUrl}\n\nThank you,\nCip De Vries, RMT`,
+          text: `Hi ${client.firstName || "there"},\n\nIt's been a while since your last massage. If you're ready for your next treatment, you can log in and book an appointment here:\n\n${bookingUrl}\n\nThanks and have a great day,\nCip De Vries, RMT`,
           html: `
             <h2>Time to Book Your Next Massage</h2>
             <p>Hi ${client.firstName || "there"},</p>
-            <p>It's been a while since your last massage. If you're due for your next treatment, you can log in and book an appointment here:</p>
+            <p>It's been a while since your last massage. If you're ready for your next treatment, you can log in and book an appointment here:</p>
             <p><a href="${bookingUrl}">Book Your Next Appointment</a></p>
-            <p>Thank you,<br/>Cip De Vries, RMT</p>
+            <p>Thanks and have a great day,<br/>Cip De Vries, RMT</p>
           `,
         });
 

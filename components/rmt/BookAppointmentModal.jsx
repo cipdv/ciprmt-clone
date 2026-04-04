@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { bookAppointmentForClient } from "@/app/_actions";
 
-export default function BookAppointmentModal({ isOpen, onClose, clientId }) {
+export default function BookAppointmentModal({
+  isOpen,
+  onClose,
+  clientId,
+  onBooked,
+}) {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState(60);
@@ -24,6 +29,7 @@ export default function BookAppointmentModal({ isOpen, onClose, clientId }) {
         duration,
       });
       if (result.success) {
+        await onBooked?.();
         setSuccess(true);
         setDate("");
         setTime("");

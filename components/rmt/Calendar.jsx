@@ -8,18 +8,18 @@ import { useRouter } from "next/navigation";
 
 const ConfirmationDialog = ({ message, onConfirm, onCancel }) => (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+    <div className="bg-[#f4f7f2] p-6 rounded-lg shadow-xl max-w-sm w-full">
       <p className="text-lg font-semibold mb-4">{message}</p>
       <div className="flex justify-end space-x-4">
         <button
           onClick={onCancel}
-          className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+          className="px-4 py-2 bg-[#f4f7f2] border border-gray-300 text-gray-800 rounded hover:bg-[#f4f7f2] focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
-          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+          className="px-4 py-2 bg-[#f4f7f2] border border-red-300 text-red-700 rounded hover:bg-[#f4f7f2] focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
         >
           Confirm
         </button>
@@ -147,7 +147,7 @@ const Calendar = ({ appointments }) => {
       {error && <p className="text-red-500 mb-4">{error}</p>}
 
       {upcomingAppointments.length === 0 ? (
-        <div className="p-8 bg-white rounded-md shadow-sm">
+        <div className="p-8 bg-[#f4f7f2] rounded-md shadow-sm">
           <p className="text-gray-600 text-center text-lg">
             There are currently no upcoming appointments.
           </p>
@@ -163,8 +163,8 @@ const Calendar = ({ appointments }) => {
                 className={`shadow-md rounded-lg p-5 hover:shadow-lg transition-shadow duration-200 cursor-pointer
                   ${
                     appointment.code
-                      ? "bg-red-50 border border-red-300"
-                      : "bg-yellow-50"
+                      ? "bg-[#f4f7f2] border border-red-300"
+                      : "bg-[#f4f7f2]"
                   }
                 `}
               >
@@ -176,14 +176,14 @@ const Calendar = ({ appointments }) => {
                   {/* Flags */}
                   <div className="flex flex-wrap gap-2 mb-2">
                     {appointment.code && (
-                      <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-sm">
+                      <span className="bg-[#f4f7f2] border border-red-300 text-red-700 text-xs px-2 py-1 rounded-sm">
                         Gift Card
                       </span>
                     )}
                     {isHealthHistoryOutdated(
                       appointment.lastHealthHistoryUpdate
                     ) && (
-                      <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-sm">
+                      <span className="bg-[#f4f7f2] border border-red-300 text-red-700 text-xs px-2 py-1 rounded-sm">
                         Health History Outdated
                       </span>
                     )}
@@ -242,7 +242,7 @@ const Calendar = ({ appointments }) => {
                       px-3 py-1 
                       border border-red-400 text-red-600
                       rounded-md text-sm font-medium
-                      hover:bg-red-50 hover:border-red-500
+                      hover:bg-[#f4f7f2] hover:border-red-500
                       transition
                     "
                   >
@@ -257,7 +257,7 @@ const Calendar = ({ appointments }) => {
                       px-3 py-1
                       border border-amber-400 text-amber-600
                       rounded-md text-sm font-medium
-                      hover:bg-amber-50 hover:border-amber-500
+                      hover:bg-[#f4f7f2] hover:border-amber-500
                       transition
                     "
                   >
@@ -276,7 +276,7 @@ const Calendar = ({ appointments }) => {
                       px-3 py-1
                       border border-blue-400 text-blue-600
                       rounded-md text-sm font-medium
-                      hover:bg-blue-50 hover:border-blue-500
+                      hover:bg-[#f4f7f2] hover:border-blue-500
                       transition
                     "
                   >
@@ -292,7 +292,7 @@ const Calendar = ({ appointments }) => {
             <button
               onClick={() => setPage((p) => p - 1)}
               disabled={page === 1}
-              className="px-4 py-2 btn text-white rounded-md disabled:bg-gray-300"
+              className="px-4 py-2 btn text-[#1f2a1f] rounded-md disabled:bg-[#f4f7f2]"
             >
               Previous
             </button>
@@ -306,7 +306,7 @@ const Calendar = ({ appointments }) => {
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={indexOfLast >= upcomingAppointments.length}
-              className="px-4 py-2 btn text-white rounded-md disabled:bg-gray-300"
+              className="px-4 py-2 btn text-[#1f2a1f] rounded-md disabled:bg-[#f4f7f2]"
             >
               Next
             </button>

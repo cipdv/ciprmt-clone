@@ -42,11 +42,11 @@ export default function SearchBar() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search users"
-            className="flex-grow px-4 py-2 border border-gray-300 bg-yellow-50 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-grow px-4 py-2 border border-gray-300 bg-[#f4f7f2] rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
           <button
             type="submit"
-            className="ml-4 px-4 py-2 bg-buttons text-white rounded-md hover:bg-buttonsHover focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
+            className="ml-4 px-4 py-2 bg-[#f4f7f2] text-[#1f2a1f] border border-gray-300 rounded-md hover:bg-[#f4f7f2] focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
           >
             {isLoading ? "Searching..." : "Search"}
           </button>
@@ -56,12 +56,12 @@ export default function SearchBar() {
       {error && <div className="text-red-500 mb-4">{error}</div>}
 
       {results.length > 0 && (
-        <ul className="bg-white border border-gray-300 rounded-md shadow-sm">
+        <ul className="bg-[#f4f7f2] border border-gray-300 rounded-md shadow-sm">
           {results.map((user) => (
             <li
               key={user.id}
               onClick={() => handleResultClick(user.id)}
-              className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+              className="px-4 py-2 hover:bg-[#f4f7f2] cursor-pointer"
             >
               <div className="font-semibold">{user.name}</div>
               <div className="text-sm text-gray-600">{user.email}</div>
