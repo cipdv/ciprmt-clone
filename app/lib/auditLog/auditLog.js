@@ -53,19 +53,10 @@ export async function logAuditEvent({
       RETURNING id
     `;
 
-    console.log(`Audit log entry created with id: ${rows[0].id}`);
     return rows[0].id;
   } catch (error) {
     // Error handling remains the same
     console.error("Error creating audit log entry:", error);
-    console.error("Error details:", {
-      typeOfInfo,
-      actionPerformed,
-      accessedById: typeof accessedById,
-      whoseInfoId: typeof whoseInfoId,
-      reasonForAccess,
-      additionalDetailsKeys: Object.keys(additionalDetails),
-    });
 
     return null;
   }

@@ -21,9 +21,6 @@ const TreatmentDetails = ({ treatment, onSelectTreatment }) => {
 
   const handleDNS = (e) => {
     e.preventDefault();
-    console.log(
-      "DNS clicked - add DNS count to user's profile (if 2 or more, user can't book online), set appointment status to DNS, add DNS balance to user's profile"
-    );
   };
 
   // Format the appointment date
@@ -140,3 +137,4 @@ export default TreatmentDetails;
 // };
 
 // export default TreatmentDetails;
+

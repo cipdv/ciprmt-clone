@@ -4,12 +4,14 @@ import {
   getAdditionalIncomeByMonth,
   getAdditionalTreatmentsRevenueByMonth,
   getExpensesByMonth,
+  getActualTaxPaidForYear,
 } from "@/app/_actions";
 import { YearSelector } from "./year-selector";
 import { MonthlyBreakdown } from "./monthly-breakdown";
 import { AdditionalIncomeForm } from "./additional-income-form";
 import { ExpensesForm } from "./expenses-form";
 import { ExpenseBreakdown } from "./expense-breakdown";
+import { ActualTaxPaidForm } from "./actual-tax-paid-form";
 
 export default async function FinancesPage({ searchParams }) {
   const params = await searchParams;
@@ -25,6 +27,7 @@ export default async function FinancesPage({ searchParams }) {
   const additionalTreatmentsResult =
     await getAdditionalTreatmentsRevenueByMonth(selectedYear);
   const expensesResult = await getExpensesByMonth(selectedYear);
+  const actualTaxPaidResult = await getActualTaxPaidForYear(selectedYear);
 
   const treatmentsByMonth = {};
   const additionalIncomeByMonth = {};
@@ -286,9 +289,19 @@ export default async function FinancesPage({ searchParams }) {
     yearTotals.incomeAfterHST - yearTotals.totalExpenses;
   yearTotals.estimatedTax =
     yearlyIncomeAfterExpenses > 0 ? yearlyIncomeAfterExpenses * 0.2 : 0;
-  yearTotals.netIncome = yearTotals.incomeAfterHST - yearTotals.estimatedTax;
+  const actualTaxPaidForYear =
+    actualTaxPaidResult.success &&
+    actualTaxPaidResult.data?.actualTaxPaid !== null &&
+    actualTaxPaidResult.data?.actualTaxPaid !== undefined
+      ? Number(actualTaxPaidResult.data.actualTaxPaid)
+      : null;
+  const taxUsedForYear =
+    actualTaxPaidForYear !== null ? actualTaxPaidForYear : yearTotals.estimatedTax;
+  yearTotals.netIncome = yearTotals.incomeAfterHST - taxUsedForYear;
   yearTotals.netIncomeWithAdditional =
     yearTotals.netIncome + yearTotals.additionalTreatmentsIncome;
+
+  const HST_THRESHOLD = 30000;
 
   const formatCurrency = (value) => {
     return `$${value.toLocaleString("en-US", {
@@ -296,6 +309,48 @@ export default async function FinancesPage({ searchParams }) {
       maximumFractionDigits: 2,
     })}`;
   };
+
+  const quarterSummaryByEndMonth = {};
+  [3, 6, 9, 12].forEach((endMonth) => {
+    const startMonth = endMonth - 2;
+    let quarterlyRevenueCollected = 0;
+
+    for (let month = startMonth; month <= endMonth; month++) {
+      const monthData = treatmentsByMonth[month];
+      if (!monthData) {
+        continue;
+      }
+      quarterlyRevenueCollected +=
+        (monthData.totalRevenue || 0) + (monthData.additionalTreatmentsIncome || 0);
+    }
+
+    const quarterlyHstCollected = quarterlyRevenueCollected * 0.13;
+
+    let ytdRevenueCollected = 0;
+    for (let month = 1; month <= endMonth; month++) {
+      const monthData = treatmentsByMonth[month];
+      if (!monthData) {
+        continue;
+      }
+      ytdRevenueCollected +=
+        (monthData.totalRevenue || 0) + (monthData.additionalTreatmentsIncome || 0);
+    }
+
+    quarterSummaryByEndMonth[endMonth] = {
+      quarterLabel:
+        endMonth === 3
+          ? "Q1 (Jan - Mar)"
+          : endMonth === 6
+            ? "Q2 (Apr - Jun)"
+            : endMonth === 9
+              ? "Q3 (Jul - Sep)"
+              : "Q4 (Oct - Dec)",
+      quarterlyRevenueCollected,
+      quarterlyHstCollected,
+      quarterToDateRevenue: ytdRevenueCollected,
+      quarterToDateRemainingThreshold: Math.max(HST_THRESHOLD - ytdRevenueCollected, 0),
+    };
+  });
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-6xl space-y-6">
@@ -325,6 +380,7 @@ export default async function FinancesPage({ searchParams }) {
           <p className="text-sm text-gray-600 mt-1">
             Monthly breakdown with HST calculations
           </p>
+
         </div>
         <div className="p-6">
           {!treatmentsRevenueResult.success ? (
@@ -342,29 +398,77 @@ export default async function FinancesPage({ searchParams }) {
                 .sort((a, b) => a - b)
                 .map((month) => {
                   return (
-                    <MonthlyBreakdown
-                      key={month}
-                      month={month}
-                      data={treatmentsByMonth[month]}
-                      additionalIncome={
-                        additionalIncomeByMonth[month] || {
-                          incomes: [],
-                          totalAmount: 0,
+                    <div key={month} className="space-y-3">
+                      <MonthlyBreakdown
+                        month={month}
+                        data={treatmentsByMonth[month]}
+                        additionalIncome={
+                          additionalIncomeByMonth[month] || {
+                            incomes: [],
+                            totalAmount: 0,
+                          }
                         }
-                      }
-                      additionalTreatments={
-                        additionalTreatmentsByMonth[month] || {
-                          treatments: [],
-                          totalAmount: 0,
+                        additionalTreatments={
+                          additionalTreatmentsByMonth[month] || {
+                            treatments: [],
+                            totalAmount: 0,
+                          }
                         }
-                      }
-                      expenses={
-                        expensesByMonth[month] || {
-                          expenses: [],
-                          totalAmount: 0,
+                        expenses={
+                          expensesByMonth[month] || {
+                            expenses: [],
+                            totalAmount: 0,
+                          }
                         }
-                      }
-                    />
+                      />
+
+                      {month % 3 === 0 && quarterSummaryByEndMonth[month] && (
+                        <div className="rounded-md border border-blue-200 bg-blue-50 p-4">
+                          <h4 className="text-base font-semibold text-blue-900 mb-3">
+                            {quarterSummaryByEndMonth[month].quarterLabel} Summary
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-md border border-blue-100 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                                Quarterly HST Collected
+                              </p>
+                              <p className="text-lg font-semibold text-gray-900">
+                                {formatCurrency(
+                                  quarterSummaryByEndMonth[month].quarterlyHstCollected,
+                                )}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-blue-100 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                                Quarterly Revenue Collected
+                              </p>
+                              <p className="text-lg font-semibold text-gray-900">
+                                {formatCurrency(
+                                  quarterSummaryByEndMonth[month].quarterlyRevenueCollected,
+                                )}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-blue-100 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                                Quarter to Date vs $30,000 Threshold
+                              </p>
+                              <p className="text-lg font-semibold text-gray-900">
+                                {formatCurrency(
+                                  quarterSummaryByEndMonth[month].quarterToDateRevenue,
+                                )}{" "}
+                                / {formatCurrency(HST_THRESHOLD)}
+                              </p>
+                              <p className="text-sm text-gray-600 mt-1">
+                                Remaining:{" "}
+                                {formatCurrency(
+                                  quarterSummaryByEndMonth[month].quarterToDateRemainingThreshold,
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
 
@@ -405,20 +509,37 @@ export default async function FinancesPage({ searchParams }) {
                       {formatCurrency(yearTotals.totalExpenses)}
                     </div>
                   </div>
-                  <div className="bg-white p-4 rounded-md border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-1">
-                      Estimated Tax (20%)
+                  {actualTaxPaidForYear !== null ? (
+                    <div className="bg-white p-4 rounded-md border border-gray-200">
+                      <div className="text-sm text-gray-600 mb-1">
+                        Actual Tax Paid
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {formatCurrency(actualTaxPaidForYear)}
+                      </div>
                     </div>
-                    <div className="text-lg font-semibold">
-                      {formatCurrency(yearTotals.estimatedTax)}
+                  ) : (
+                    <div className="bg-white p-4 rounded-md border border-gray-200">
+                      <div className="text-sm text-gray-600 mb-1">
+                        Estimated Tax (20%)
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {formatCurrency(yearTotals.estimatedTax)}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="bg-white p-4 rounded-md border border-gray-200">
                     <div className="text-sm text-gray-600 mb-1">Net Income</div>
                     <div className="text-lg font-semibold">
                       {formatCurrency(yearTotals.netIncomeWithAdditional)}
                     </div>
                   </div>
+                </div>
+                <div className="mt-4">
+                  <ActualTaxPaidForm
+                    year={selectedYear}
+                    initialActualTaxPaid={actualTaxPaidForYear}
+                  />
                 </div>
               </div>
             </div>

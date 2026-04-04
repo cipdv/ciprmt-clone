@@ -6,17 +6,7 @@ export async function bookAppointment({
   appointmentDate,
   RMTLocationId,
 }) {
-  console.log("bookAppointment called with params:", {
-    location,
-    duration,
-    appointmentTime,
-    workplace,
-    appointmentDate,
-    RMTLocationId,
-  });
-
   const session = await getSession();
-  console.log("Session:", session);
 
   if (!session || !session.resultObj) {
     console.error("No session or resultObj found");
@@ -27,11 +17,9 @@ export async function bookAppointment({
   }
 
   const { id, firstName, lastName, email, phoneNumber } = session.resultObj;
-  console.log("User data:", { id, firstName, lastName, email, phoneNumber });
 
   // Ensure appointmentDate is in "YYYY-MM-DD" format
   const formattedDate = new Date(appointmentDate).toISOString().split("T")[0];
-  console.log("Formatted date:", formattedDate);
 
   // Convert appointmentTime to "HH:MM" (24-hour format)
   const startDateTime = new Date(`${appointmentDate} ${appointmentTime}`);
@@ -40,7 +28,6 @@ export async function bookAppointment({
     hour: "2-digit",
     minute: "2-digit",
   });
-  console.log("Formatted start time:", formattedStartTime);
 
   // Calculate end time
   const endDateTime = new Date(
@@ -51,16 +38,8 @@ export async function bookAppointment({
     hour: "2-digit",
     minute: "2-digit",
   });
-  console.log("Formatted end time:", formattedEndTime);
 
   try {
-    console.log("Searching for available appointment with criteria:", {
-      rmt_location_id: RMTLocationId,
-      date: formattedDate,
-      start_time: formattedStartTime,
-      end_time: formattedEndTime,
-    });
-
     // Find an available appointment that matches the criteria
     const { rows: availableAppointments } = await sql`
       SELECT id
@@ -83,10 +62,8 @@ export async function bookAppointment({
     }
 
     const appointmentId = availableAppointments[0].id;
-    console.log("Selected appointment ID:", appointmentId);
 
     // Create Google Calendar event
-    console.log("Creating Google Calendar event");
     const event = {
       summary: `[Requested] Mx ${firstName} ${lastName}`,
       location: location,
@@ -102,20 +79,12 @@ export async function bookAppointment({
       colorId: "6", // tangerine color
     };
 
-    console.log("Google Calendar event data:", event);
 
     const createdEvent = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
       resource: event,
     });
-
-    console.log("Google Calendar event created:", {
-      id: createdEvent.data.id,
-      link: createdEvent.data.htmlLink,
-    });
-
     // Update the appointment
-    console.log("Updating appointment with ID:", appointmentId);
     const updateResult = await sql`
       UPDATE treatments
       SET 
@@ -132,13 +101,11 @@ export async function bookAppointment({
       RETURNING id, status, client_id
     `;
 
-    console.log("Update result:", updateResult);
 
     if (updateResult.rowCount === 0) {
       console.error("Failed to update appointment");
 
       // If update failed, delete the Google Calendar event
-      console.log("Deleting Google Calendar event due to failed update");
       await calendar.events.delete({
         calendarId: GOOGLE_CALENDAR_ID,
         eventId: createdEvent.data.id,
@@ -152,7 +119,6 @@ export async function bookAppointment({
     }
 
     // Log the audit event
-    console.log("Logging audit event");
     await logAuditEvent({
       typeOfInfo: "appointment booking",
       actionPerformed: "appointment booked",
@@ -170,7 +136,6 @@ export async function bookAppointment({
     });
 
     // Send email notification
-    console.log("Sending email notification");
     const transporter = getEmailTransporter();
     const confirmationLink = `${BASE_URL}/dashboard/rmt/confirm-appointment/${appointmentId}`;
 
@@ -194,20 +159,11 @@ export async function bookAppointment({
       `,
     });
 
-    console.log("Email sent successfully");
-    console.log("Appointment booking completed successfully");
 
     revalidatePath("/dashboard/patient");
     redirect("/dashboard/patient");
   } catch (error) {
     console.error("Error in bookAppointment:", error);
-    console.error("Error stack:", error.stack);
-
-    // Log more details about the error
-    if (error.response) {
-      console.error("Error response data:", error.response.data);
-      console.error("Error response status:", error.response.status);
-    }
 
     return {
       success: false,
@@ -390,3 +346,4 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
 
   return sortedAvailableTimes;
 };
+

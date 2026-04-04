@@ -18,7 +18,6 @@ export async function checkRateLimit(
     const now = new Date();
     const windowStart = new Date(now.getTime() - windowSeconds * 1000);
 
-    console.log(`Checking rate limit for user ${userId} on action ${action}`);
 
     // First, ensure the rate_limits table exists
     try {
@@ -64,7 +63,6 @@ export async function checkRateLimit(
     // With @vercel/postgres, results are in the rows property
     const count = Number.parseInt(result.rows[0].count);
 
-    console.log(`User ${userId} has made ${count} requests in the last minute`);
 
     // Clean up old entries periodically
     try {

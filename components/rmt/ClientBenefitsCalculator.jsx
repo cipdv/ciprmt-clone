@@ -141,7 +141,7 @@ export default function ClientBenefitsCalculator({
 
       setSaveStatus({
         type: "success",
-        text: result.message || "Benefits coverage saved.",
+        text: result.message || "reminder details saved.",
       });
     } catch {
       setSaveStatus({
@@ -161,15 +161,61 @@ export default function ClientBenefitsCalculator({
         className="w-full flex items-center justify-between text-left"
       >
         <div>
-          <h3 className="text-lg font-semibold">Benefits Package Calculator</h3>
-          <p className="text-sm text-gray-600 mt-1">
-            Enter yearly massage coverage to estimate appointments per year.
-          </p>
+          <h3 className="text-lg font-semibold">Email Reminders</h3>
         </div>
         <span className="text-sm font-medium text-gray-600">
-          {isExpanded ? "Hide" : "Show"}
+          {isExpanded ? "Hide" : "Show calculator"}
         </span>
       </button>
+
+      <div className="mt-4 space-y-3">
+        <div className="flex items-center gap-2 h-10">
+          <input
+            id="sendReminders"
+            type="checkbox"
+            checked={sendReminders}
+            onChange={(event) => setSendReminders(event.target.checked)}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          <label
+            htmlFor="sendReminders"
+            className="text-sm font-medium text-gray-700"
+          >
+            Send reminders
+          </label>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="w-full sm:max-w-[320px]">
+            <label
+              htmlFor="manualReminderFrequency"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Weeks between appointments
+            </label>
+            <input
+              id="manualReminderFrequency"
+              type="number"
+              min="0"
+              step="0.01"
+              value={manualReminderFrequency}
+              onChange={(event) => {
+                setManualReminderFrequency(event.target.value);
+                setSelectedDuration(null);
+              }}
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+              placeholder="e.g. 6.0"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || !clientId}
+            className="h-10 w-full sm:w-auto px-5 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
 
       {isExpanded && (
         <>
@@ -207,44 +253,6 @@ export default function ClientBenefitsCalculator({
                   value={renewalDate}
                   onChange={(event) => setRenewalDate(event.target.value)}
                   className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  id="sendReminders"
-                  type="checkbox"
-                  checked={sendReminders}
-                  onChange={(event) => setSendReminders(event.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <label
-                  htmlFor="sendReminders"
-                  className="text-sm font-medium text-gray-700"
-                >
-                  Send reminders
-                </label>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="manualReminderFrequency"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Weeks between appointments
-                </label>
-                <input
-                  id="manualReminderFrequency"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={manualReminderFrequency}
-                  onChange={(event) => {
-                    setManualReminderFrequency(event.target.value);
-                    setSelectedDuration(null);
-                  }}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                  placeholder="e.g. 6.0"
                 />
               </div>
             </div>
@@ -349,17 +357,6 @@ export default function ClientBenefitsCalculator({
               {saveStatus.text}
             </div>
           )}
-
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || !clientId}
-              className="w-full px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSaving ? "Saving..." : "Save"}
-            </button>
-          </div>
         </>
       )}
     </div>

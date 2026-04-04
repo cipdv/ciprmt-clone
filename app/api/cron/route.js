@@ -17,8 +17,6 @@ export async function POST(request) {
 }
 
 async function handleRequest(request) {
-  console.log(`Handler invoked at ${new Date().toISOString()}`);
-  console.log(`Request method: ${request.method}`);
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
@@ -40,16 +38,12 @@ async function handleRequest(request) {
 
   try {
     await resetStaleReschedulingAppointments();
-    console.log("Stale appointments reset successfully");
 
     await addAppointments();
-    console.log("New appointments added successfully");
 
     await deleteExpiredAppointments();
-    console.log("Expired appointments deleted successfully");
 
     await sendAppointmentReminders();
-    console.log("Appointment reminders sent successfully");
 
     const torontoDayOfMonth = Number(
       new Intl.DateTimeFormat("en-CA", {
@@ -67,12 +61,6 @@ async function handleRequest(request) {
         );
       }
 
-      if (maintenanceResult.skipped) {
-        console.log("Monthly maintenance log already exists for this month");
-      } else {
-        console.log("Monthly maintenance log auto-completed successfully");
-      }
-
       const benefitReminderResult = await sendBenefitReminders();
       if (!benefitReminderResult.success) {
         throw new Error(
@@ -80,14 +68,6 @@ async function handleRequest(request) {
             "Failed to process monthly benefit reminders",
         );
       }
-      console.log(benefitReminderResult.message);
-    } else {
-      console.log(
-        `Skipping monthly maintenance auto-complete (Toronto day ${torontoDayOfMonth})`,
-      );
-      console.log(
-        `Skipping monthly benefit reminders (Toronto day ${torontoDayOfMonth})`,
-      );
     }
 
     return NextResponse.json({
@@ -105,3 +85,4 @@ async function handleRequest(request) {
     );
   }
 }
+

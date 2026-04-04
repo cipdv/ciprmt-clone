@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import {
   loadScheduleData,
   toggleWorkingDay,
+  updateWorkDayBookingCutoffHours,
   addAppointmentTime,
   updateAppointmentTime,
   deleteAppointmentTime,
@@ -26,6 +27,9 @@ export default function WeeklyScheduleEditor({
   const [appointmentTimes, setAppointmentTimes] = useState({});
   const [editingTimes, setEditingTimes] = useState({});
   const [loading, setLoading] = useState(true);
+  const [dirtyCutoffDayIds, setDirtyCutoffDayIds] = useState({});
+  const [isSavingCutoffs, setIsSavingCutoffs] = useState(false);
+  const [cutoffSaveStatus, setCutoffSaveStatus] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -46,6 +50,11 @@ export default function WeeklyScheduleEditor({
             id: day.id,
             isWorking: day.is_working,
             dayName: day.day_name,
+            bookingCutoffHours:
+              day.booking_cutoff_hours === null ||
+              day.booking_cutoff_hours === undefined
+                ? 0
+                : Number(day.booking_cutoff_hours),
           };
 
           if (day.appointment_times && day.appointment_times.length > 0) {
@@ -92,6 +101,76 @@ export default function WeeklyScheduleEditor({
         [workDayId]: [...(prev[workDayId] || []), result.data],
       }));
     }
+  };
+
+  const normalizeCutoffHours = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+
+  const handleUpdateBookingCutoffHours = async (dayOfWeek, value) => {
+    const dayData = schedule[dayOfWeek];
+    if (!dayData?.id) return;
+
+    setSchedule((prev) => ({
+      ...prev,
+      [dayOfWeek]: {
+        ...prev[dayOfWeek],
+        bookingCutoffHours: value,
+      },
+    }));
+    setDirtyCutoffDayIds((prev) => ({ ...prev, [dayData.id]: true }));
+    setCutoffSaveStatus(null);
+  };
+
+  const handleSaveCutoffChanges = async () => {
+    const dirtyEntries = Object.entries(schedule).filter(([, dayData]) => {
+      return dayData?.id && dirtyCutoffDayIds[dayData.id];
+    });
+
+    if (dirtyEntries.length === 0) {
+      setCutoffSaveStatus({ type: "info", text: "No changes to save." });
+      return;
+    }
+
+    setIsSavingCutoffs(true);
+    setCutoffSaveStatus(null);
+
+    let failed = 0;
+    for (const [, dayData] of dirtyEntries) {
+      const safeValue = normalizeCutoffHours(dayData.bookingCutoffHours);
+      const result = await updateWorkDayBookingCutoffHours(dayData.id, safeValue);
+      if (!result.success) {
+        failed++;
+        continue;
+      }
+
+      setSchedule((prev) => {
+        const updated = { ...prev };
+        const dayKey = Object.keys(updated).find(
+          (key) => updated[key]?.id === dayData.id,
+        );
+        if (dayKey) {
+          updated[dayKey] = {
+            ...updated[dayKey],
+            bookingCutoffHours: safeValue,
+          };
+        }
+        return updated;
+      });
+    }
+
+    if (failed > 0) {
+      setCutoffSaveStatus({
+        type: "error",
+        text: `Saved with ${failed} error(s). Please try again.`,
+      });
+    } else {
+      setCutoffSaveStatus({ type: "success", text: "Changes saved." });
+      setDirtyCutoffDayIds({});
+    }
+
+    setIsSavingCutoffs(false);
   };
 
   const handleUpdateAppointmentTime = async (timeId, field, value) => {
@@ -208,19 +287,71 @@ export default function WeeklyScheduleEditor({
         style={{
           padding: "24px 24px 16px 24px",
           borderBottom: "1px solid #e5e7eb",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
         }}
       >
         <h2 style={{ fontSize: "20px", fontWeight: "600", margin: 0 }}>
           Weekly Schedule
         </h2>
+        <button
+          onClick={handleSaveCutoffChanges}
+          disabled={isSavingCutoffs}
+          style={{
+            padding: "8px 14px",
+            backgroundColor: "#2563eb",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: isSavingCutoffs ? "not-allowed" : "pointer",
+            opacity: isSavingCutoffs ? 0.7 : 1,
+            fontSize: "14px",
+            fontWeight: "500",
+          }}
+        >
+          {isSavingCutoffs ? "Saving..." : "Save changes"}
+        </button>
       </div>
 
       <div style={{ padding: "24px" }}>
+        {cutoffSaveStatus && (
+          <div
+            style={{
+              marginBottom: "12px",
+              padding: "8px 10px",
+              borderRadius: "6px",
+              fontSize: "13px",
+              border:
+                cutoffSaveStatus.type === "success"
+                  ? "1px solid #86efac"
+                  : cutoffSaveStatus.type === "error"
+                    ? "1px solid #fca5a5"
+                    : "1px solid #d1d5db",
+              backgroundColor:
+                cutoffSaveStatus.type === "success"
+                  ? "#f0fdf4"
+                  : cutoffSaveStatus.type === "error"
+                    ? "#fef2f2"
+                    : "#f9fafb",
+              color:
+                cutoffSaveStatus.type === "success"
+                  ? "#166534"
+                  : cutoffSaveStatus.type === "error"
+                    ? "#991b1b"
+                    : "#374151",
+            }}
+          >
+            {cutoffSaveStatus.text}
+          </div>
+        )}
+
         {/* Header */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 2fr",
+            gridTemplateColumns: "1fr 1fr 1.2fr 2fr",
             gap: "16px",
             fontWeight: "600",
             fontSize: "14px",
@@ -232,6 +363,7 @@ export default function WeeklyScheduleEditor({
         >
           <div>Day</div>
           <div>Working</div>
+          <div>Hours Before Booking</div>
           <div>Appointment Times</div>
         </div>
 
@@ -247,7 +379,7 @@ export default function WeeklyScheduleEditor({
               key={day.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 2fr",
+                gridTemplateColumns: "1fr 1fr 1.2fr 2fr",
                 gap: "16px",
                 alignItems: "start",
                 padding: "12px 0",
@@ -272,6 +404,23 @@ export default function WeeklyScheduleEditor({
                   checked={dayData?.isWorking || false}
                   onChange={() => handleToggleWorkingDay(day.id)}
                   style={{ width: "16px", height: "16px" }}
+                />
+              </div>
+
+              {/* Booking cutoff hours */}
+              <div style={{ paddingTop: "4px" }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={dayData?.bookingCutoffHours ?? 0}
+                  onChange={(e) => handleUpdateBookingCutoffHours(day.id, e.target.value)}
+                  style={{
+                    width: "110px",
+                    padding: "4px 6px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "4px",
+                  }}
                 />
               </div>
 

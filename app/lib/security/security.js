@@ -6,7 +6,6 @@ const HAS_ENCRYPTION_KEY = Boolean(ENCRYPTION_KEY);
 
 export function encryptData(data) {
   if (!HAS_ENCRYPTION_KEY) {
-    console.warn("Encryption skipped: ENCRYPTION_KEY is not set.");
     return null;
   }
   try {
@@ -29,7 +28,6 @@ export function encryptData(data) {
 
 export function decryptData(encryptedData) {
   if (!HAS_ENCRYPTION_KEY) {
-    console.warn("Decryption skipped: ENCRYPTION_KEY is not set.");
     return null;
   }
   try {
@@ -68,7 +66,6 @@ export function decryptData(encryptedData) {
 
 export async function logAuditEvent(event) {
   // Implement audit logging (e.g., write to a secure database or send to a logging service)
-  console.log("Audit event:", event);
 }
 
 // import crypto from "crypto";

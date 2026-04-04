@@ -150,7 +150,6 @@ const TreatmentPage = ({ params }) => {
           setTreatmentPlans(refreshResult.treatmentPlans);
         }
         setShowNewPlanForm(false);
-        console.log("Treatment plan created successfully");
       } else {
         console.error("Failed to create treatment plan:", result.message);
         alert("Failed to create treatment plan: " + result.message);
@@ -181,7 +180,6 @@ const TreatmentPage = ({ params }) => {
       const result = await setDNSTreatmentStatusAttachment(treatment.id);
       if (result.success) {
         setTreatment((prev) => ({ ...prev, status: "dns" }));
-        console.log("Treatment marked as DNS successfully");
       } else {
         console.error("Failed to mark as DNS:", result.message);
         alert("Failed to mark as DNS: " + result.message);

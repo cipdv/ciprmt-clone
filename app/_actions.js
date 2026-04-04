@@ -676,7 +676,6 @@ export async function getReceiptById(id) {
     }
 
     if (rows.length === 0) {
-      console.log(`No receipt found with ID: ${id}`);
       return null;
     }
 
@@ -1646,7 +1645,8 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
       appointment_begins_at,
       appointment_ends_at,
       appointment_window_start,
-      appointment_window_end
+      appointment_window_end,
+      booking_cutoff_hours
     FROM treatments
     WHERE rmt_location_id = ${rmtLocationId}
     AND status = 'available'
@@ -1664,7 +1664,12 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
       const startTime = new Date(
         `${appointmentDate}T${appointment.appointment_window_start}`,
       );
-      const endTime = new Date(`${appointmentDate}T${appointment.end}`);
+      const endTime = new Date(
+        `${appointmentDate}T${appointment.appointment_window_end}`,
+      );
+      if (endTime <= startTime) {
+        endTime.setDate(endTime.getDate() + 1);
+      }
 
       // Check if the appointment duration fits within the available time slot
       if (endTime.getTime() - startTime.getTime() >= durationMinutes * 60000) {
@@ -1672,6 +1677,8 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
           date: appointmentDate,
           startTime: appointment.appointment_window_start.slice(0, 5), // Format as HH:MM
           endTime: appointment.appointment_window_end.slice(0, 5), // Format as HH:MM
+          windowStartTime: appointment.appointment_window_start.slice(0, 5),
+          bookingCutoffHours: Number(appointment.booking_cutoff_hours || 0),
         });
       }
     });
@@ -1690,6 +1697,9 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
       const endTime = new Date(
         `${appointmentDate}T${appointment.appointment_window_end}`,
       );
+      if (endTime <= startTime) {
+        endTime.setDate(endTime.getDate() + 1);
+      }
 
       let currentTime = new Date(startTime);
 
@@ -1702,6 +1712,8 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
             date: appointmentDate,
             startTime: currentTime.toTimeString().slice(0, 5), // Format as HH:MM
             endTime: nextTime.toTimeString().slice(0, 5), // Format as HH:MM
+            windowStartTime: appointment.appointment_window_start.slice(0, 5),
+            bookingCutoffHours: Number(appointment.booking_cutoff_hours || 0),
           });
         }
 
@@ -1787,15 +1799,27 @@ export const getAvailableAppointments = async (rmtLocationId, duration) => {
     return true;
   });
 
-  // Filter out dates that are not greater than today
-  const today = new Date().toISOString().split("T")[0];
-  const futureAvailableTimes = dedupedAvailableTimes.filter(
-    (available) => available.date > today,
+  // Apply booking cutoff: only show slots before the configured lead-time deadline.
+  const nowToronto = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "America/Toronto" }),
   );
+  const cutoffFilteredTimes = dedupedAvailableTimes.filter((available) => {
+    const windowStartTime = available.windowStartTime || available.startTime;
+    if (!available.date || !windowStartTime) return false;
+    const windowStart = new Date(`${available.date}T${windowStartTime}:00`);
+    if (Number.isNaN(windowStart.getTime())) return false;
+    const cutoffHours = Math.max(0, Number(available.bookingCutoffHours || 0));
+    const cutoffDeadline = new Date(
+      windowStart.getTime() - cutoffHours * 60 * 60 * 1000,
+    );
+    return nowToronto <= cutoffDeadline;
+  });
 
-  // Sort the results by date
-  const sortedAvailableTimes = futureAvailableTimes.sort(
-    (a, b) => new Date(a.date) - new Date(b.date),
+  // Sort the results by date/time
+  const sortedAvailableTimes = cutoffFilteredTimes.sort(
+    (a, b) =>
+      new Date(`${a.date}T${a.startTime}:00`) -
+      new Date(`${b.date}T${b.startTime}:00`),
   );
 
   return sortedAvailableTimes;
@@ -2044,13 +2068,6 @@ export async function bookAppointment({
     };
   } catch (error) {
     console.error("Error in bookAppointment:", error);
-    console.error("Error stack:", error.stack);
-
-    // Log more details about the error
-    if (error.response) {
-      console.error("Error response data:", error.response.data);
-      console.error("Error response status:", error.response.status);
-    }
 
     return {
       success: false,
@@ -2331,7 +2348,6 @@ export const cancelAppointment = async (prevState, formData) => {
     `;
 
     if (rows.length === 0) {
-      console.log("No matching appointment found.");
       return {
         message: "No matching appointment found.",
         status: "error",
@@ -2347,7 +2363,6 @@ export const cancelAppointment = async (prevState, formData) => {
           calendarId: GOOGLE_CALENDAR_ID,
           eventId: appointment.google_calendar_event_id,
         });
-        console.log("Google Calendar event deleted successfully.");
       } catch (calendarError) {
         console.error("Error deleting Google Calendar event:", calendarError);
         // We'll continue with the cancellation even if the Calendar deletion fails
@@ -2376,7 +2391,6 @@ export const cancelAppointment = async (prevState, formData) => {
     `;
 
     if (updateResult.rowCount > 0) {
-      console.log("Appointment cancelled successfully.");
 
       try {
         await logAuditEvent({
@@ -2423,7 +2437,6 @@ export const cancelAppointment = async (prevState, formData) => {
         message: "Appointment cancelled successfully.",
       };
     } else {
-      console.log("No matching appointment found or no update performed.");
       return {
         message: "No matching appointment found.",
         status: "error",
@@ -2431,7 +2444,6 @@ export const cancelAppointment = async (prevState, formData) => {
     }
   } catch (error) {
     console.error("An error occurred while cancelling the appointment:", error);
-    console.error("Error stack:", error.stack);
     return {
       message: "An error occurred while cancelling the appointment.",
       status: "error",
@@ -2880,7 +2892,6 @@ export const getAllAvailableAppointments = async (
       });
     }
   } catch (error) {
-    console.log(error);
   }
 
   // Filter out the event with the currentEventGoogleId from the busyTimes
@@ -3325,28 +3336,9 @@ export async function rescheduleAppointment(
         message: "Current appointment not found.",
       };
     }
-
-    console.log(
-      "[v0] Current appointment object:",
-      JSON.stringify(currentAppointment, null, 2),
-    );
-    console.log("[v0] Gift card code from database:", currentAppointment.code);
-    console.log("[v0] Code type:", typeof currentAppointment.code);
-    console.log("[v0] Code is null?", currentAppointment.code === null);
-    console.log(
-      "[v0] Code is undefined?",
-      currentAppointment.code === undefined,
-    );
-
     const consentForm = currentAppointment.consent_form;
     const consentFormSubmittedAt = currentAppointment.consent_form_submitted_at;
     const giftCardCode = currentAppointment.code; // Gift card code
-
-    console.log(
-      "[v0] Rescheduling appointment - Gift card code from old appointment:",
-      giftCardCode,
-    );
-
     // Update Google Calendar if there's an event ID
     if (currentAppointment.google_calendar_event_id) {
       const updatedEvent = {
@@ -3372,7 +3364,6 @@ export async function rescheduleAppointment(
           eventId: currentAppointment.google_calendar_event_id,
           resource: updatedEvent,
         });
-        console.log("Google Calendar event updated successfully.");
       } catch (calendarError) {
         console.error("Error updating Google Calendar event:", calendarError);
       }
@@ -3391,7 +3382,6 @@ export async function rescheduleAppointment(
       WHERE id = ${currentAppointmentId}
     `;
 
-    console.log("[v0] Old appointment cleared");
 
     // Find a new available appointment slot
     const { rows: availableAppointments } = await sql`
@@ -3407,14 +3397,6 @@ export async function rescheduleAppointment(
 
     if (availableAppointments.length > 0) {
       const newAppointmentId = availableAppointments[0].id;
-
-      console.log("[v0] Found new appointment slot:", newAppointmentId);
-      console.log("[v0] Transferring gift card code:", giftCardCode);
-      console.log(
-        "[v0] Gift card code value being inserted:",
-        giftCardCode || null,
-      );
-
       const updateResult = await sql`
         UPDATE treatments
         SET 
@@ -3437,16 +3419,6 @@ export async function rescheduleAppointment(
         WHERE id = ${newAppointmentId}
         RETURNING id, code
       `;
-
-      console.log(
-        "[v0] New appointment updated. Result:",
-        updateResult.rows[0],
-      );
-      console.log(
-        "[v0] Code successfully transferred?",
-        updateResult.rows[0].code === giftCardCode,
-      );
-
       try {
         await logAuditEvent({
           typeOfInfo: "appointment rescheduling",
@@ -3480,7 +3452,6 @@ export async function rescheduleAppointment(
         message: "Appointment rescheduled successfully.",
       };
     } else {
-      console.log("No matching appointment found for rescheduling.");
 
       // Revert Google Calendar event if needed
       if (currentAppointment.google_calendar_event_id) {
@@ -3503,7 +3474,6 @@ export async function rescheduleAppointment(
               },
             },
           });
-          console.log("Google Calendar event reverted successfully.");
         } catch (calendarError) {
           console.error(
             "Error reverting Google Calendar event:",
@@ -3859,7 +3829,6 @@ async function sendRescheduleNotificationEmail(
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log("Reschedule notification email sent successfully");
   } catch (error) {
     console.error("Error sending reschedule notification email:", error);
   }
@@ -4909,7 +4878,6 @@ export async function updateAppointmentStatus(formData) {
             calendarId: GOOGLE_CALENDAR_ID,
             eventId: appointment.google_calendar_event_id,
           });
-          console.log("Google Calendar event deleted successfully.");
         } catch (calendarError) {
           console.error("Error deleting Google Calendar event:", calendarError);
         }
@@ -4960,7 +4928,6 @@ export async function updateAppointmentStatus(formData) {
               summary: `[Confirmed]: Mx ${appointment.firstName} ${appointment.lastName}`,
             },
           });
-          console.log("Google Calendar event updated successfully.");
         } catch (calendarError) {
           console.error("Error updating Google Calendar event:", calendarError);
         }
@@ -5170,7 +5137,6 @@ async function sendDenialEmail(appointment) {
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log("Denial email sent successfully");
   } catch (error) {
     console.error("Error sending denial email:", error);
   }
@@ -5191,7 +5157,6 @@ async function sendApprovalEmail(appointment) {
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log("Approval email sent successfully");
   } catch (error) {
     console.error("Error sending approval email:", error);
   }
@@ -5857,11 +5822,6 @@ Cip`,
     return { success: true, message: "Treatment notes saved successfully" };
   } catch (error) {
     console.error("Error saving treatment notes:", error);
-    console.error("Error details:", {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    });
     return { success: false, message: error.message };
   }
 }
@@ -6154,11 +6114,6 @@ export async function setDNSTreatmentStatusAttachment(treatmentId) {
     return { success: true, message: "Treatment marked as DNS successfully" };
   } catch (error) {
     console.error("Error marking treatment as DNS:", error);
-    console.error("Error details:", {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    });
     return { success: false, message: error.message };
   }
 }
@@ -6466,9 +6421,7 @@ export async function searchUsers(query) {
       users = result.rows;
 
       if (users.length > 0) {
-        console.log("First result sample:");
       } else {
-        console.log("No search results found");
       }
     } catch (dbError) {
       console.error("Database query error:", dbError);
@@ -6671,13 +6624,6 @@ export async function getClientProfileData(userId) {
       let decryptedNotes = null;
       if (treatment.treatmentNotes) {
         decryptedNotes = parseStoredTreatmentNotes(treatment.treatmentNotes);
-        console.log("[notes-debug] getClientProfileData treatment notes", {
-          treatmentId: treatment.id,
-          rawStoredNotes: treatment.treatmentNotes,
-          parsedDecryptedNotes: decryptedNotes,
-          rawType: typeof treatment.treatmentNotes,
-          parsedType: typeof decryptedNotes,
-        });
       }
 
       return {
@@ -6928,6 +6874,7 @@ export async function addAvailableAppointmentTimesForDate(
   date,
   times,
   duration = 60,
+  cutoffHours = 0,
 ) {
   try {
     const session = await getSession();
@@ -6943,6 +6890,11 @@ export async function addAvailableAppointmentTimesForDate(
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
       throw new Error("Invalid duration");
     }
+    const parsedCutoffHours = Number(cutoffHours);
+    const safeCutoffHours =
+      Number.isFinite(parsedCutoffHours) && parsedCutoffHours >= 0
+        ? parsedCutoffHours
+        : 0;
 
     const normalizedDate = new Date(date).toISOString().split("T")[0];
     const normalizedTimes = [
@@ -6996,6 +6948,7 @@ export async function addAvailableAppointmentTimesForDate(
           status,
           appointment_window_start,
           appointment_window_end,
+          booking_cutoff_hours,
           created_at
         ) VALUES (
           ${session.resultObj.id},
@@ -7004,6 +6957,7 @@ export async function addAvailableAppointmentTimesForDate(
           'available',
           ${startTimeFull}::time,
           ${endTimeFull}::time,
+          ${safeCutoffHours},
           CURRENT_TIMESTAMP
         )
       `;
@@ -7551,7 +7505,7 @@ export async function saveClientBenefitsCoverage(
             ? null
             : Number(updatedRows[0].reminderFrequency),
       },
-      message: "Benefits coverage saved.",
+      message: "reminder details saved.",
     };
   } catch (error) {
     console.error("Error saving client benefits coverage:", error);
@@ -9078,7 +9032,6 @@ async function markEmailIdempotencyFailed({ key, payloadHash }) {
 
 export async function resetStaleReschedulingAppointments() {
   try {
-    console.log("Starting stale appointment check...");
 
     // Find all appointments with status "rescheduling"
     const { rows: staleAppointments } = await sql`
@@ -9103,18 +9056,7 @@ export async function resetStaleReschedulingAppointments() {
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ${appointment.id}
       `;
-
-      console.log(
-        `Reset stale appointment: ${appointment.id} to status: ${
-          appointment.previousStatus || "booked"
-        }`,
-      );
     }
-
-    console.log(
-      `Stale appointment check executed at ${new Date().toISOString()}`,
-    );
-
     return {
       success: true,
       message: `Reset ${staleAppointments.length} stale appointments`,
@@ -9139,14 +9081,12 @@ export async function addAppointments() {
     lockAcquired = lockRows?.[0]?.locked === true;
 
     if (!lockAcquired) {
-      console.log("Skipping addAppointments: cron lock is already held.");
       return {
         success: true,
         message: "Skipped addAppointments: another run is already in progress.",
       };
     }
 
-    console.log("Starting addAppointments cron job...");
 
     const today = new Date();
     const currentDay = [
@@ -9172,7 +9112,6 @@ export async function addAppointments() {
     `;
 
     if (!locations || locations.length === 0) {
-      console.log("Specified RMT location not found");
       return { success: false, message: "RMT location not found" };
     }
 
@@ -9181,7 +9120,8 @@ export async function addAppointments() {
     // Get work day for the current day of the week
     const { rows: workDays } = await sql`
       SELECT 
-        id
+        id,
+        booking_cutoff_hours AS "bookingCutoffHours"
       FROM work_days2
       WHERE 
         location_id = ${location.id} AND
@@ -9190,9 +9130,6 @@ export async function addAppointments() {
     `;
 
     if (!workDays || workDays.length === 0) {
-      console.log(
-        `No work day found for ${currentDay} for the specified RMT location`,
-      );
       return { success: false, message: `No work day found for ${currentDay}` };
     }
 
@@ -9209,7 +9146,6 @@ export async function addAppointments() {
     `;
 
     if (!appointmentTimes || appointmentTimes.length === 0) {
-      console.log(`No appointment times found for work day ID: ${workDay.id}`);
       return { success: false, message: "No appointment times found" };
     }
 
@@ -9230,6 +9166,7 @@ export async function addAppointments() {
           date,
           appointment_window_start,
           appointment_window_end,
+          booking_cutoff_hours,
           status,
           created_at
         ) VALUES (
@@ -9238,6 +9175,7 @@ export async function addAppointments() {
           ${formattedDate},
           ${timeSlot.start_time},
           ${timeSlot.end_time},
+          ${workDay.bookingCutoffHours || 0},
           'available',
           CURRENT_TIMESTAMP
         )
@@ -9257,11 +9195,6 @@ export async function addAppointments() {
         insertedCount++;
       }
     }
-
-    console.log(
-      `Inserted ${insertedCount} appointments for RMT ${location.user_id}`,
-    );
-
     // Note: PostgreSQL doesn't have the exact equivalent of MongoDB's TTL indexes
     // You would typically handle expiration through a separate cron job or using PostgreSQL's
     // built-in partitioning features for time-series data
@@ -9420,14 +9353,12 @@ export async function addAppointments() {
 
 export async function deleteExpiredAppointments() {
   try {
-    console.log("Starting deleteExpiredAppointments cron job...");
 
     // Calculate the cutoff date (2 weeks ago)
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - 14); // 2 weeks ago
     const formattedCutoffDate = cutoffDate.toISOString().split("T")[0]; // Format as YYYY-MM-DD
 
-    console.log(`Deleting appointments older than: ${formattedCutoffDate}`);
 
     // Delete expired appointments
     const { rowCount } = await sql`
@@ -9438,7 +9369,6 @@ export async function deleteExpiredAppointments() {
       RETURNING id
     `;
 
-    console.log(`Deleted ${rowCount} expired appointments`);
 
     return {
       success: true,
@@ -9464,9 +9394,6 @@ export async function sendAppointmentReminders() {
     lockAcquired = lockRows?.[0]?.locked === true;
 
     if (!lockAcquired) {
-      console.log(
-        "Skipping sendAppointmentReminders: cron lock is already held.",
-      );
       return {
         success: true,
         message:
@@ -9474,7 +9401,6 @@ export async function sendAppointmentReminders() {
       };
     }
 
-    console.log("Starting appointment reminder process...");
     const transporter = getEmailTransporter();
     await ensureEmailIdempotencyTable();
 
@@ -9483,7 +9409,6 @@ export async function sendAppointmentReminders() {
     twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
     const targetDate = twoDaysFromNow.toISOString().split("T")[0];
 
-    console.log(`Sending reminders for appointments on: ${targetDate}`);
 
     // Find all appointments for 2 days from now with status "booked"
     // Using the correct column names from your schema
@@ -9507,11 +9432,6 @@ export async function sendAppointmentReminders() {
         t.date = ${targetDate} AND
         t.status = 'booked'
     `;
-
-    console.log(
-      `Found ${appointments.length} appointments to send reminders for`,
-    );
-
     // Add a delay between sending emails to avoid rate limiting
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -9562,9 +9482,6 @@ export async function sendAppointmentReminders() {
         });
 
         if (!claimResult.shouldSend) {
-          console.log(
-            `Skipping duplicate appointment reminder for appointment ${appointment.id}: ${claimResult.reason}`,
-          );
           continue;
         }
 
@@ -9586,11 +9503,6 @@ export async function sendAppointmentReminders() {
           payloadHash: claimedPayloadHash,
           messageId: info?.messageId || null,
         });
-
-        console.log(
-          `Sent reminder email to ${appointmentData.email} for appointment on ${appointmentData.appointmentDate}. MessageId: ${info.messageId}`,
-        );
-
         successCount++;
 
         // Add a delay between emails (1 second)
@@ -9617,10 +9529,6 @@ export async function sendAppointmentReminders() {
         // Continue with the next appointment even if this one fails
       }
     }
-
-    console.log(
-      `Appointment reminder process completed. Success: ${successCount}, Failed: ${failCount}`,
-    );
     return {
       success: true,
       message: `Sent ${successCount} reminder emails (${failCount} failed)`,
@@ -9655,7 +9563,6 @@ export async function sendBenefitReminders() {
     lockAcquired = lockRows?.[0]?.locked === true;
 
     if (!lockAcquired) {
-      console.log("Skipping sendBenefitReminders: cron lock is already held.");
       return {
         success: true,
         message:
@@ -9777,9 +9684,6 @@ export async function sendBenefitReminders() {
         });
 
         if (!claimResult.shouldSend) {
-          console.log(
-            `Skipping duplicate benefit reminder for client ${client.id}: ${claimResult.reason}`,
-          );
           continue;
         }
 
@@ -9971,7 +9875,6 @@ export async function unsubscribeEmail(email) {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`Unsubscribe notification sent to ${process.env.EMAIL_USER}`);
 
     return { success: true, message: "User unsubscribed successfully" };
   } catch (error) {
@@ -9993,7 +9896,6 @@ export async function migrateTreatmentsWithTimeWindows() {
     const treatmentPlansCollection = db.collection("treatmentPlans");
     const treatmentPlans = await treatmentPlansCollection.find({}).toArray();
 
-    console.log(`Found ${treatmentPlans.length} treatment plans to migrate`);
 
     // Map to store MongoDB ID to PostgreSQL UUID mapping
     const planIdMap = new Map();
@@ -10016,7 +9918,6 @@ export async function migrateTreatmentsWithTimeWindows() {
           if (clientRows.length > 0) {
             postgresClientId = clientRows[0].id;
           } else {
-            console.log(`No PostgreSQL user found for client ${clientId}`);
             continue; // Skip this plan if client doesn't exist
           }
         }
@@ -10028,7 +9929,6 @@ export async function migrateTreatmentsWithTimeWindows() {
           if (creatorRows.length > 0) {
             postgresCreatedById = creatorRows[0].id;
           } else {
-            console.log(`No PostgreSQL user found for creator ${createdById}`);
             // Use a default RMT ID if creator not found
             postgresCreatedById =
               process.env.DEFAULT_RMT_ID ||
@@ -10062,7 +9962,6 @@ export async function migrateTreatmentsWithTimeWindows() {
 
         if (rows.length > 0) {
           planIdMap.set(mongoId, rows[0].id);
-          console.log(`Migrated treatment plan ${mongoId} to ${rows[0].id}`);
         }
       } catch (error) {
         console.error(
@@ -10073,7 +9972,6 @@ export async function migrateTreatmentsWithTimeWindows() {
     }
 
     // Step 2: Migrate treatments with time window support
-    console.log("Migrating treatments with time window support...");
     const treatmentsCollection = db.collection("tomigrateTreatments");
     const treatments = await treatmentsCollection.find({}).toArray();
 
@@ -10090,9 +9988,6 @@ export async function migrateTreatmentsWithTimeWindows() {
       `;
 
       if (columnCheck.length < 2) {
-        console.log(
-          "Adding appointment time window columns to treatments table...",
-        );
         await sql`
           ALTER TABLE treatments 
           ADD COLUMN IF NOT EXISTS appointment_start_time TIME,
@@ -10103,7 +9998,6 @@ export async function migrateTreatmentsWithTimeWindows() {
           COMMENT ON COLUMN treatments.appointment_begins_at IS 'The actual start time when user booked within the window';
           COMMENT ON COLUMN treatments.appointment_ends_at IS 'The actual end time when user booked within the window';
         `;
-        console.log("Added appointment time window columns successfully");
       }
     } catch (error) {
       console.error("Error checking/adding columns:", error);
@@ -10140,7 +10034,6 @@ export async function migrateTreatmentsWithTimeWindows() {
           if (clientRows.length > 0) {
             postgresClientId = clientRows[0].id;
           } else {
-            console.log(`No PostgreSQL user found for client ${clientId}`);
             continue; // Skip this treatment if client doesn't exist
           }
         }
@@ -10152,7 +10045,6 @@ export async function migrateTreatmentsWithTimeWindows() {
           if (rmtRows.length > 0) {
             postgresRmtId = rmtRows[0].id;
           } else {
-            console.log(`No PostgreSQL user found for RMT ${rmtId}`);
             // Use a default RMT ID if RMT not found
             postgresRmtId =
               process.env.DEFAULT_RMT_ID ||
@@ -10292,7 +10184,6 @@ export async function migrateTreatmentsWithTimeWindows() {
 
         if (rows.length > 0) {
           treatmentIdMap.set(mongoId, rows[0].id);
-          console.log(`Migrated treatment ${mongoId} to ${rows[0].id}`);
         }
       } catch (error) {
         console.error(
@@ -10303,7 +10194,6 @@ export async function migrateTreatmentsWithTimeWindows() {
     }
 
     // Step 3: Create treatment_plan_treatments relationships (unchanged)
-    console.log("Creating treatment plan to treatment relationships...");
     for (const plan of treatmentPlans) {
       if (
         plan.treatments &&
@@ -10313,7 +10203,6 @@ export async function migrateTreatmentsWithTimeWindows() {
         const planId = planIdMap.get(plan._id.toString());
 
         if (!planId) {
-          console.log(`No PostgreSQL ID found for plan ${plan._id.toString()}`);
           continue;
         }
 
@@ -10322,9 +10211,6 @@ export async function migrateTreatmentsWithTimeWindows() {
           const treatmentId = treatmentIdMap.get(treatmentMongoId);
 
           if (!treatmentId) {
-            console.log(
-              `No PostgreSQL ID found for treatment ${treatmentMongoId}`,
-            );
             continue;
           }
 
@@ -10341,9 +10227,6 @@ export async function migrateTreatmentsWithTimeWindows() {
               )
               ON CONFLICT (treatment_plan_id, treatment_id) DO NOTHING
             `;
-            console.log(
-              `Created relationship between plan ${planId} and treatment ${treatmentId}`,
-            );
           } catch (error) {
             console.error(
               `Error creating relationship for plan ${planId} and treatment ${treatmentId}:`,
@@ -10355,7 +10238,6 @@ export async function migrateTreatmentsWithTimeWindows() {
     }
 
     // Step 4: Verify and fix any missing data
-    console.log("Verifying and fixing any missing data...");
     const { rows: incompleteRecords } = await sql`
       SELECT id, mongodb_id 
       FROM treatments 
@@ -10363,11 +10245,6 @@ export async function migrateTreatmentsWithTimeWindows() {
         (appointment_start_time IS NULL AND appointment_begins_at IS NOT NULL) OR
         (appointment_end_time IS NULL AND appointment_ends_at IS NOT NULL)
     `;
-
-    console.log(
-      `Found ${incompleteRecords.length} treatments with missing time window data`,
-    );
-
     for (const record of incompleteRecords) {
       try {
         // Get the current record
@@ -10392,9 +10269,6 @@ export async function migrateTreatmentsWithTimeWindows() {
             SET appointment_start_time = ${current.appointment_begins_at}
             WHERE id = ${record.id}
           `;
-          console.log(
-            `Fixed missing appointment_start_time for treatment ${record.id}`,
-          );
         }
 
         if (!current.appointment_end_time && current.appointment_ends_at) {
@@ -10403,16 +10277,12 @@ export async function migrateTreatmentsWithTimeWindows() {
             SET appointment_end_time = ${current.appointment_ends_at}
             WHERE id = ${record.id}
           `;
-          console.log(
-            `Fixed missing appointment_end_time for treatment ${record.id}`,
-          );
         }
       } catch (error) {
         console.error(`Error fixing treatment ${record.id}:`, error);
       }
     }
 
-    console.log("Migration completed successfully");
     return { success: true, message: "Migration completed successfully" };
   } catch (error) {
     console.error("Migration failed:", error);
@@ -10433,7 +10303,6 @@ if (require.main === module) {
 }
 
 export async function consolidateUsers() {
-  console.log("Starting consolidation of users collection...");
 
   try {
     // Connect to MongoDB
@@ -10489,11 +10358,6 @@ export async function consolidateUsers() {
     // Verify the results
     const originalCount = await db.collection("users").countDocuments();
     const migratedCount = await db.collection("migrateUsers").countDocuments();
-
-    console.log(
-      `Original users: ${originalCount}, Migrated users: ${migratedCount}`,
-    );
-
     // Check for any missing fields in the migrated collection
     const sampleUser = await db.collection("migrateUsers").findOne();
     const fields = Object.keys(sampleUser).filter((key) => key !== "_id");
@@ -10542,6 +10406,112 @@ export async function getTreatmentsRevenueByMonth(year) {
   } catch (error) {
     console.error("Error fetching treatments revenue:", error);
     return { success: false, error: "Failed to fetch treatments revenue" };
+  }
+}
+
+async function ensureRmtYearlyTaxesTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS rmt_yearly_taxes (
+      rmt_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tax_year INTEGER NOT NULL,
+      actual_tax_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (rmt_id, tax_year)
+    )
+  `;
+}
+
+export async function getActualTaxPaidForYear(year) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized");
+    }
+
+    const parsedYear = Number.parseInt(year, 10);
+    if (!Number.isFinite(parsedYear) || parsedYear < 2000 || parsedYear > 3000) {
+      throw new Error("Invalid year");
+    }
+
+    await ensureRmtYearlyTaxesTable();
+
+    const { rows } = await sql`
+      SELECT actual_tax_paid AS "actualTaxPaid"
+      FROM rmt_yearly_taxes
+      WHERE rmt_id = ${session.resultObj.id}
+        AND tax_year = ${parsedYear}
+      LIMIT 1
+    `;
+
+    return {
+      success: true,
+      data: {
+        year: parsedYear,
+        actualTaxPaid:
+          rows.length > 0 && rows[0].actualTaxPaid !== null
+            ? Number(rows[0].actualTaxPaid)
+            : null,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching actual tax paid:", error);
+    return { success: false, error: error.message || "Failed to fetch tax paid" };
+  }
+}
+
+export async function saveActualTaxPaidForYear(year, actualTaxPaid) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized");
+    }
+
+    const parsedYear = Number.parseInt(year, 10);
+    if (!Number.isFinite(parsedYear) || parsedYear < 2000 || parsedYear > 3000) {
+      throw new Error("Invalid year");
+    }
+
+    const parsedTax = Number(actualTaxPaid);
+    if (!Number.isFinite(parsedTax) || parsedTax < 0) {
+      throw new Error("Actual tax paid must be 0 or greater");
+    }
+
+    await ensureRmtYearlyTaxesTable();
+
+    const { rows } = await sql`
+      INSERT INTO rmt_yearly_taxes (
+        rmt_id,
+        tax_year,
+        actual_tax_paid,
+        updated_at
+      ) VALUES (
+        ${session.resultObj.id},
+        ${parsedYear},
+        ${parsedTax},
+        NOW()
+      )
+      ON CONFLICT (rmt_id, tax_year)
+      DO UPDATE SET
+        actual_tax_paid = EXCLUDED.actual_tax_paid,
+        updated_at = NOW()
+      RETURNING tax_year AS "year", actual_tax_paid AS "actualTaxPaid"
+    `;
+
+    revalidatePath(`/dashboard/rmt/finances?year=${parsedYear}`);
+    revalidatePath("/dashboard/rmt/finances");
+
+    return {
+      success: true,
+      message: "Actual tax paid saved.",
+      data: {
+        year: rows[0].year,
+        actualTaxPaid: Number(rows[0].actualTaxPaid),
+      },
+    };
+  } catch (error) {
+    console.error("Error saving actual tax paid:", error);
+    return { success: false, error: error.message || "Failed to save actual tax paid" };
   }
 }
 
@@ -10911,6 +10881,7 @@ export async function loadScheduleData(locationId) {
         wd.day_of_week,
         wd.day_name,
         wd.is_working,
+        wd.booking_cutoff_hours,
         COALESCE(
           json_agg(
             json_build_object(
@@ -10924,7 +10895,7 @@ export async function loadScheduleData(locationId) {
       FROM work_days2 wd
       LEFT JOIN appointment_times2 at ON wd.id = at.work_day_id
       WHERE wd.location_id = ${locationId}
-      GROUP BY wd.id, wd.day_of_week, wd.day_name, wd.is_working
+      GROUP BY wd.id, wd.day_of_week, wd.day_name, wd.is_working, wd.booking_cutoff_hours
       ORDER BY wd.day_of_week
     `;
 
@@ -10935,6 +10906,7 @@ export async function loadScheduleData(locationId) {
       day_of_week: row.day_of_week,
       day_name: row.day_name,
       is_working: row.is_working,
+      booking_cutoff_hours: row.booking_cutoff_hours,
       appointment_times: row.appointment_times,
     }));
 
@@ -10955,6 +10927,25 @@ export async function toggleWorkingDay(workDayId, isWorking) {
     return { success: true };
   } catch (error) {
     console.error("Failed to update working day:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function updateWorkDayBookingCutoffHours(workDayId, hours) {
+  try {
+    const parsedHours = Number(hours);
+    const safeHours =
+      Number.isFinite(parsedHours) && parsedHours >= 0 ? parsedHours : 0;
+
+    await sql`
+      UPDATE work_days2
+      SET booking_cutoff_hours = ${safeHours}
+      WHERE id = ${workDayId}
+    `;
+
+    return { success: true, data: { bookingCutoffHours: safeHours } };
+  } catch (error) {
+    console.error("Failed to update booking cutoff hours:", error);
     return { success: false, error: error.message };
   }
 }
@@ -11142,13 +11133,6 @@ export async function sendEmailBlast(formData) {
     // Process emails in batches
     for (let i = 0; i < shuffledUsers.length; i += batchSize) {
       const batch = shuffledUsers.slice(i, i + batchSize);
-
-      console.log(
-        `[v0] Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(
-          shuffledUsers.length / batchSize,
-        )} (${batch.length} emails)`,
-      );
-
       // Send emails in current batch
       const batchPromises = batch.map(async (user) => {
         try {
@@ -11174,7 +11158,7 @@ export async function sendEmailBlast(formData) {
           await transporter.sendMail(mailOptions);
           return { success: true };
         } catch (error) {
-          console.error(`Failed to send email to ${user.email}:`, error);
+          console.error("Failed to send email to newsletter recipient:", error);
           return { success: false, error };
         }
       });
@@ -11193,19 +11177,9 @@ export async function sendEmailBlast(formData) {
 
       // Add delay between batches (except for the last batch)
       if (i + batchSize < shuffledUsers.length) {
-        console.log(
-          `[v0] Waiting ${
-            delayBetweenBatches / 1000
-          } seconds before next batch...`,
-        );
         await delay(delayBetweenBatches);
       }
     }
-
-    console.log(
-      `[v0] Email blast completed: ${successCount} sent, ${failureCount} failed`,
-    );
-
     return {
       success: true,
       message: `Email campaign sent successfully! ${successCount} emails delivered, ${failureCount} failed.`,
@@ -12029,3 +12003,4 @@ export async function purchaseGiftCard(data) {
     };
   }
 }
+
