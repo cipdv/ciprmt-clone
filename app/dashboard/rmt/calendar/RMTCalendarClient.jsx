@@ -541,7 +541,11 @@ export default function RMTCalendarClient() {
           onSubmit={handleBook}
           className="grid grid-cols-1 md:grid-cols-5 gap-3"
         >
-          <div className="relative" ref={bookSearchRef}>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Client
+            </label>
+            <div className="relative" ref={bookSearchRef}>
             <input
               type="text"
               value={bookClientQuery}
@@ -585,138 +589,57 @@ export default function RMTCalendarClient() {
                 )}
               </div>
             )}
-          </div>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-            required
-          />
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-            required
-          />
-          <select
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-          >
-            <option value={60}>60 min</option>
-            <option value={75}>75 min</option>
-            <option value={90}>90 min</option>
-          </select>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-[#1f2a1f] bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors disabled:opacity-60"
-          >
-            {submitting ? "Adding..." : "Add appointment"}
-          </button>
-        </form>
-      </div>
-
-      <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-3">
-        <p className="text-sm font-semibold text-[#1f2a1f]">
-          Add available timeslots
-        </p>
-        <form
-          onSubmit={handleAddAvailableSlots}
-          className="space-y-3"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-600">
-                Date
-              </label>
-              <input
-                type="date"
-                value={slotDate}
-                onChange={(e) => setSlotDate(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-600">
-                Time
-              </label>
-              <input
-                type="time"
-                value={slotTimeInput}
-                onChange={(e) => setSlotTimeInput(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-600">
-                Duration
-              </label>
-              <select
-                value={slotDuration}
-                onChange={(e) => setSlotDuration(Number(e.target.value))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value={60}>60 min</option>
-                <option value={75}>75 min</option>
-                <option value={90}>90 min</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-600">
-                Cutoff hours
-              </label>
-              <input
-                type="number"
-                min={0}
-                step={0.5}
-                value={slotCutoffHours}
-                onChange={(e) =>
-                  setSlotCutoffHours(Number(e.target.value) || 0)
-                }
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-transparent select-none">
-                Add
-              </label>
-              <button
-                type="button"
-                onClick={handleAddSlotTime}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-[#e8efe4] transition-colors"
-              >
-                Add time
-              </button>
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-transparent select-none">
-                Save
-              </label>
-              <button
-                type="submit"
-                disabled={slotSubmitting}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-[#1f2a1f] bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors disabled:opacity-60"
-              >
-                {slotSubmitting ? "Saving..." : "Save available times"}
-              </button>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {slotTimes.map((slotTime) => (
-              <button
-                key={slotTime}
-                type="button"
-                onClick={() => handleRemoveSlotTime(slotTime)}
-                className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-[#e8efe4] transition-colors"
-                title="Remove time"
-              >
-                {formatTime(`1970-01-01T${slotTime}:00`)} x
-              </button>
-            ))}
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Date
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Time
+            </label>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Duration
+            </label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value={60}>60 min</option>
+              <option value={75}>75 min</option>
+              <option value={90}>90 min</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-transparent select-none">
+              Submit
+            </label>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-[#1f2a1f] bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors disabled:opacity-60"
+            >
+              {submitting ? "Adding..." : "Add appointment"}
+            </button>
           </div>
         </form>
       </div>
@@ -822,6 +745,108 @@ export default function RMTCalendarClient() {
             })}
           </div>
         )}
+
+        <details className="border border-[#d5e0d1] rounded-lg p-3 bg-[#f4f7f2]">
+          <summary className="cursor-pointer text-sm font-semibold text-[#1f2a1f]">
+            Add available timeslots
+          </summary>
+          <form
+            onSubmit={handleAddAvailableSlots}
+            className="space-y-3 mt-3"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={slotDate}
+                  onChange={(e) => setSlotDate(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={slotTimeInput}
+                  onChange={(e) => setSlotTimeInput(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Duration
+                </label>
+                <select
+                  value={slotDuration}
+                  onChange={(e) => setSlotDuration(Number(e.target.value))}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value={60}>60 min</option>
+                  <option value={75}>75 min</option>
+                  <option value={90}>90 min</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Cutoff hours
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={slotCutoffHours}
+                  onChange={(e) =>
+                    setSlotCutoffHours(Number(e.target.value) || 0)
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-transparent select-none">
+                  Add
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAddSlotTime}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-[#e8efe4] transition-colors"
+                >
+                  Add time
+                </button>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-transparent select-none">
+                  Save
+                </label>
+                <button
+                  type="submit"
+                  disabled={slotSubmitting}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-[#1f2a1f] bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors disabled:opacity-60"
+                >
+                  {slotSubmitting ? "Saving..." : "Save available times"}
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {slotTimes.map((slotTime) => (
+                <button
+                  key={slotTime}
+                  type="button"
+                  onClick={() => handleRemoveSlotTime(slotTime)}
+                  className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-[#e8efe4] transition-colors"
+                  title="Remove time"
+                >
+                  {formatTime(`1970-01-01T${slotTime}:00`)} x
+                </button>
+              ))}
+            </div>
+          </form>
+        </details>
       </div>
 
       {selectedEvent && (
