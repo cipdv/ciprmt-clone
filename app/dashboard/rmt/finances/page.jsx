@@ -324,7 +324,7 @@ export default async function FinancesPage({ searchParams }) {
         (monthData.totalRevenue || 0) + (monthData.additionalTreatmentsIncome || 0);
     }
 
-    const quarterlyHstCollected = quarterlyRevenueCollected * 0.13;
+    const quarterlyHstCollected = quarterlyRevenueCollected * 0.088;
 
     let ytdRevenueCollected = 0;
     for (let month = 1; month <= endMonth; month++) {
@@ -339,12 +339,12 @@ export default async function FinancesPage({ searchParams }) {
     quarterSummaryByEndMonth[endMonth] = {
       quarterLabel:
         endMonth === 3
-          ? "Q1 (Jan - Mar)"
+          ? "Quarter 1"
           : endMonth === 6
-            ? "Q2 (Apr - Jun)"
+            ? "Quarter 2"
             : endMonth === 9
-              ? "Q3 (Jul - Sep)"
-              : "Q4 (Oct - Dec)",
+              ? "Quarter 3"
+              : "Quarter 4",
       quarterlyRevenueCollected,
       quarterlyHstCollected,
       quarterToDateRevenue: ytdRevenueCollected,
@@ -357,9 +357,6 @@ export default async function FinancesPage({ searchParams }) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold mb-1">Finances</h1>
-          <p className="text-gray-600 text-sm">
-            Treatment revenue and HST calculations for {selectedYear}
-          </p>
         </div>
         <YearSelector
           availableYears={availableYearsResult.data}
@@ -423,11 +420,11 @@ export default async function FinancesPage({ searchParams }) {
                       />
 
                       {month % 3 === 0 && quarterSummaryByEndMonth[month] && (
-                        <div className="rounded-md border border-blue-200 bg-blue-50 p-4">
-                          <h4 className="text-base font-semibold text-blue-900 mb-3">
+                        <details className="rounded-md border border-blue-200 bg-blue-50 p-4">
+                          <summary className="cursor-pointer list-none font-semibold text-blue-900">
                             {quarterSummaryByEndMonth[month].quarterLabel} Summary
-                          </h4>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          </summary>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
                             <div className="rounded-md border border-blue-100 bg-white p-3">
                               <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
                                 Quarterly HST Collected
@@ -466,7 +463,7 @@ export default async function FinancesPage({ searchParams }) {
                               </p>
                             </div>
                           </div>
-                        </div>
+                        </details>
                       )}
                     </div>
                   );

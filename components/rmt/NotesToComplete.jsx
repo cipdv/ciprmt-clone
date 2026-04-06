@@ -79,13 +79,13 @@ const NotesToComplete = ({ appointments }) => {
   };
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Notes to Complete</h2>
+    <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4">
+      <h2 className="text-xl font-semibold text-[#1f2a1f] mb-4">Notes to Complete</h2>
       {error && <p className="text-red-500 mb-4">{error}</p>}
 
       {notesToComplete.length === 0 ? (
-        <div className="p-8 bg-[#f4f7f2] rounded-md shadow-sm">
-          <p className="text-gray-600 text-center text-lg">
+        <div className="p-8 bg-[#f4f7f2] border border-[#b7c7b0] rounded-md">
+          <p className="text-gray-600 text-center text-base">
             There are currently no notes to complete.
           </p>
         </div>
@@ -94,7 +94,7 @@ const NotesToComplete = ({ appointments }) => {
           {notesToComplete.map((appointment) => (
             <div
               key={appointment.id}
-              className="bg-[#f4f7f2] shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer"
+              className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-lg p-4 transition-colors duration-200 cursor-pointer hover:bg-[#e8efe4]"
               onClick={() => handleAppointmentClick(appointment.clientId)}
             >
               <div>
@@ -122,8 +122,8 @@ const NotesToComplete = ({ appointments }) => {
                       px-3 py-1
                       border border-red-400 text-red-600
                       rounded-md text-sm font-medium
-                      hover:bg-[#f4f7f2] hover:border-red-500
-                      transition
+                      hover:bg-[#e8efe4] hover:border-red-500
+                      transition-colors
                     "
                   >
                     Delete appointment
@@ -137,8 +137,8 @@ const NotesToComplete = ({ appointments }) => {
                       px-3 py-1
                       border border-amber-400 text-amber-600
                       rounded-md text-sm font-medium
-                      hover:bg-[#f4f7f2] hover:border-amber-500
-                      transition
+                      hover:bg-[#e8efe4] hover:border-amber-500
+                      transition-colors
                     "
                   >
                     Did not show

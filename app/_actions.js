@@ -6377,56 +6377,34 @@ export async function searchUsers(query) {
     // Apply rate limiting with the PostgreSQL user ID
     await checkRateLimit(userId, "searchUsers", 10, 60); // 10 requests per minute
 
+    const normalizedQuery = String(query || "").trim();
+    if (!normalizedQuery) {
+      return [];
+    }
+
     // Use ILIKE for case-insensitive search in Postgres
-    const searchPattern = `%${query}%`;
+    const searchPattern = `%${normalizedQuery}%`;
 
-    // First, let's check what tables exist in the database
-    try {
-      const { rows: tables } = await sql`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public'
-      `;
-    } catch (tableError) {
-      console.error("Error listing tables:", tableError);
-    }
-
-    // Now let's check the structure of the users table
-    try {
-      const { rows: columns } = await sql`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'users'
-      `;
-    } catch (columnError) {
-      console.error("Error listing columns:", columnError);
-    }
-
-    let users = [];
-    try {
-      // Try a simpler query first to see if we get any results
-      const testResult = await sql`SELECT * FROM users LIMIT 1`;
-
-      // Now try the actual search query with the correct column names based on what we found
-      const result = await sql`
-        SELECT * FROM users
-        WHERE 
-          first_name ILIKE ${searchPattern} OR
-          last_name ILIKE ${searchPattern} OR
-          email ILIKE ${searchPattern} OR
-          phone_number ILIKE ${searchPattern}
-      `;
-
-      // With @vercel/postgres, results are in the rows property
-      users = result.rows;
-
-      if (users.length > 0) {
-      } else {
-      }
-    } catch (dbError) {
-      console.error("Database query error:", dbError);
-      throw new Error("Database query failed: " + dbError.message);
-    }
+    const { rows: users } = await sql`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone_number
+      FROM users
+      WHERE
+        rmt_id = ${userId}
+        AND user_type = 'patient'
+        AND (
+          first_name ILIKE ${searchPattern}
+          OR last_name ILIKE ${searchPattern}
+          OR email ILIKE ${searchPattern}
+          OR phone_number ILIKE ${searchPattern}
+        )
+      ORDER BY first_name ASC, last_name ASC
+      LIMIT 25
+    `;
 
     // Format the results similar to the MongoDB version
     return users.map((user) => ({
@@ -6699,6 +6677,7 @@ export async function getRMTCalendarData(rangeStart, rangeEnd) {
         t.duration,
         t.location,
         t.workplace,
+        t.consent_form AS "consentForm",
         t.google_calendar_event_id AS "googleCalendarEventId",
         t.google_calendar_event_link AS "googleCalendarEventLink",
         u.first_name AS "clientFirstName",
@@ -6820,6 +6799,16 @@ export async function getRMTCalendarData(rangeStart, rangeEnd) {
     }
 
     const dbEvents = dedupedTreatmentRows.map((row) => ({
+      consentForm:
+        typeof row.consentForm === "string"
+          ? (() => {
+              try {
+                return JSON.parse(row.consentForm);
+              } catch {
+                return null;
+              }
+            })()
+          : row.consentForm || null,
       id: row.id,
       title:
         String(row.status || "").toLowerCase() === "available"
@@ -6847,7 +6836,12 @@ export async function getRMTCalendarData(rangeStart, rangeEnd) {
     }));
 
     const { rows: clientRows } = await sql`
-      SELECT id, first_name AS "firstName", last_name AS "lastName"
+      SELECT
+        id,
+        first_name AS "firstName",
+        last_name AS "lastName",
+        email,
+        phone_number AS "phoneNumber"
       FROM users
       WHERE rmt_id = ${rmtId}
         AND user_type = 'patient'
@@ -7128,6 +7122,150 @@ export async function emailClientToUpdateHealthHistory(clientId) {
       success: false,
       message:
         error.message || "Failed to send health history update reminder email",
+    };
+  }
+}
+
+export async function sendConsentFormReminderForAppointment(appointmentId) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can send this reminder");
+    }
+
+    if (!appointmentId) {
+      throw new Error("Appointment id is required");
+    }
+
+    const { rows } = await sql`
+      SELECT
+        t.id,
+        t.rmt_id AS "rmtId",
+        t.client_id AS "clientId",
+        t.date,
+        t.status,
+        t.appointment_begins_at AS "appointmentBeginsAt",
+        t.duration,
+        t.location,
+        t.consent_form AS "consentForm",
+        u.first_name AS "firstName",
+        u.last_name AS "lastName",
+        u.email
+      FROM treatments t
+      LEFT JOIN users u ON u.id = t.client_id
+      WHERE t.id = ${appointmentId}
+      LIMIT 1
+    `;
+
+    if (!rows.length) {
+      throw new Error("Appointment not found");
+    }
+
+    const appointment = rows[0];
+    if (appointment.rmtId !== session.resultObj.id) {
+      throw new Error("Unauthorized: You do not manage this appointment");
+    }
+
+    if (String(appointment.status || "").toLowerCase() !== "booked") {
+      throw new Error("Reminder can only be sent for booked appointments");
+    }
+
+    const todayTorontoKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Toronto",
+    }).format(new Date());
+    const appointmentDateKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+    }).format(new Date(appointment.date));
+
+    if (appointmentDateKey !== todayTorontoKey) {
+      throw new Error(
+        "Reminder can only be sent for appointments happening today",
+      );
+    }
+
+    if (!appointment.email) {
+      throw new Error("Client does not have an email address");
+    }
+
+    const parsedConsentForm =
+      typeof appointment.consentForm === "string"
+        ? (() => {
+            try {
+              return JSON.parse(appointment.consentForm);
+            } catch {
+              return null;
+            }
+          })()
+        : appointment.consentForm || null;
+    const hasConsentForm =
+      parsedConsentForm &&
+      typeof parsedConsentForm === "object" &&
+      Object.keys(parsedConsentForm).length > 0;
+
+    if (hasConsentForm) {
+      return {
+        success: true,
+        message: "Consent form has already been completed for this appointment.",
+      };
+    }
+
+    const appointmentData = {
+      firstName: appointment.firstName || "there",
+      lastName: appointment.lastName || "",
+      email: appointment.email,
+      appointmentDate: formatDateForDisplay(appointment.date),
+      appointmentBeginsAt: formatTimeForDisplay(appointment.appointmentBeginsAt),
+      location: appointment.location || "Not specified",
+      duration: appointment.duration || 60,
+    };
+
+    const emailContent = getConsentFormReminderEmail(appointmentData);
+    await ensureEmailIdempotencyTable();
+    const idempotencyKey = `manual-consent-reminder/${appointment.id}/${todayTorontoKey}`;
+
+    const claimResult = await claimEmailIdempotencyKey({
+      key: idempotencyKey,
+      emailType: "manual_consent_reminder",
+      payload: {
+        to: appointment.email,
+        subject: "Reminder: Please Complete Your Consent Form",
+        appointmentId: appointment.id,
+        appointmentDate: appointmentData.appointmentDate,
+      },
+    });
+
+    if (!claimResult.shouldSend) {
+      return {
+        success: true,
+        message: "Reminder already sent for this appointment today.",
+      };
+    }
+
+    const transporter = getEmailTransporter();
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: appointment.email,
+      bcc: process.env.EMAIL_USER,
+      subject: "Reminder: Please Complete Your Consent Form",
+      text: emailContent.text,
+      html: emailContent.html,
+    });
+
+    await markEmailIdempotencySent({
+      key: idempotencyKey,
+      payloadHash: claimResult.payloadHash,
+      messageId: info?.messageId || null,
+    });
+
+    return {
+      success: true,
+      message: `Consent form reminder sent to ${appointment.firstName || "client"}.`,
+    };
+  } catch (error) {
+    console.error("Error sending consent form reminder:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to send consent form reminder",
     };
   }
 }

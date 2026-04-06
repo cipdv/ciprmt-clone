@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   getRMTCalendarData,
@@ -8,6 +8,7 @@ import {
   clearAppointment,
   deleteAppointment,
   addAvailableAppointmentTimesForDate,
+  sendConsentFormReminderForAppointment,
 } from "@/app/_actions";
 
 function startOfWeek(date) {
@@ -53,6 +54,16 @@ function formatTime(dateLike) {
   return `${hour}:${String(m).padStart(2, "0")}${suffix}`;
 }
 
+function formatConsentAreaLabel(key) {
+  const labels = {
+    upperInnerThighs: "Upper inner thighs",
+  };
+  if (labels[key]) return labels[key];
+  return String(key || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (s) => s.toUpperCase());
+}
+
 function buildMonthGrid(anchorDate) {
   const firstDayOfMonth = new Date(
     anchorDate.getFullYear(),
@@ -77,14 +88,16 @@ function buildMonthGrid(anchorDate) {
 
 export default function RMTCalendarClient() {
   const router = useRouter();
-  const [viewMode, setViewMode] = useState("month");
   const [anchorDate, setAnchorDate] = useState(new Date());
+  const [isMobile, setIsMobile] = useState(false);
   const [events, setEvents] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
 
   const [clientId, setClientId] = useState("");
+  const [bookClientQuery, setBookClientQuery] = useState("");
+  const [bookSearchOpen, setBookSearchOpen] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState(60);
@@ -99,14 +112,24 @@ export default function RMTCalendarClient() {
 
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [modalClientId, setModalClientId] = useState("");
+  const [modalClientQuery, setModalClientQuery] = useState("");
+  const [modalSearchOpen, setModalSearchOpen] = useState(false);
   const [modalStartTime, setModalStartTime] = useState("");
   const [modalDuration, setModalDuration] = useState(60);
   const [modalSubmitting, setModalSubmitting] = useState(false);
+  const [modalReminderSubmitting, setModalReminderSubmitting] = useState(false);
+  const [modalReminderStatus, setModalReminderStatus] = useState(null);
+  const [pointerStartX, setPointerStartX] = useState(null);
+  const bookSearchRef = useRef(null);
+  const modalSearchRef = useRef(null);
 
   const range = useMemo(() => {
-    if (viewMode === "week") {
-      const start = startOfWeek(anchorDate);
-      const end = endOfWeek(anchorDate);
+    if (isMobile) {
+      const mobileMonthDays = buildMonthGrid(anchorDate);
+      const start = mobileMonthDays[0];
+      const end = new Date(
+        mobileMonthDays[mobileMonthDays.length - 1].setHours(23, 59, 59, 999),
+      );
       return { start, end };
     }
     const gridDays = buildMonthGrid(anchorDate);
@@ -114,7 +137,7 @@ export default function RMTCalendarClient() {
       start: gridDays[0],
       end: new Date(gridDays[gridDays.length - 1].setHours(23, 59, 59, 999)),
     };
-  }, [viewMode, anchorDate]);
+  }, [isMobile, anchorDate]);
 
   const loadData = async () => {
     setLoading(true);
@@ -160,19 +183,18 @@ export default function RMTCalendarClient() {
   }, [events]);
 
   const monthDays = useMemo(() => buildMonthGrid(anchorDate), [anchorDate]);
-  const weekDays = useMemo(() => {
-    const start = startOfWeek(anchorDate);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
-  }, [anchorDate]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const applyMatch = () => setIsMobile(media.matches);
+    applyMatch();
+    media.addEventListener("change", applyMatch);
+    return () => media.removeEventListener("change", applyMatch);
+  }, []);
 
   const handleMove = (direction) => {
     const next = new Date(anchorDate);
-    if (viewMode === "week") {
-      next.setDate(next.getDate() + direction * 7);
+    if (isMobile) {
+      next.setDate(next.getDate() + direction);
     } else {
       // Avoid month overflow (e.g. Mar 31 -> May 1) by anchoring to day 1 first.
       next.setDate(1);
@@ -181,9 +203,23 @@ export default function RMTCalendarClient() {
     setAnchorDate(next);
   };
 
+  const handleJumpToDate = (dateValue) => {
+    if (!dateValue) return;
+    const next = new Date(`${dateValue}T12:00:00`);
+    if (Number.isNaN(next.getTime())) return;
+    setAnchorDate(next);
+  };
+
   const handleBook = async (event) => {
     event.preventDefault();
-    if (!clientId || !date || !time || !duration) return;
+    if (!clientId) {
+      setStatus({
+        type: "error",
+        text: "Select a client from the search results before booking.",
+      });
+      return;
+    }
+    if (!date || !time || !duration) return;
     setSubmitting(true);
     setStatus(null);
     const result = await bookAppointmentForClient(clientId, {
@@ -201,6 +237,7 @@ export default function RMTCalendarClient() {
     }
     setStatus({ type: "success", text: "Appointment added." });
     setClientId("");
+    setBookClientQuery("");
     setDate("");
     setTime("");
     setDuration(60);
@@ -335,7 +372,7 @@ export default function RMTCalendarClient() {
     return (
       <div
         key={`${event.source}-${event.id}`}
-        className={`border rounded p-2 text-xs space-y-1 cursor-pointer hover:border-[#9caf97] transition-colors ${getEventClasses(
+        className={`w-full min-w-0 border rounded p-2 text-xs space-y-1 cursor-pointer hover:border-[#9caf97] hover:bg-[#e8efe4] transition-colors ${getEventClasses(
           event,
         )}`}
         role="button"
@@ -348,19 +385,114 @@ export default function RMTCalendarClient() {
           }
         }}
       >
-        <p className="font-semibold">
+        <p className="font-semibold break-all leading-tight">
           {event.title || "Untitled"}
         </p>
-        <p>
+        <p className="break-words">
           {event.isAllDay
             ? "All day"
             : `${formatTime(event.startDateTime)} - ${formatTime(event.endDateTime)}`}
         </p>
         {isDb && (
-          <p>{(event.status || "").toUpperCase()}</p>
+          <p className="break-words">{(event.status || "").toUpperCase()}</p>
         )}
       </div>
     );
+  };
+
+  const getAreasToAvoidText = (consentForm) => {
+    if (!consentForm || typeof consentForm !== "object") return "";
+    const areas = [];
+
+    const consentAreas = consentForm.consentAreas;
+    if (consentAreas && typeof consentAreas === "object") {
+      Object.entries(consentAreas).forEach(([key, value]) => {
+        if (value === false) {
+          areas.push(formatConsentAreaLabel(key));
+        }
+      });
+    }
+
+    const explicitAreasToAvoid = String(consentForm.areasToAvoid || "").trim();
+    if (explicitAreasToAvoid) {
+      areas.push(explicitAreasToAvoid);
+    }
+
+    const deduped = [...new Set(areas)];
+    return deduped.join(", ");
+  };
+
+  const hasConsentDetails = (consentForm) => {
+    return Boolean(
+      consentForm &&
+        typeof consentForm === "object" &&
+        Object.keys(consentForm).length > 0,
+    );
+  };
+
+  const isBookedOrCompleted = (event) => {
+    const normalized = String(event?.status || "").toLowerCase();
+    return normalized === "booked" || normalized === "completed";
+  };
+
+  const filteredModalClients = useMemo(() => {
+    const query = String(modalClientQuery || "").trim().toLowerCase();
+    if (!query) return [];
+    return clients
+      .filter((client) => {
+        const fullName = `${client.firstName || ""} ${client.lastName || ""}`.toLowerCase();
+        const email = String(client.email || "").toLowerCase();
+        const phone = String(client.phoneNumber || "").toLowerCase();
+        return (
+          fullName.includes(query) ||
+          email.includes(query) ||
+          phone.includes(query)
+        );
+      })
+      .slice(0, 8);
+  }, [clients, modalClientQuery]);
+
+  const filteredBookClients = useMemo(() => {
+    const query = String(bookClientQuery || "").trim().toLowerCase();
+    if (!query) return [];
+    return clients
+      .filter((client) => {
+        const fullName = `${client.firstName || ""} ${client.lastName || ""}`.toLowerCase();
+        const email = String(client.email || "").toLowerCase();
+        const phone = String(client.phoneNumber || "").toLowerCase();
+        return (
+          fullName.includes(query) ||
+          email.includes(query) ||
+          phone.includes(query)
+        );
+      })
+      .slice(0, 8);
+  }, [clients, bookClientQuery]);
+
+  const handleSendConsentReminder = async () => {
+    if (!selectedEvent?.id) return;
+    setModalReminderSubmitting(true);
+    setModalReminderStatus(null);
+    const result = await sendConsentFormReminderForAppointment(selectedEvent.id);
+    setModalReminderStatus({
+      type: result?.success ? "success" : "error",
+      text: result?.message || "Failed to send reminder.",
+    });
+    setModalReminderSubmitting(false);
+  };
+
+  const handlePointerDown = (event) => {
+    if (!isMobile) return;
+    setPointerStartX(event.clientX);
+  };
+
+  const handlePointerUp = (event) => {
+    if (!isMobile || pointerStartX === null) return;
+    const deltaX = event.clientX - pointerStartX;
+    if (Math.abs(deltaX) > 50) {
+      handleMove(deltaX > 0 ? -1 : 1);
+    }
+    setPointerStartX(null);
   };
 
   useEffect(() => {
@@ -374,29 +506,86 @@ export default function RMTCalendarClient() {
     setModalDuration(selectedEvent.duration || diffMinutes || 60);
     setModalStartTime(String(selectedEvent.startDateTime || "").slice(11, 16));
     setModalClientId("");
+    setModalClientQuery("");
+    setModalSearchOpen(false);
+    setModalReminderStatus(null);
   }, [selectedEvent]);
 
+  useEffect(() => {
+    const handlePointerDownOutside = (event) => {
+      if (
+        bookSearchRef.current &&
+        !bookSearchRef.current.contains(event.target)
+      ) {
+        setBookSearchOpen(false);
+      }
+      if (
+        modalSearchRef.current &&
+        !modalSearchRef.current.contains(event.target)
+      ) {
+        setModalSearchOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutside);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownOutside);
+    };
+  }, []);
+
   return (
-    <section className="w-full space-y-6">
-      <div className="border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-3">
+    <div className="w-full max-w-full space-y-6">
+      <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-3">
         <p className="text-sm font-semibold text-[#1f2a1f]">Book appointment</p>
         <form
           onSubmit={handleBook}
           className="grid grid-cols-1 md:grid-cols-5 gap-3"
         >
-          <select
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-            required
-          >
-            <option value="">Select client</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.firstName} {client.lastName}
-              </option>
-            ))}
-          </select>
+          <div className="relative" ref={bookSearchRef}>
+            <input
+              type="text"
+              value={bookClientQuery}
+              onChange={(e) => {
+                setBookClientQuery(e.target.value);
+                setClientId("");
+                setBookSearchOpen(true);
+              }}
+              onFocus={() => setBookSearchOpen(true)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Search by name, email, or phone"
+              required
+            />
+            {bookClientQuery.trim() && !clientId && bookSearchOpen && (
+              <div className="absolute z-20 mt-1 w-full max-h-44 overflow-y-auto rounded-md border border-gray-300 bg-white">
+                {filteredBookClients.length > 0 ? (
+                  filteredBookClients.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      onClick={() => {
+                        setClientId(client.id);
+                        setBookClientQuery(
+                          `${client.firstName || ""} ${client.lastName || ""}`.trim(),
+                        );
+                        setBookSearchOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm border-b border-gray-200 last:border-b-0 hover:bg-[#e8efe4] transition-colors"
+                    >
+                      <div className="font-medium text-[#1f2a1f]">
+                        {client.firstName} {client.lastName}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {client.email || "No email"}{" "}
+                        {client.phoneNumber ? `• ${client.phoneNumber}` : ""}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-3 py-2 text-sm text-gray-600">No matching clients.</p>
+                )}
+              </div>
+            )}
+          </div>
           <input
             type="date"
             value={date}
@@ -430,7 +619,7 @@ export default function RMTCalendarClient() {
         </form>
       </div>
 
-      <div className="border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-3">
+      <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-3">
         <p className="text-sm font-semibold text-[#1f2a1f]">
           Add available timeslots
         </p>
@@ -532,9 +721,17 @@ export default function RMTCalendarClient() {
         </form>
       </div>
 
-      <div className="border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-2">
+      <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-[#1f2a1f] mr-2">
+              {isMobile
+                ? formatDate(anchorDate)
+                : anchorDate.toLocaleDateString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+            </p>
             <button
               type="button"
               onClick={() => handleMove(-1)}
@@ -556,34 +753,13 @@ export default function RMTCalendarClient() {
             >
               Next
             </button>
-          </div>
-          <p className="font-semibold text-[#1f2a1f]">
-            {viewMode === "month"
-              ? anchorDate.toLocaleDateString("en-US", {
-                  month: "long",
-                  year: "numeric",
-                })
-              : `${formatDate(weekDays[0])} - ${formatDate(weekDays[6])}`}
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setViewMode("month")}
-              className={`px-3 py-1 border rounded ${
-                viewMode === "month" ? "border-blue-400" : "border-gray-300"
-              } hover:bg-[#e8efe4] transition-colors`}
-            >
-              Month
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("week")}
-              className={`px-3 py-1 border rounded ${
-                viewMode === "week" ? "border-blue-400" : "border-gray-300"
-              } hover:bg-[#e8efe4] transition-colors`}
-            >
-              Week
-            </button>
+            <input
+              type="date"
+              value={dayKey(anchorDate)}
+              onChange={(e) => handleJumpToDate(e.target.value)}
+              className="px-3 py-1 border border-gray-300 rounded bg-white text-sm"
+              aria-label="Jump to date"
+            />
           </div>
         </div>
 
@@ -599,7 +775,29 @@ export default function RMTCalendarClient() {
 
         {loading ? (
           <p className="text-sm text-gray-600">Loading calendar...</p>
-        ) : viewMode === "month" ? (
+        ) : isMobile ? (
+          <div
+            className="border border-gray-300 rounded p-3 space-y-2 touch-pan-y select-none"
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={() => setPointerStartX(null)}
+          >
+            <p className="text-sm font-semibold text-[#1f2a1f]">
+              {anchorDate.toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+            <div className="space-y-1">
+              {(eventsByDay[dayKey(anchorDate)] || []).map(renderEvent)}
+              {(eventsByDay[dayKey(anchorDate)] || []).length === 0 && (
+                <p className="text-sm text-gray-600 py-2">No events for this day.</p>
+              )}
+            </div>
+          </div>
+        ) : (
           <div className="grid grid-cols-7 gap-2">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <div key={day} className="text-xs font-semibold text-center text-gray-700">
@@ -623,25 +821,6 @@ export default function RMTCalendarClient() {
               );
             })}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
-            {weekDays.map((dateObj) => {
-              const key = dayKey(dateObj);
-              const dailyEvents = eventsByDay[key] || [];
-              return (
-                <div key={key} className="border border-gray-300 rounded p-2 space-y-2">
-                  <p className="text-sm font-semibold text-[#1f2a1f]">
-                    {dateObj.toLocaleDateString("en-US", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </p>
-                  <div className="space-y-1">{dailyEvents.map(renderEvent)}</div>
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
 
@@ -654,7 +833,55 @@ export default function RMTCalendarClient() {
             className="w-full max-w-md rounded-xl border border-[#b7c7b0] bg-[#f4f7f2] p-4 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="space-y-1">
+            <div
+              className={`space-y-1 ${
+                selectedEvent.source === "db" &&
+                String(selectedEvent.status || "").toLowerCase() === "booked" &&
+                selectedEvent.clientId
+                  ? "cursor-pointer hover:opacity-85 transition-opacity"
+                  : ""
+              }`}
+              onClick={() => {
+                if (
+                  selectedEvent.source === "db" &&
+                  String(selectedEvent.status || "").toLowerCase() === "booked" &&
+                  selectedEvent.clientId
+                ) {
+                  setSelectedEvent(null);
+                  router.push(
+                    `/dashboard/rmt/client-profile/${selectedEvent.clientId}`,
+                  );
+                }
+              }}
+              role={
+                selectedEvent.source === "db" &&
+                String(selectedEvent.status || "").toLowerCase() === "booked" &&
+                selectedEvent.clientId
+                  ? "button"
+                  : undefined
+              }
+              tabIndex={
+                selectedEvent.source === "db" &&
+                String(selectedEvent.status || "").toLowerCase() === "booked" &&
+                selectedEvent.clientId
+                  ? 0
+                  : undefined
+              }
+              onKeyDown={(e) => {
+                if (
+                  (e.key === "Enter" || e.key === " ") &&
+                  selectedEvent.source === "db" &&
+                  String(selectedEvent.status || "").toLowerCase() === "booked" &&
+                  selectedEvent.clientId
+                ) {
+                  e.preventDefault();
+                  setSelectedEvent(null);
+                  router.push(
+                    `/dashboard/rmt/client-profile/${selectedEvent.clientId}`,
+                  );
+                }
+              }}
+            >
               <p className="text-lg font-semibold text-[#1f2a1f]">
                 {selectedEvent.title || "Untitled"}
               </p>
@@ -665,12 +892,63 @@ export default function RMTCalendarClient() {
                       selectedEvent.startDateTime,
                     )} - ${formatTime(selectedEvent.endDateTime)}`}
               </p>
-              {selectedEvent.source === "db" && (
-                <p className="text-sm text-[#2e3a2d]">
-                  Status: {(selectedEvent.status || "").toUpperCase()}
-                </p>
-              )}
             </div>
+
+            {selectedEvent.source === "db" &&
+              isBookedOrCompleted(selectedEvent) &&
+              hasConsentDetails(selectedEvent.consentForm) && (
+                <div className="space-y-2 text-sm text-[#2e3a2d] border border-[#d5e0d1] rounded-lg p-3 bg-white/60">
+                  <p>
+                    <span className="font-semibold">Reason for massage:</span>{" "}
+                    {String(selectedEvent.consentForm.reasonForMassage || "").trim() ||
+                      "Not provided"}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Areas to avoid:</span>{" "}
+                    {getAreasToAvoidText(selectedEvent.consentForm) ||
+                      "Not provided"}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Additional info:</span>{" "}
+                    {String(selectedEvent.consentForm.additionalInfo || "").trim() ||
+                      "Not provided"}
+                  </p>
+                </div>
+              )}
+
+            {selectedEvent.source === "db" &&
+              isBookedOrCompleted(selectedEvent) &&
+              !hasConsentDetails(selectedEvent.consentForm) && (
+                <div className="space-y-2 text-sm text-[#2e3a2d] border border-amber-300 rounded-lg p-3 bg-amber-50">
+                  <p className="font-medium text-amber-900">
+                    Consent form not completed.
+                  </p>
+                  {String(selectedEvent.status || "").toLowerCase() === "booked" &&
+                    (
+                    <button
+                      type="button"
+                      disabled={modalReminderSubmitting}
+                      onClick={handleSendConsentReminder}
+                      className="px-3 py-2 border border-amber-500 text-amber-800 rounded hover:bg-[#e8efe4] transition-colors disabled:opacity-60"
+                    >
+                      {modalReminderSubmitting
+                        ? "Sending..."
+                        : "Send reminder"}
+                    </button>
+                    )}
+                  {modalReminderStatus && (
+                    <p
+                      className={`text-sm ${
+                        modalReminderStatus.type === "error"
+                          ? "text-red-700"
+                          : "text-green-700"
+                      }`}
+                    >
+                      {modalReminderStatus.text}
+                    </p>
+                  )}
+                </div>
+              )}
 
             <div className="flex flex-wrap gap-2">
               {selectedEvent.source === "db" &&
@@ -681,7 +959,7 @@ export default function RMTCalendarClient() {
                       await handleDelete(selectedEvent.id);
                       setSelectedEvent(null);
                     }}
-                    className="px-3 py-2 border border-red-400 text-red-700 rounded hover:bg-red-50 transition-colors"
+                    className="px-3 py-2 border border-red-400 text-red-700 rounded hover:bg-[#e8efe4] transition-colors"
                   >
                     Delete appointment
                   </button>
@@ -702,31 +980,66 @@ export default function RMTCalendarClient() {
                         className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                       />
                       <select
-                        value={modalClientId}
-                        onChange={(e) => setModalClientId(e.target.value)}
+                        value={modalDuration}
+                        onChange={(e) => setModalDuration(Number(e.target.value))}
                         className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                       >
-                        <option value="">Select client</option>
-                        {clients.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.firstName} {client.lastName}
-                          </option>
-                        ))}
+                        <option value={60}>60 min</option>
+                        <option value={75}>75 min</option>
+                        <option value={90}>90 min</option>
                       </select>
-                      <input
-                        type="number"
-                        min={1}
-                        value={modalDuration}
-                        onChange={(e) => setModalDuration(Number(e.target.value) || 60)}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-                        placeholder="Duration (min)"
-                      />
+                      <div className="sm:col-span-2 space-y-2" ref={modalSearchRef}>
+                        <input
+                          type="text"
+                          value={modalClientQuery}
+                          onChange={(e) => {
+                            setModalClientQuery(e.target.value);
+                            setModalClientId("");
+                            setModalSearchOpen(true);
+                          }}
+                          onFocus={() => setModalSearchOpen(true)}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="Search client by name, email, or phone"
+                        />
+                        {modalClientQuery.trim() && !modalClientId && modalSearchOpen && (
+                          <div className="max-h-36 overflow-y-auto rounded-md border border-gray-300 bg-white">
+                            {filteredModalClients.length > 0 ? (
+                              filteredModalClients.map((client) => (
+                                <button
+                                  key={client.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setModalClientId(client.id);
+                                    setModalClientQuery(
+                                      `${client.firstName || ""} ${client.lastName || ""}`.trim(),
+                                    );
+                                    setModalSearchOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm border-b border-gray-200 last:border-b-0 hover:bg-[#e8efe4] transition-colors"
+                                >
+                                  <div className="font-medium text-[#1f2a1f]">
+                                    {client.firstName} {client.lastName}
+                                  </div>
+                                  <div className="text-xs text-gray-600">
+                                    {client.email || "No email"}{" "}
+                                    {client.phoneNumber ? `• ${client.phoneNumber}` : ""}
+                                  </div>
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2 text-sm text-gray-600">
+                                No matching clients.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <button
                       type="button"
                       disabled={!modalClientId || !modalStartTime || modalSubmitting}
                       onClick={handleBookFromSlot}
-                      className="px-3 py-2 border border-blue-400 text-blue-700 rounded hover:bg-blue-50 transition-colors disabled:opacity-50"
+                      className="px-3 py-2 border border-blue-400 text-blue-700 rounded hover:bg-[#e8efe4] transition-colors disabled:opacity-50"
                     >
                       {modalSubmitting ? "Booking..." : "Book appointment"}
                     </button>
@@ -743,7 +1056,7 @@ export default function RMTCalendarClient() {
                         await handleCancel(selectedEvent.id);
                         setSelectedEvent(null);
                       }}
-                      className="px-3 py-2 border border-amber-400 text-amber-700 rounded hover:bg-amber-50 transition-colors"
+                      className="px-3 py-2 border border-amber-400 text-amber-700 rounded hover:bg-[#e8efe4] transition-colors"
                     >
                       Cancel appointment
                     </button>
@@ -754,7 +1067,7 @@ export default function RMTCalendarClient() {
                           `/dashboard/rmt/reschedule-appointment/${selectedEvent.id}`,
                         )
                       }
-                      className="px-3 py-2 border border-blue-400 text-blue-700 rounded hover:bg-blue-50 transition-colors"
+                      className="px-3 py-2 border border-blue-400 text-blue-700 rounded hover:bg-[#e8efe4] transition-colors"
                     >
                       Reschedule appointment
                     </button>
@@ -770,7 +1083,7 @@ export default function RMTCalendarClient() {
                       await handleDelete(selectedEvent.id);
                       setSelectedEvent(null);
                     }}
-                    className="px-3 py-2 border border-red-400 text-red-700 rounded hover:bg-red-50 transition-colors"
+                    className="px-3 py-2 border border-red-400 text-red-700 rounded hover:bg-[#e8efe4] transition-colors"
                   >
                     Delete slot
                   </button>
@@ -787,6 +1100,6 @@ export default function RMTCalendarClient() {
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

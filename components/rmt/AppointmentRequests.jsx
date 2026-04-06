@@ -12,8 +12,8 @@ function SubmitButton({ children }) {
         pending
           ? "bg-[#f4f7f2] cursor-not-allowed"
           : children === "Accept"
-          ? "bg-[#f4f7f2] hover:bg-[#f4f7f2]"
-          : "bg-[#f4f7f2] hover:bg-[#f4f7f2]"
+          ? "bg-[#f4f7f2] hover:bg-[#e8efe4]"
+          : "bg-[#f4f7f2] hover:bg-[#e8efe4]"
       }`}
     >
       {pending ? "Processing..." : children}
@@ -45,23 +45,22 @@ const AppointmentRequests = ({ requestedAppointments }) => {
   };
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Appointment Requests</h2>
-      {requestedAppointments.length === 0 ? (
-        <div className="p-8 bg-[#f4f7f2] rounded-md shadow-sm">
-          <p className="text-gray-600 text-center text-lg">
-            There are currently no appointment requests.
-          </p>
-        </div>
-      ) : (
+    <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 className="text-xl font-semibold text-[#1f2a1f]">Appointment Requests</h2>
+        {requestedAppointments.length === 0 && (
+          <p className="text-sm text-gray-600">There are currently no appointment requests.</p>
+        )}
+      </div>
+      {requestedAppointments.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {requestedAppointments.map((appointment, index) => (
             <div
               key={appointment.id || `appointment-${index}`}
-              className={`shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 ${
+              className={`rounded-lg p-4 transition-colors duration-200 border ${
                 appointment.code
-                  ? "bg-[#f4f7f2] border-2 border-red-300"
-                  : "bg-[#f4f7f2]"
+                  ? "bg-[#f4f7f2] border-red-300"
+                  : "bg-[#f4f7f2] border-[#b7c7b0]"
               }`}
             >
               <div className="mb-4">

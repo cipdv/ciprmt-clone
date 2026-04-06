@@ -9,7 +9,6 @@ import {
   getDashboardAppointments,
   getAllMessagesByRMTId,
 } from "@/app/_actions";
-import Link from "next/link";
 
 export default async function Dashboard() {
   const currentUser = await getSession();
@@ -22,17 +21,25 @@ export default async function Dashboard() {
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <section className="space-y-8">
-        <SearchBar />
-        <Messages messages={messages} />
+        <div className="w-full">
+          <SearchBar />
+        </div>
+        <div className="w-full">
+          <Messages messages={messages} />
+        </div>
 
-        <AppointmentRequests
-          requestedAppointments={appointmentData.requested || []}
-        />
-        <div className="space-y-4">
+        <div className="w-full">
+          <AppointmentRequests
+            requestedAppointments={appointmentData.requested || []}
+          />
+        </div>
+        <div className="w-full space-y-4">
           <h2 className="text-xl font-semibold">Calendar</h2>
           <RMTCalendarClient />
         </div>
-        <NotesToComplete appointments={appointmentData.past || []} />
+        <div className="w-full">
+          <NotesToComplete appointments={appointmentData.past || []} />
+        </div>
         {/* <IncomeTracker /> */}
         {/* <div className="pt-8">
           <h2 className="text-xl font-semibold mb-4">Set Up A New Workspace</h2>

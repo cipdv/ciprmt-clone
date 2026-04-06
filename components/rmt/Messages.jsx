@@ -14,8 +14,8 @@ function SubmitButton({ children }) {
         pending
           ? "bg-[#f4f7f2] cursor-not-allowed"
           : children === "Reply"
-          ? "bg-[#f4f7f2] hover:bg-[#f4f7f2]"
-          : "bg-[#f4f7f2] hover:bg-[#f4f7f2]"
+          ? "bg-[#f4f7f2] hover:bg-[#e8efe4]"
+          : "bg-[#f4f7f2] hover:bg-[#e8efe4]"
       }`}
     >
       {pending ? "Processing..." : children}
@@ -61,20 +61,19 @@ const Messages = ({ messages }) => {
   };
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Messages</h2>
-      {messageRequests.length === 0 ? (
-        <div className="p-8 bg-[#f4f7f2] rounded-md shadow-sm">
-          <p className="text-gray-600 text-center text-lg">
-            There are currently no new messages.
-          </p>
-        </div>
-      ) : (
+    <div className="w-full border border-[#b7c7b0] bg-[#f4f7f2] rounded-xl p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 className="text-xl font-semibold text-[#1f2a1f]">Messages</h2>
+        {messageRequests.length === 0 && (
+          <p className="text-sm text-gray-600">There are currently no new messages.</p>
+        )}
+      </div>
+      {messageRequests.length > 0 && (
         <div className="grid gap-6 mb-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {messageRequests.map((message) => (
             <div
               key={message.id} // Use id instead of _id
-              className="bg-[#f4f7f2] shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow duration-200"
+              className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-lg p-4 transition-colors duration-200"
             >
               <div className="mb-4">
                 <h3 className="font-semibold text-lg mb-2 text-gray-800">
@@ -102,7 +101,7 @@ const Messages = ({ messages }) => {
               <div className="flex justify-between mt-4 space-x-2">
                 <button
                   onClick={() => openReplyModal(message)}
-                  className="flex-1 px-3 py-1.5 rounded text-sm font-medium text-[#1f2a1f] border border-gray-300 bg-[#f4f7f2] hover:bg-[#f4f7f2] transition-colors duration-200"
+                  className="flex-1 px-3 py-1.5 rounded text-sm font-medium text-[#1f2a1f] border border-gray-300 bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors duration-200"
                 >
                   Reply
                 </button>
@@ -155,7 +154,7 @@ const Messages = ({ messages }) => {
                 <button
                   type="button"
                   onClick={closeReplyModal}
-                  className="px-4 py-2 rounded text-sm font-medium text-gray-600 border border-gray-300 bg-[#f4f7f2] hover:bg-[#f4f7f2] transition-colors duration-200"
+                  className="px-4 py-2 rounded text-sm font-medium text-gray-600 border border-gray-300 bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors duration-200"
                 >
                   Cancel
                 </button>
