@@ -287,7 +287,15 @@ export default function RMTCalendarClient() {
   const handleDelete = async (appointmentId) => {
     const confirmed = window.confirm("Delete this appointment time entirely?");
     if (!confirmed) return;
-    await deleteAppointment(appointmentId);
+    const result = await deleteAppointment(appointmentId);
+    if (!result?.success) {
+      setStatus({
+        type: "error",
+        text: result?.message || "Failed to delete appointment.",
+      });
+      return;
+    }
+    setStatus({ type: "success", text: "Appointment deleted." });
     await loadData();
   };
 

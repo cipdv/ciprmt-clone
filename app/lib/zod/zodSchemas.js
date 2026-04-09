@@ -243,9 +243,10 @@ export const registerPatientSchema = z
         .max(15, "Phone number is too long")
         .regex(/^\d+$/, "Phone number must only contain digits")
     ),
-    pronouns: z
-      .enum(["they/them", "she/her", "he/him", "other"])
-      .optional(),
+    pronouns: z.preprocess(
+      emptyToUndefined,
+      z.enum(["they/them", "she/her", "he/him", "other"]).optional()
+    ),
     email: z.string().email().max(254).toLowerCase().trim(),
     password: z
       .string()

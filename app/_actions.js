@@ -458,6 +458,194 @@ export async function login(prevState, formData) {
   redirect(dashboardPath);
 }
 
+export async function loginForBookingModal({ email, password }) {
+  try {
+    const formDataObj = {
+      email: (email || "").toLowerCase().trim(),
+      password: password || "",
+      rememberMe: false,
+    };
+
+    const { success, data } = loginSchema.safeParse(formDataObj);
+    if (!success) {
+      return { success: false, message: "Invalid credentials." };
+    }
+
+    const { rows } = await sql`
+      SELECT * FROM users WHERE email = ${data.email}
+    `;
+
+    if (rows.length === 0) {
+      return { success: false, message: "Invalid credentials." };
+    }
+
+    const result = rows[0];
+    const passwordsMatch = await bcrypt.compare(data.password, result.password);
+    if (!passwordsMatch) {
+      return { success: false, message: "Invalid credentials." };
+    }
+
+    const resultObj = {
+      id: result.id,
+      mongodbId: result.mongodb_id,
+      firstName: result.first_name,
+      lastName: result.last_name,
+      email: result.email,
+      phoneNumber: result.phone_number,
+      userType: result.user_type,
+      rmtId: result.rmt_id,
+      createdAt: result.created_at,
+      lastHealthHistoryUpdate: result.last_health_history_update,
+      dns_count: result.dns_count,
+    };
+
+    if (resultObj.userType !== "patient") {
+      return {
+        success: false,
+        message: "Please sign in with a patient account to book online.",
+      };
+    }
+
+    const expires = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    const session = await encrypt({ resultObj });
+
+    const cookieStore = await cookies();
+    cookieStore.set("session", session, {
+      expires,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+    });
+
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error in loginForBookingModal:", error);
+    return {
+      success: false,
+      message: "Unable to sign in right now. Please try again.",
+    };
+  }
+}
+
+export async function registerPatientForBookingModal(payload) {
+  try {
+    const data = {
+      firstName: payload?.firstName || "",
+      lastName: payload?.lastName || "",
+      preferredName: payload?.preferredName || "",
+      phoneNumber: payload?.phoneNumber || "",
+      pronouns: payload?.pronouns || "",
+      email: payload?.email || "",
+      password: payload?.password || "",
+      confirmPassword: payload?.confirmPassword || "",
+    };
+
+    const validation = registerPatientSchema.safeParse(data);
+    if (!validation.success) {
+      return {
+        success: false,
+        message: "Please fix the highlighted fields.",
+        errors: validation.error.flatten().fieldErrors,
+      };
+    }
+
+    const validatedData = validation.data;
+    const normalizedPhoneNumber = normalizePhoneToDigits(
+      validatedData.phoneNumber || "",
+    );
+
+    const { rows: existingUsers } = await sql`
+      SELECT id FROM users WHERE email = ${validatedData.email}
+    `;
+
+    if (existingUsers.length > 0) {
+      return {
+        success: false,
+        message: "Email already registered.",
+        errors: { email: ["This email is already registered"] },
+      };
+    }
+
+    const hashedPassword = await bcrypt.hash(validatedData.password, 10);
+
+    const { rows: insertResult } = await sql`
+      INSERT INTO users (
+        first_name,
+        last_name,
+        preferred_name,
+        pronouns,
+        email,
+        phone_number,
+        password,
+        user_type,
+        rmt_id,
+        can_book_at_ids
+      ) VALUES (
+        ${validatedData.firstName},
+        ${validatedData.lastName},
+        ${validatedData.preferredName || null},
+        ${validatedData.pronouns || null},
+        ${validatedData.email},
+        ${normalizedPhoneNumber || null},
+        ${hashedPassword},
+        'patient',
+        ${DEFAULT_RMT_ID}::uuid,
+        '{}'::text[]
+      )
+      RETURNING *
+    `;
+
+    if (!insertResult || insertResult.length === 0) {
+      return {
+        success: false,
+        message: "Failed to create account. Please try again.",
+      };
+    }
+
+    const newUser = insertResult[0];
+
+    await sql`
+      INSERT INTO user_rmt_locations (user_id, rmt_location_id, is_primary)
+      VALUES (${newUser.id}, ${DEFAULT_RMT_LOCATION_ID}::uuid, true)
+    `;
+
+    const expires = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+    const resultObj = {
+      id: newUser.id,
+      mongodbId: newUser.mongodb_id,
+      firstName: newUser.first_name,
+      lastName: newUser.last_name,
+      email: newUser.email,
+      phoneNumber: newUser.phone_number,
+      userType: newUser.user_type,
+      rmtId: newUser.rmt_id,
+      createdAt: newUser.created_at,
+      lastHealthHistoryUpdate: null,
+    };
+
+    const session = await encrypt({ resultObj, expires });
+    const cookieStore = await cookies();
+    cookieStore.set("session", session, {
+      expires,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+    });
+
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error in registerPatientForBookingModal:", error);
+    return {
+      success: false,
+      message: "Unable to create account right now. Please try again.",
+    };
+  }
+}
+
 export async function logout() {
   const cookieStore = await cookies();
   cookieStore.set("session", "", { expires: new Date(0) });
@@ -5826,6 +6014,79 @@ Cip`,
   }
 }
 
+export async function getPublicDataForBookAppointmentsForm() {
+  const session = await getSession();
+
+  if (session?.resultObj?.id) {
+    return getDataForBookAppointmentsForm();
+  }
+
+  try {
+    const { rows: rmtLocations } = await sql`
+      SELECT
+        id,
+        location_name,
+        street_address,
+        city,
+        province,
+        postal_code,
+        country,
+        workplace_type,
+        description,
+        what_to_wear,
+        payment
+      FROM rmt_locations
+      WHERE user_id = ${DEFAULT_RMT_ID}
+    `;
+
+    const rmtSetup = await Promise.all(
+      rmtLocations.map(async (location) => {
+        const { rows: massageServices } = await sql`
+          SELECT
+            service,
+            duration,
+            price,
+            plus_hst as "plusHst"
+          FROM massage_services
+          WHERE rmt_location_id = ${location.id}
+          ORDER BY duration
+        `;
+
+        return {
+          _id: location.id,
+          formattedFormData: {
+            address: {
+              streetAddress: location.street_address,
+              city: location.city,
+              province: location.province,
+              postalCode: location.postal_code,
+              country: location.country,
+              locationName: location.location_name || location.street_address,
+            },
+            massageServices,
+            workplaceType: location.workplace_type,
+            description: location.description,
+            whatToWear: location.what_to_wear,
+            payment: location.payment,
+          },
+        };
+      }),
+    );
+
+    return {
+      user: {
+        resultObj: {
+          canBookAtIds: rmtSetup.map((location) => location._id),
+        },
+      },
+      rmtSetup,
+    };
+  } catch (error) {
+    console.error("Error fetching public booking data:", error);
+    throw error;
+  }
+}
+
 // export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
 //   try {
 //     const session = await getSession();
@@ -6698,7 +6959,8 @@ export async function getRMTCalendarData(rangeStart, rangeEnd) {
       const normalized = String(status || "").toLowerCase();
       if (normalized === "completed") return 3;
       if (normalized === "booked") return 2;
-      if (normalized === "available") return 1;
+      if (normalized === "requested") return 1;
+      if (normalized === "available") return 0;
       return 0;
     };
 
@@ -8898,7 +9160,7 @@ export async function deleteAppointment(appointmentId) {
     }
 
     // Delete the appointment
-    const result = await sql`
+    await sql`
       DELETE FROM treatments
       WHERE id = ${appointmentId}
     `;
@@ -8931,13 +9193,16 @@ export async function deleteAppointment(appointmentId) {
       // Just log the error but don't let it break the main function
       console.error("Error logging audit event:", logError);
     }
+    revalidatePath("/dashboard/rmt");
+    revalidatePath("/dashboard/rmt/calendar");
+    return { success: true };
   } catch (error) {
     console.error("Error in deleteAppointment:", error);
-    throw new Error("Failed to delete appointment. Please try again.");
+    return {
+      success: false,
+      message: "Failed to delete appointment. Please try again.",
+    };
   }
-
-  revalidatePath("/dashboard/rmt");
-  revalidatePath("/dashboard/rmt/calendar");
 }
 
 export async function clearAppointment(appointmentId) {
@@ -10672,14 +10937,33 @@ export async function getAvailableYears() {
 
 export async function addAdditionalIncome(formData) {
   try {
+    await ensureAdditionalIncomeFlagsColumns();
+
     const amount = formData.get("amount");
     const source = formData.get("source");
     const details = formData.get("details") || null;
     const date = formData.get("date");
+    const includeInIncomeTax = formData.get("includeInIncomeTax") === "on";
+    const includeInHstQuickMethod =
+      formData.get("includeInHstQuickMethod") === "on";
 
     const queryResult = await sql`
-      INSERT INTO additional_income (amount, source, details, date)
-      VALUES (${amount}, ${source}, ${details}, ${date})
+      INSERT INTO additional_income (
+        amount,
+        source,
+        details,
+        date,
+        include_in_income_tax,
+        include_in_hst_quick_method
+      )
+      VALUES (
+        ${amount},
+        ${source},
+        ${details},
+        ${date},
+        ${includeInIncomeTax},
+        ${includeInHstQuickMethod}
+      )
       RETURNING *
     `;
     const result = queryResult.rows || queryResult;
@@ -10692,13 +10976,18 @@ export async function addAdditionalIncome(formData) {
 
 export async function getAdditionalIncomeByMonth(year) {
   try {
+    await ensureAdditionalIncomeFlagsColumns();
+
     const queryResult = await sql`
       SELECT 
+        id,
         EXTRACT(MONTH FROM date) as month,
         date,
         amount,
         source,
-        details
+        details,
+        include_in_income_tax AS "includeInIncomeTax",
+        include_in_hst_quick_method AS "includeInHstQuickMethod"
       FROM additional_income
       WHERE EXTRACT(YEAR FROM date) = ${year}
       ORDER BY date
@@ -10711,12 +11000,24 @@ export async function getAdditionalIncomeByMonth(year) {
   }
 }
 
+async function ensureAdditionalIncomeFlagsColumns() {
+  await sql`
+    ALTER TABLE additional_income
+      ADD COLUMN IF NOT EXISTS include_in_income_tax BOOLEAN NOT NULL DEFAULT TRUE
+  `;
+  await sql`
+    ALTER TABLE additional_income
+      ADD COLUMN IF NOT EXISTS include_in_hst_quick_method BOOLEAN NOT NULL DEFAULT FALSE
+  `;
+}
+
 export async function getAdditionalTreatmentsRevenueByMonth(year) {
   try {
     const queryResult = await sql`
       SELECT 
         EXTRACT(MONTH FROM t.date) as month,
         t.date,
+        t.duration,
         t.price,
         u.first_name,
         u.last_name
@@ -11085,6 +11386,411 @@ export async function updateWorkDayBookingCutoffHours(workDayId, hours) {
   } catch (error) {
     console.error("Failed to update booking cutoff hours:", error);
     return { success: false, error: error.message };
+  }
+}
+
+export async function getRmtAccountSettings() {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.resultObj.id;
+    const { rows: userRows } = await sql`
+      SELECT id, user_type, email, phone_number
+      FROM users
+      WHERE id = ${userId}
+      LIMIT 1
+    `;
+
+    if (userRows.length === 0 || userRows[0].user_type !== "rmt") {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const { rows: locationRows } = await sql`
+      SELECT
+        id,
+        location_name,
+        street_address,
+        city,
+        province,
+        country,
+        postal_code,
+        phone,
+        email,
+        workplace_type,
+        description,
+        what_to_wear,
+        payment,
+        url
+      FROM rmt_locations
+      WHERE user_id = ${userId}
+      ORDER BY created_at ASC
+    `;
+
+    const locations = [];
+    for (const location of locationRows) {
+      const { rows: serviceRows } = await sql`
+        SELECT id, service, duration, price, plus_hst
+        FROM massage_services
+        WHERE rmt_location_id = ${location.id}
+        ORDER BY duration ASC, service ASC
+      `;
+
+      locations.push({
+        id: location.id,
+        locationName: location.location_name || "",
+        streetAddress: location.street_address || "",
+        city: location.city || "",
+        province: location.province || "",
+        country: location.country || "",
+        postalCode: location.postal_code || "",
+        phone: location.phone || "",
+        email: location.email || "",
+        workplaceType: location.workplace_type || "",
+        description: location.description || "",
+        whatToWear: location.what_to_wear || "",
+        payment: location.payment || "",
+        url: location.url || "",
+        services: serviceRows.map((service) => ({
+          id: service.id,
+          service: service.service || "",
+          duration: Number(service.duration || 0),
+          price: Number(service.price || 0),
+          plusHst: Boolean(service.plus_hst),
+        })),
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        contact: {
+          email: userRows[0].email || "",
+          phoneNumber: userRows[0].phone_number || "",
+        },
+        locations,
+      },
+    };
+  } catch (error) {
+    console.error("Error loading RMT account settings:", error);
+    return { success: false, error: "Failed to load account settings" };
+  }
+}
+
+export async function saveRmtContactSettings(formData) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.resultObj.id;
+    const email = String(formData.get("email") || "")
+      .trim()
+      .toLowerCase();
+    const phoneNumberRaw = String(formData.get("phoneNumber") || "").trim();
+    const phoneNumber = normalizePhoneToDigits(phoneNumberRaw);
+
+    if (!email) {
+      return { success: false, error: "Email is required" };
+    }
+
+    const { rows: userRows } = await sql`
+      SELECT id, user_type
+      FROM users
+      WHERE id = ${userId}
+      LIMIT 1
+    `;
+    if (userRows.length === 0 || userRows[0].user_type !== "rmt") {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    await sql`
+      UPDATE users
+      SET email = ${email},
+          phone_number = ${phoneNumber || null}
+      WHERE id = ${userId}
+    `;
+
+    revalidatePath("/dashboard/rmt/account");
+    return { success: true };
+  } catch (error) {
+    console.error("Error saving RMT contact settings:", error);
+    return { success: false, error: "Failed to save contact information" };
+  }
+}
+
+export async function saveRmtLocationSettings(formData) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.resultObj.id;
+    const locationId = String(formData.get("locationId") || "");
+    if (!locationId) {
+      return { success: false, error: "Location is required" };
+    }
+
+    const { rows: ownershipRows } = await sql`
+      SELECT id, workplace_type
+      FROM rmt_locations
+      WHERE id = ${locationId}::uuid AND user_id = ${userId}
+      LIMIT 1
+    `;
+    if (ownershipRows.length === 0) {
+      return { success: false, error: "Unauthorized location access" };
+    }
+
+    const workplaceTypeInput = String(formData.get("workplaceType") || "")
+      .trim()
+      .toLowerCase();
+    const normalizedWorkplaceType =
+      workplaceTypeInput === "regular" || workplaceTypeInput === "irregular"
+        ? workplaceTypeInput
+        : ownershipRows[0].workplace_type || "regular";
+
+    await sql`
+      UPDATE rmt_locations
+      SET
+        location_name = ${String(formData.get("locationName") || "").trim() || null},
+        street_address = ${String(formData.get("streetAddress") || "").trim() || null},
+        city = ${String(formData.get("city") || "").trim() || null},
+        province = ${String(formData.get("province") || "").trim() || null},
+        country = ${String(formData.get("country") || "").trim() || null},
+        postal_code = ${String(formData.get("postalCode") || "").trim() || null},
+        phone = ${normalizePhoneToDigits(String(formData.get("phone") || "").trim()) || null},
+        email = ${String(formData.get("email") || "").trim().toLowerCase() || null},
+        workplace_type = ${normalizedWorkplaceType},
+        description = ${String(formData.get("description") || "").trim() || null},
+        what_to_wear = ${String(formData.get("whatToWear") || "").trim() || null},
+        payment = ${String(formData.get("payment") || "").trim() || null},
+        url = ${String(formData.get("url") || "").trim() || null}
+      WHERE id = ${locationId}::uuid
+    `;
+
+    revalidatePath("/dashboard/rmt/account");
+    return { success: true };
+  } catch (error) {
+    console.error("Error saving RMT location settings:", error);
+    return { success: false, error: "Failed to save location settings" };
+  }
+}
+
+export async function addRmtLocationSettings(formData) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.resultObj.id;
+    const { rows: userRows } = await sql`
+      SELECT id, user_type
+      FROM users
+      WHERE id = ${userId}
+      LIMIT 1
+    `;
+    if (userRows.length === 0 || userRows[0].user_type !== "rmt") {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const workplaceTypeInput = String(formData.get("workplaceType") || "")
+      .trim()
+      .toLowerCase();
+    const workplaceType =
+      workplaceTypeInput === "regular" || workplaceTypeInput === "irregular"
+        ? workplaceTypeInput
+        : "regular";
+
+    const { rows: locationRows } = await sql`
+      INSERT INTO rmt_locations (
+        user_id,
+        location_name,
+        street_address,
+        city,
+        province,
+        country,
+        postal_code,
+        phone,
+        email,
+        workplace_type,
+        description,
+        what_to_wear,
+        payment,
+        url
+      ) VALUES (
+        ${userId},
+        ${String(formData.get("locationName") || "").trim() || null},
+        ${String(formData.get("streetAddress") || "").trim() || null},
+        ${String(formData.get("city") || "").trim() || null},
+        ${String(formData.get("province") || "").trim() || null},
+        ${String(formData.get("country") || "").trim() || null},
+        ${String(formData.get("postalCode") || "").trim() || null},
+        ${normalizePhoneToDigits(String(formData.get("phone") || "").trim()) || null},
+        ${String(formData.get("email") || "").trim().toLowerCase() || null},
+        ${workplaceType},
+        ${String(formData.get("description") || "").trim() || null},
+        ${String(formData.get("whatToWear") || "").trim() || null},
+        ${String(formData.get("payment") || "").trim() || null},
+        ${String(formData.get("url") || "").trim() || null}
+      )
+      RETURNING id
+    `;
+
+    if (locationRows.length === 0) {
+      return { success: false, error: "Failed to create location" };
+    }
+
+    const locationId = locationRows[0].id;
+
+    await sql`
+      INSERT INTO user_rmt_locations (user_id, rmt_location_id, is_primary)
+      VALUES (${userId}, ${locationId}, false)
+      ON CONFLICT (user_id, rmt_location_id) DO NOTHING
+    `;
+
+    const weekTemplate = [
+      { dayOfWeek: 1, dayName: "Monday" },
+      { dayOfWeek: 2, dayName: "Tuesday" },
+      { dayOfWeek: 3, dayName: "Wednesday" },
+      { dayOfWeek: 4, dayName: "Thursday" },
+      { dayOfWeek: 5, dayName: "Friday" },
+      { dayOfWeek: 6, dayName: "Saturday" },
+      { dayOfWeek: 0, dayName: "Sunday" },
+    ];
+
+    for (const day of weekTemplate) {
+      await sql`
+        INSERT INTO work_days2 (
+          location_id,
+          day_of_week,
+          day_name,
+          is_working,
+          booking_cutoff_hours
+        ) VALUES (
+          ${locationId},
+          ${day.dayOfWeek},
+          ${day.dayName},
+          false,
+          0
+        )
+      `;
+    }
+
+    revalidatePath("/dashboard/rmt/account");
+    return { success: true, data: { locationId } };
+  } catch (error) {
+    console.error("Error creating RMT location:", error);
+    return { success: false, error: "Failed to create location" };
+  }
+}
+
+export async function saveRmtServiceRate(formData) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.resultObj.id;
+    const serviceId = String(formData.get("serviceId") || "");
+    if (!serviceId) {
+      return { success: false, error: "Service is required" };
+    }
+
+    const service = String(formData.get("service") || "").trim();
+    const duration = Number(formData.get("duration"));
+    const price = Number(formData.get("price"));
+    const plusHst = formData.get("plusHst") === "on";
+
+    if (!service || !Number.isFinite(duration) || !Number.isFinite(price)) {
+      return { success: false, error: "Service, duration, and price are required" };
+    }
+
+    const { rows: ownershipRows } = await sql`
+      SELECT ms.id
+      FROM massage_services ms
+      JOIN rmt_locations rl ON rl.id = ms.rmt_location_id
+      WHERE ms.id = ${serviceId}::uuid
+        AND rl.user_id = ${userId}
+      LIMIT 1
+    `;
+    if (ownershipRows.length === 0) {
+      return { success: false, error: "Unauthorized service access" };
+    }
+
+    await sql`
+      UPDATE massage_services
+      SET
+        service = ${service},
+        duration = ${duration},
+        price = ${price},
+        plus_hst = ${plusHst}
+      WHERE id = ${serviceId}::uuid
+    `;
+
+    revalidatePath("/dashboard/rmt/account");
+    return { success: true };
+  } catch (error) {
+    console.error("Error saving RMT service rate:", error);
+    return { success: false, error: "Failed to save service rate" };
+  }
+}
+
+export async function addRmtServiceRate(formData) {
+  try {
+    const session = await getSession();
+    if (!session?.resultObj?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.resultObj.id;
+    const locationId = String(formData.get("locationId") || "");
+    const service = String(formData.get("service") || "").trim();
+    const duration = Number(formData.get("duration"));
+    const price = Number(formData.get("price"));
+    const plusHst = formData.get("plusHst") === "on";
+
+    if (!locationId || !service || !Number.isFinite(duration) || !Number.isFinite(price)) {
+      return { success: false, error: "Location, service, duration, and price are required" };
+    }
+
+    const { rows: locationRows } = await sql`
+      SELECT id
+      FROM rmt_locations
+      WHERE id = ${locationId}::uuid
+        AND user_id = ${userId}
+      LIMIT 1
+    `;
+    if (locationRows.length === 0) {
+      return { success: false, error: "Unauthorized location access" };
+    }
+
+    await sql`
+      INSERT INTO massage_services (
+        rmt_location_id,
+        service,
+        duration,
+        price,
+        plus_hst
+      ) VALUES (
+        ${locationId}::uuid,
+        ${service},
+        ${duration},
+        ${price},
+        ${plusHst}
+      )
+    `;
+
+    revalidatePath("/dashboard/rmt/account");
+    return { success: true };
+  } catch (error) {
+    console.error("Error adding RMT service rate:", error);
+    return { success: false, error: "Failed to add service rate" };
   }
 }
 

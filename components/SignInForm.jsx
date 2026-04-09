@@ -19,14 +19,14 @@ function SubmitButton() {
     <button
       type="submit"
       aria-disabled={pending}
-      className=" mt-4 px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2"
+      className="mt-4 px-6 py-2 bg-[#c2d5bf] text-[#1a2b1a] border border-[#93ad90] rounded-md hover:bg-[#e8efe4] hover:border-[#9caf97] transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:ring-offset-2"
     >
       {pending ? "Signing in..." : "Sign in"}
     </button>
   );
 }
 
-const SignInForm = () => {
+const SignInForm = ({ showSignUpLink = true }) => {
   const [state, formAction] = useActionState(login, initialState);
 
   const [showPassword, setShowPassword] = useState(false);
@@ -38,7 +38,7 @@ const SignInForm = () => {
   return (
     <form
       action={formAction}
-      className="bg-authForms p-4 rounded-md mt-6 w-full lg:w-2/5 mx-auto space-y-4"
+      className="bg-[#f4f7f2] border border-[#b7c7b0] p-6 rounded-xl mt-4 w-full max-w-md space-y-4"
     >
       <h1 className="text-2xl font-bold mb-4">Sign in</h1>
       <input
@@ -46,8 +46,7 @@ const SignInForm = () => {
         placeholder="Email"
         name="email"
         required
-        // className="block mb-4"
-        className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+        className="w-full p-2 border border-[#b7c7b0] bg-[#f4f7f2] rounded-md focus:ring-[#b7c7b0] focus:border-[#80947a] hover:bg-[#e8efe4] transition-colors"
       />
 
       <div className="flex items-center">
@@ -56,13 +55,12 @@ const SignInForm = () => {
           placeholder="Password"
           name="password"
           required
-          // className="block mr-2 "
-          className="w-2/3 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+          className="w-full p-2 border border-[#b7c7b0] bg-[#f4f7f2] rounded-md focus:ring-[#b7c7b0] focus:border-[#80947a] hover:bg-[#e8efe4] transition-colors"
         />
         <button
           type="button"
           onClick={togglePasswordVisibility}
-          className="ml-2 transform transition-transform duration-300 hover:scale-110"
+          className="ml-2 p-2 rounded-md border border-[#b7c7b0] bg-[#f4f7f2] hover:bg-[#e8efe4] transition-colors"
         >
           {showPassword ? (
             <img src="/images/icons8-hide-16.png" alt="Hide password" />
@@ -81,12 +79,14 @@ const SignInForm = () => {
         <p className="text-red-500 text-lg text-bold">{state?.message}</p>
       )}
       <SubmitButton />
-      <h2 className="pt-6 text-bold text-lg">
-        <Link href="/auth/sign-up">
-          <strong>Haven't signed up yet?</strong> Click here to sign up.
-        </Link>
-      </h2>
-      <h2 className="mt-4 text-black">
+      {showSignUpLink && (
+        <h2 className="pt-4 text-bold text-base">
+          <Link href="/auth/sign-up">
+            <strong>Haven't signed up yet?</strong> Click here to sign up.
+          </Link>
+        </h2>
+      )}
+      <h2 className="mt-2 text-black">
         <Link href="/password-reset">Forgot your password? Click here.</Link>
       </h2>
     </form>

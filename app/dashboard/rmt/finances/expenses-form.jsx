@@ -31,13 +31,7 @@ export function ExpensesForm() {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-xl font-semibold">Add Expense</h2>
-        <p className="text-xs text-gray-600 mt-1">Record business expenses</p>
-      </div>
-      <div className="p-4">
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
           {/* Amount Field */}
           <div>
             <label
@@ -187,12 +181,10 @@ export function ExpensesForm() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-blue-600 text-white py-2 px-4 text-sm rounded-md font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full px-3 py-2 text-sm rounded-md font-medium text-[#1f2a1f] border border-gray-300 bg-[#f4f7f2] hover:bg-[#e8efe4] focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isSubmitting ? "Adding..." : "Add Expense"}
           </button>
-        </form>
-      </div>
-    </div>
+    </form>
   );
 }

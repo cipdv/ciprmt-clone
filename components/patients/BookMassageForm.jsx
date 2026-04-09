@@ -6,9 +6,11 @@ import {
   getAvailableAppointments,
   bookAppointment,
   validateGiftCard,
+  loginForBookingModal,
+  registerPatientForBookingModal,
 } from "@/app/_actions";
 
-function BookMassageForm({ rmtSetup, user }) {
+function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [appointmentTimes, setAppointmentTimes] = useState([]);
@@ -19,6 +21,21 @@ function BookMassageForm({ rmtSetup, user }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMismatchModal, setShowMismatchModal] = useState(false);
   const [mismatchDetails, setMismatchDetails] = useState(null);
+  const [showAuthRequiredModal, setShowAuthRequiredModal] = useState(false);
+  const [authMode, setAuthMode] = useState("choice");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authFieldErrors, setAuthFieldErrors] = useState({});
+  const [authForm, setAuthForm] = useState({
+    firstName: "",
+    lastName: "",
+    preferredName: "",
+    phoneNumber: "",
+    pronouns: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+  });
 
   const [formData, setFormData] = useState({
     location: "",
@@ -204,7 +221,10 @@ function BookMassageForm({ rmtSetup, user }) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {dates.map((dateGroup, index) => (
-          <div key={index} className="bg-white shadow-md rounded-lg p-4">
+          <div
+            key={index}
+            className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-lg p-4"
+          >
             <h4 className="text-lg font-semibold mb-2">
               {dateGroup.formattedDate}
             </h4>
@@ -220,8 +240,8 @@ function BookMassageForm({ rmtSetup, user }) {
                     key={idx}
                     className={`cursor-pointer p-2 rounded transition-colors ${
                       isSelected
-                        ? "bg-blue-200 text-blue-800"
-                        : "text-gray-700 hover:bg-gray-100"
+                        ? "bg-[#c2d5bf] border border-[#93ad90] text-[#1a2b1a]"
+                        : "text-[#1f2a1f] border border-[#b7c7b0] bg-[#f4f7f2] hover:bg-[#e8efe4]"
                     }`}
                     onClick={() => {
                       setSelectedAppointment({
@@ -233,6 +253,7 @@ function BookMassageForm({ rmtSetup, user }) {
                         appointmentTime: time.startTime,
                         appointmentDate: dateGroup.date,
                       });
+                      setCurrentStep(4);
                     }}
                   >
                     {time.formattedTime}
@@ -277,7 +298,7 @@ function BookMassageForm({ rmtSetup, user }) {
     setCurrentStep((prevStep) => prevStep - 1);
   };
 
-  const submitBooking = async () => {
+  const submitBooking = async ({ redirectOnSuccess = true } = {}) => {
     setIsSubmitting(true);
     setError(null);
 
@@ -294,13 +315,21 @@ function BookMassageForm({ rmtSetup, user }) {
       });
 
       if (result.success) {
-        router.push("/dashboard/patient");
+        if (redirectOnSuccess) {
+          router.push("/dashboard/patient");
+        }
+        return { success: true };
       } else {
         setError(result.message);
+        return { success: false, message: result.message };
       }
     } catch (error) {
       console.error("Error booking appointment:", error);
       setError("Failed to book appointment. Please try again.");
+      return {
+        success: false,
+        message: "Failed to book appointment. Please try again.",
+      };
     } finally {
       setIsSubmitting(false);
     }
@@ -309,6 +338,14 @@ function BookMassageForm({ rmtSetup, user }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError(null);
+
+    if (requireAuthOnBook && !user?.resultObj?.id) {
+      setAuthMode("choice");
+      setAuthError("");
+      setAuthFieldErrors({});
+      setShowAuthRequiredModal(true);
+      return;
+    }
 
     if (formData.giftCardCode && formData.giftCardCode.trim() !== "") {
       setIsSubmitting(true);
@@ -347,11 +384,94 @@ function BookMassageForm({ rmtSetup, user }) {
     }
   };
 
+  const handleAuthFormChange = (field, value) => {
+    setAuthForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const modalFieldClass = (fieldName) =>
+    `w-full p-2 border rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:border-[#80947a] ${
+      authFieldErrors?.[fieldName]?.length
+        ? "border-red-500 bg-[#fff5f5]"
+        : "border-[#b7c7b0] bg-[#f4f7f2] hover:bg-[#e8efe4]"
+    }`;
+  const bookingSelectClass =
+    "w-full p-2 border border-[#b7c7b0] bg-[#f4f7f2] rounded-md focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:border-[#80947a] hover:bg-[#e8efe4] transition-colors";
+  const bookingButtonPrimaryClass =
+    "px-4 py-2 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:ring-offset-2 disabled:opacity-50";
+  const bookingButtonFullPrimaryClass =
+    "w-full sm:w-auto px-4 py-2 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:ring-offset-2 disabled:opacity-50";
+
+  const handleBookingAfterAuth = async () => {
+    const bookingResult = await submitBooking({ redirectOnSuccess: true });
+    if (!bookingResult?.success) {
+      setAuthError(bookingResult?.message || "Unable to complete booking.");
+    }
+  };
+
+  const handleSignInFromModal = async (event) => {
+    event.preventDefault();
+    setAuthError("");
+    setAuthFieldErrors({});
+    setAuthLoading(true);
+
+    try {
+      const result = await loginForBookingModal({
+        email: authForm.email,
+        password: authForm.password,
+      });
+
+      if (!result?.success) {
+        setAuthError(result?.message || "Unable to sign in.");
+        return;
+      }
+
+      await handleBookingAfterAuth();
+    } catch (error) {
+      console.error("Error signing in from booking modal:", error);
+      setAuthError("Unable to sign in right now. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignUpFromModal = async (event) => {
+    event.preventDefault();
+    setAuthError("");
+    setAuthFieldErrors({});
+    setAuthLoading(true);
+
+    try {
+      const result = await registerPatientForBookingModal({
+        firstName: authForm.firstName,
+        lastName: authForm.lastName,
+        preferredName: authForm.preferredName,
+        phoneNumber: authForm.phoneNumber,
+        pronouns: authForm.pronouns,
+        email: authForm.email,
+        password: authForm.password,
+        confirmPassword: authForm.confirmPassword,
+      });
+
+      if (!result?.success) {
+        setAuthError(result?.message || "Unable to create account.");
+        setAuthFieldErrors(result?.errors || {});
+        return;
+      }
+
+      await handleBookingAfterAuth();
+    } catch (error) {
+      console.error("Error signing up from booking modal:", error);
+      setAuthError("Unable to create account right now. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   return (
     <>
       {showMismatchModal && mismatchDetails && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-xl max-w-md w-full p-6 space-y-4">
             <h2 className="text-2xl font-bold text-gray-900">
               Gift Card Duration Mismatch
             </h2>
@@ -376,13 +496,13 @@ function BookMassageForm({ rmtSetup, user }) {
                 <div className="flex flex-col sm:flex-row gap-3 mt-6">
                   <button
                     onClick={handleUpgradeDuration}
-                    className="flex-1 px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 font-semibold"
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] font-semibold"
                   >
                     Upgrade to {mismatchDetails.giftCardDuration} Minutes
                   </button>
                   <button
                     onClick={handleKeepSelection}
-                    className="flex-1 px-4 py-3 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0]"
                   >
                     Keep {mismatchDetails.selectedDuration} Minutes (Pay
                     Normally)
@@ -406,26 +526,284 @@ function BookMassageForm({ rmtSetup, user }) {
                 <div className="flex flex-col sm:flex-row gap-3 mt-6">
                   <button
                     onClick={handleProceedWithDifference}
-                    className="flex-1 px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 font-semibold"
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] font-semibold"
                   >
                     Proceed ({mismatchDetails.selectedDuration} min, pay
                     difference in person)
                   </button>
                   <button
                     onClick={handleUpgradeDuration}
-                    className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0]"
                   >
                     Change to {mismatchDetails.giftCardDuration} Minutes
                   </button>
                   <button
                     onClick={handleKeepSelection}
-                    className="flex-1 px-4 py-3 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors focus:outline-none focus:ring-2 focus:ring-[#b7c7b0]"
                   >
                     Remove Gift Card
                   </button>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {showAuthRequiredModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowAuthRequiredModal(false);
+            setAuthMode("choice");
+            setAuthError("");
+            setAuthFieldErrors({});
+          }}
+        >
+          <div
+            className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-xl max-w-md w-full p-6 space-y-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {authMode === "choice" && (
+              <>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Sign in to complete booking
+                </h2>
+                <p className="text-gray-700">
+                  You are almost done. Sign in or create an account to finish
+                  booking this appointment.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("signin")}
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors"
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("signup")}
+                    className="flex-1 px-4 py-3 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors"
+                  >
+                    Create account
+                  </button>
+                </div>
+              </>
+            )}
+
+            {authMode === "signin" && (
+              <form className="space-y-3" onSubmit={handleSignInFromModal}>
+                <h2 className="text-2xl font-bold text-gray-900">Sign in</h2>
+                <input
+                  type="email"
+                  required
+                  placeholder="Email"
+                  value={authForm.email}
+                  onChange={(e) => handleAuthFormChange("email", e.target.value)}
+                  className={modalFieldClass("email")}
+                />
+                <input
+                  type="password"
+                  required
+                  placeholder="Password"
+                  value={authForm.password}
+                  onChange={(e) =>
+                    handleAuthFormChange("password", e.target.value)
+                  }
+                  className={modalFieldClass("password")}
+                />
+                {authError ? (
+                  <p className="text-sm text-red-600">{authError}</p>
+                ) : null}
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={authLoading || isSubmitting}
+                    className="flex-1 px-4 py-2 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors disabled:opacity-60"
+                  >
+                    {authLoading || isSubmitting
+                      ? "Processing..."
+                      : "Sign in & book"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("choice");
+                      setAuthError("");
+                      setAuthFieldErrors({});
+                    }}
+                    className="px-4 py-2 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors"
+                  >
+                    Back
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {authMode === "signup" && (
+              <form className="space-y-3" onSubmit={handleSignUpFromModal}>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Create account
+                </h2>
+                <input
+                  type="text"
+                  required
+                  placeholder="First name"
+                  value={authForm.firstName}
+                  onChange={(e) =>
+                    handleAuthFormChange("firstName", e.target.value)
+                  }
+                  className={modalFieldClass("firstName")}
+                />
+                {authFieldErrors?.firstName ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.firstName[0]}
+                  </p>
+                ) : null}
+                <input
+                  type="text"
+                  required
+                  placeholder="Last name"
+                  value={authForm.lastName}
+                  onChange={(e) =>
+                    handleAuthFormChange("lastName", e.target.value)
+                  }
+                  className={modalFieldClass("lastName")}
+                />
+                {authFieldErrors?.lastName ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.lastName[0]}
+                  </p>
+                ) : null}
+                <input
+                  type="text"
+                  placeholder="Preferred name (optional)"
+                  value={authForm.preferredName}
+                  onChange={(e) =>
+                    handleAuthFormChange("preferredName", e.target.value)
+                  }
+                  className={modalFieldClass("preferredName")}
+                />
+                <input
+                  type="tel"
+                  required
+                  placeholder="Phone number"
+                  value={authForm.phoneNumber}
+                  onChange={(e) =>
+                    handleAuthFormChange("phoneNumber", e.target.value)
+                  }
+                  className={modalFieldClass("phoneNumber")}
+                />
+                {authFieldErrors?.phoneNumber ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.phoneNumber[0]}
+                  </p>
+                ) : null}
+                <select
+                  value={authForm.pronouns}
+                  onChange={(e) =>
+                    handleAuthFormChange("pronouns", e.target.value)
+                  }
+                  className={modalFieldClass("pronouns")}
+                >
+                  <option value="">Pronouns (optional)</option>
+                  <option value="they/them">They/them</option>
+                  <option value="she/her">She/her</option>
+                  <option value="he/him">He/him</option>
+                  <option value="other">Other</option>
+                </select>
+                {authFieldErrors?.pronouns ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.pronouns[0]}
+                  </p>
+                ) : null}
+                <h3 className="text-sm font-semibold text-[#1f2a1f] pt-1">
+                  Login information
+                </h3>
+                <input
+                  type="email"
+                  required
+                  placeholder="Email"
+                  value={authForm.email}
+                  onChange={(e) => handleAuthFormChange("email", e.target.value)}
+                  className={modalFieldClass("email")}
+                />
+                {authFieldErrors?.email ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.email[0]}
+                  </p>
+                ) : null}
+                <input
+                  type="password"
+                  required
+                  placeholder="Password"
+                  value={authForm.password}
+                  onChange={(e) =>
+                    handleAuthFormChange("password", e.target.value)
+                  }
+                  className={modalFieldClass("password")}
+                />
+                {authFieldErrors?.password ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.password[0]}
+                  </p>
+                ) : null}
+                <input
+                  type="password"
+                  required
+                  placeholder="Confirm password"
+                  value={authForm.confirmPassword}
+                  onChange={(e) =>
+                    handleAuthFormChange("confirmPassword", e.target.value)
+                  }
+                  className={modalFieldClass("confirmPassword")}
+                />
+                {authFieldErrors?.confirmPassword ? (
+                  <p className="text-sm text-red-600">
+                    {authFieldErrors.confirmPassword[0]}
+                  </p>
+                ) : null}
+                {authError ? (
+                  <p className="text-sm text-red-600">{authError}</p>
+                ) : null}
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={authLoading || isSubmitting}
+                    className="flex-1 px-4 py-2 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors disabled:opacity-60"
+                  >
+                    {authLoading || isSubmitting
+                      ? "Processing..."
+                      : "Create account & book"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("choice");
+                      setAuthError("");
+                      setAuthFieldErrors({});
+                    }}
+                    className="px-4 py-2 bg-[#90a98d] text-[#102010] border border-[#5d6f5a] rounded-md hover:bg-[#7f997c] hover:border-[#4f614d] transition-colors"
+                  >
+                    Back
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAuthRequiredModal(false);
+                setAuthMode("choice");
+                setAuthError("");
+                setAuthFieldErrors({});
+              }}
+              className="w-full px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+            >
+              Continue editing booking details
+            </button>
           </div>
         </div>
       )}
@@ -442,7 +820,7 @@ function BookMassageForm({ rmtSetup, user }) {
               value={formData.RMTLocationId}
               onChange={handleLocationChange}
               required
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+              className={bookingSelectClass}
             >
               <option value="" disabled>
                 Select a location
@@ -459,7 +837,7 @@ function BookMassageForm({ rmtSetup, user }) {
                   ))}
             </select>
             <button
-              className="w-full sm:w-auto px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-800 focus:ring-offset-2"
+              className={bookingButtonFullPrimaryClass}
               type="button"
               onClick={nextStep}
               disabled={!formData.RMTLocationId}
@@ -478,7 +856,7 @@ function BookMassageForm({ rmtSetup, user }) {
               name="duration"
               value={formData.duration}
               onChange={handleServiceChange}
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-gray-800 focus:border-gray-800"
+              className={bookingSelectClass}
             >
               <option value="" disabled>
                 Select a service
@@ -494,14 +872,14 @@ function BookMassageForm({ rmtSetup, user }) {
             </select>
             <div className="flex space-x-4">
               <button
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                className={bookingButtonPrimaryClass}
                 type="button"
                 onClick={prevStep}
               >
                 Back
               </button>
               <button
-                className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-800 focus:ring-offset-2"
+                className={bookingButtonPrimaryClass}
                 type="button"
                 onClick={nextStep}
                 disabled={!formData.duration}
@@ -526,7 +904,7 @@ function BookMassageForm({ rmtSetup, user }) {
                     setCurrentPage((prev) => Math.max(prev - 1, 0))
                   }
                   disabled={currentPage === 0}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50"
+                  className={bookingButtonPrimaryClass}
                 >
                   Previous Dates
                 </button>
@@ -534,7 +912,7 @@ function BookMassageForm({ rmtSetup, user }) {
                   type="button"
                   onClick={() => setCurrentPage((prev) => prev + 1)}
                   disabled={(currentPage + 1) * 6 >= appointmentTimes.length}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50"
+                  className={bookingButtonPrimaryClass}
                 >
                   More Dates
                 </button>
@@ -542,19 +920,11 @@ function BookMassageForm({ rmtSetup, user }) {
             )}
             <div className="flex space-x-4">
               <button
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                className={bookingButtonPrimaryClass}
                 type="button"
                 onClick={prevStep}
               >
                 Back
-              </button>
-              <button
-                className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-800 focus:ring-offset-2"
-                type="button"
-                onClick={nextStep}
-                disabled={!selectedAppointment}
-              >
-                Next Step
               </button>
             </div>
           </div>
@@ -565,7 +935,7 @@ function BookMassageForm({ rmtSetup, user }) {
             <h1 className="text-2xl sm:text-3xl">
               Does the following information look correct?
             </h1>
-            <div className="bg-white shadow-md rounded-lg p-4 space-y-2">
+            <div className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-lg p-4 space-y-2">
               <p>
                 <strong>Location:</strong> {formData.location}
               </p>
@@ -596,7 +966,7 @@ function BookMassageForm({ rmtSetup, user }) {
               </p>
             </div>
 
-            <div className="bg-gray-50 rounded-md p-3">
+            <div className="bg-[#f4f7f2] border border-[#b7c7b0] rounded-md p-3">
               <p className="text-sm text-gray-600 mb-2">
                 Have a gift card? Enter code:
               </p>
@@ -613,7 +983,7 @@ function BookMassageForm({ rmtSetup, user }) {
                   setError(null);
                 }}
                 placeholder="XXXX-XXXX-XXXX"
-                className="w-full p-2 border border-gray-300 rounded-md text-sm focus:ring-gray-800 focus:border-gray-800"
+                className={bookingSelectClass}
                 maxLength={14}
               />
             </div>
@@ -626,7 +996,7 @@ function BookMassageForm({ rmtSetup, user }) {
 
             <div className="flex space-x-4">
               <button
-                className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-800 focus:ring-offset-2 disabled:opacity-50"
+                className={bookingButtonPrimaryClass}
                 type="submit"
                 disabled={isSubmitting}
               >
@@ -659,7 +1029,7 @@ function BookMassageForm({ rmtSetup, user }) {
                 )}
               </button>
               <button
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                className={bookingButtonPrimaryClass}
                 type="button"
                 onClick={prevStep}
                 disabled={isSubmitting}
@@ -1152,3 +1522,5 @@ export default BookMassageForm;
 // }
 
 // export default BookMassageForm;
+
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   loadScheduleData,
   toggleWorkingDay,
@@ -22,49 +22,74 @@ const DAYS_OF_WEEK = [
 
 export default function WeeklyScheduleEditor({
   locationId = "ea5fbe60-7d3c-44ff-9307-b97ea3bc10f9",
+  initialScheduleLocationId = null,
+  initialScheduleData = null,
 }) {
-  const [schedule, setSchedule] = useState({});
-  const [appointmentTimes, setAppointmentTimes] = useState({});
+  const hydrateScheduleData = (rows = []) => {
+    const scheduleData = {};
+    const timesData = {};
+
+    rows.forEach((day) => {
+      const dayId = day.day_of_week;
+      scheduleData[dayId] = {
+        id: day.id,
+        isWorking: day.is_working,
+        dayName: day.day_name,
+        bookingCutoffHours:
+          day.booking_cutoff_hours === null ||
+          day.booking_cutoff_hours === undefined
+            ? 0
+            : Number(day.booking_cutoff_hours),
+      };
+
+      if (day.appointment_times && day.appointment_times.length > 0) {
+        timesData[day.id] = day.appointment_times.map((time) => ({
+          id: time.id,
+          startTime: time.start_time,
+          endTime: time.end_time,
+        }));
+      }
+    });
+
+    return { scheduleData, timesData };
+  };
+
+  const initialHydrated =
+    initialScheduleData && initialScheduleLocationId === locationId
+      ? hydrateScheduleData(initialScheduleData)
+      : { scheduleData: {}, timesData: {} };
+
+  const [schedule, setSchedule] = useState(initialHydrated.scheduleData);
+  const [appointmentTimes, setAppointmentTimes] = useState(initialHydrated.timesData);
   const [editingTimes, setEditingTimes] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(
+    !(initialScheduleData && initialScheduleLocationId === locationId)
+  );
   const [dirtyCutoffDayIds, setDirtyCutoffDayIds] = useState({});
   const [isSavingCutoffs, setIsSavingCutoffs] = useState(false);
   const [cutoffSaveStatus, setCutoffSaveStatus] = useState(null);
+  const skipInitialClientFetchRef = useRef(
+    Boolean(initialScheduleData && initialScheduleLocationId === locationId)
+  );
 
   useEffect(() => {
+    if (
+      skipInitialClientFetchRef.current &&
+      initialScheduleLocationId === locationId
+    ) {
+      skipInitialClientFetchRef.current = false;
+      return;
+    }
     loadData();
-  }, [locationId]);
+  }, [locationId, initialScheduleLocationId]);
 
   const loadData = async () => {
+    setLoading(true);
     try {
       const result = await loadScheduleData(locationId);
 
       if (result.success) {
-        const scheduleData = {};
-        const timesData = {};
-
-        result.data.forEach((day) => {
-          // Map database day_of_week to DAYS_OF_WEEK id
-          const dayId = day.day_of_week;
-          scheduleData[dayId] = {
-            id: day.id,
-            isWorking: day.is_working,
-            dayName: day.day_name,
-            bookingCutoffHours:
-              day.booking_cutoff_hours === null ||
-              day.booking_cutoff_hours === undefined
-                ? 0
-                : Number(day.booking_cutoff_hours),
-          };
-
-          if (day.appointment_times && day.appointment_times.length > 0) {
-            timesData[day.id] = day.appointment_times.map((time) => ({
-              id: time.id,
-              startTime: time.start_time,
-              endTime: time.end_time,
-            }));
-          }
-        });
+        const { scheduleData, timesData } = hydrateScheduleData(result.data);
 
         setSchedule(scheduleData);
         setAppointmentTimes(timesData);
@@ -269,24 +294,24 @@ export default function WeeklyScheduleEditor({
   };
 
   if (loading) {
-    return <div style={{ padding: "16px" }}>Loading schedule...</div>;
+    return <div style={{ padding: "16px", color: "#1f2a1f" }}>Loading schedule...</div>;
   }
 
   return (
     <div
       style={{
         width: "100%",
-        maxWidth: "800px",
+        maxWidth: "100%",
         margin: "0 auto",
-        border: "1px solid #e5e7eb",
-        borderRadius: "8px",
-        backgroundColor: "white",
+        border: "1px solid #b7c7b0",
+        borderRadius: "12px",
+        backgroundColor: "#f4f7f2",
       }}
     >
       <div
         style={{
-          padding: "24px 24px 16px 24px",
-          borderBottom: "1px solid #e5e7eb",
+          padding: "24px",
+          borderBottom: "1px solid #b7c7b0",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -299,17 +324,7 @@ export default function WeeklyScheduleEditor({
         <button
           onClick={handleSaveCutoffChanges}
           disabled={isSavingCutoffs}
-          style={{
-            padding: "8px 14px",
-            backgroundColor: "#2563eb",
-            color: "white",
-            border: "none",
-            borderRadius: "6px",
-            cursor: isSavingCutoffs ? "not-allowed" : "pointer",
-            opacity: isSavingCutoffs ? 0.7 : 1,
-            fontSize: "14px",
-            fontWeight: "500",
-          }}
+          className="px-3.5 py-2 bg-[#c2d5bf] text-[#1a2b1a] border border-[#93ad90] rounded-md hover:bg-[#e8efe4] hover:border-[#9caf97] transition-colors text-sm font-medium disabled:opacity-70 disabled:cursor-not-allowed"
         >
           {isSavingCutoffs ? "Saving..." : "Save changes"}
         </button>
@@ -328,13 +343,13 @@ export default function WeeklyScheduleEditor({
                   ? "1px solid #86efac"
                   : cutoffSaveStatus.type === "error"
                     ? "1px solid #fca5a5"
-                    : "1px solid #d1d5db",
+                    : "1px solid #b7c7b0",
               backgroundColor:
                 cutoffSaveStatus.type === "success"
                   ? "#f0fdf4"
                   : cutoffSaveStatus.type === "error"
                     ? "#fef2f2"
-                    : "#f9fafb",
+                    : "#f4f7f2",
               color:
                 cutoffSaveStatus.type === "success"
                   ? "#166534"
@@ -356,7 +371,7 @@ export default function WeeklyScheduleEditor({
             fontWeight: "600",
             fontSize: "14px",
             color: "#6b7280",
-            borderBottom: "1px solid #e5e7eb",
+            borderBottom: "1px solid #b7c7b0",
             paddingBottom: "8px",
             marginBottom: "16px",
           }}
@@ -383,7 +398,7 @@ export default function WeeklyScheduleEditor({
                 gap: "16px",
                 alignItems: "start",
                 padding: "12px 0",
-                borderBottom: "1px solid #f3f4f6",
+                borderBottom: "1px solid #d6e0d1",
               }}
             >
               {/* Day Name */}
@@ -418,8 +433,9 @@ export default function WeeklyScheduleEditor({
                   style={{
                     width: "110px",
                     padding: "4px 6px",
-                    border: "1px solid #d1d5db",
+                    border: "1px solid #b7c7b0",
                     borderRadius: "4px",
+                    backgroundColor: "#f4f7f2",
                   }}
                 />
               </div>
@@ -452,8 +468,9 @@ export default function WeeklyScheduleEditor({
                         style={{
                           width: "96px",
                           padding: "4px",
-                          border: "1px solid #d1d5db",
+                          border: "1px solid #b7c7b0",
                           borderRadius: "4px",
+                          backgroundColor: "#f4f7f2",
                         }}
                       />
                       <span style={{ color: "#6b7280" }}>-</span>
@@ -470,8 +487,9 @@ export default function WeeklyScheduleEditor({
                         style={{
                           width: "96px",
                           padding: "4px",
-                          border: "1px solid #d1d5db",
+                          border: "1px solid #b7c7b0",
                           borderRadius: "4px",
+                          backgroundColor: "#f4f7f2",
                         }}
                       />
 
@@ -479,29 +497,13 @@ export default function WeeklyScheduleEditor({
                         <>
                           <button
                             onClick={() => handleSaveAppointmentTime(time.id)}
-                            style={{
-                              padding: "4px 8px",
-                              backgroundColor: "#10b981",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                              fontSize: "12px",
-                            }}
+                            className="px-2 py-1 bg-[#c2d5bf] text-[#1a2b1a] border border-[#93ad90] rounded text-xs hover:bg-[#e8efe4] hover:border-[#9caf97] transition-colors"
                           >
                             Save
                           </button>
                           <button
                             onClick={() => handleCancelEdit(time.id)}
-                            style={{
-                              padding: "4px 8px",
-                              backgroundColor: "#6b7280",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                              fontSize: "12px",
-                            }}
+                            className="px-2 py-1 bg-[#c2d5bf] text-[#1a2b1a] border border-[#93ad90] rounded text-xs hover:bg-[#e8efe4] hover:border-[#9caf97] transition-colors"
                           >
                             Cancel
                           </button>
@@ -528,15 +530,7 @@ export default function WeeklyScheduleEditor({
                 {dayData?.isWorking && (
                   <button
                     onClick={() => handleAddAppointmentTime(day.id)}
-                    style={{
-                      padding: "6px 12px",
-                      backgroundColor: "#f9fafb",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "14px",
-                      alignSelf: "flex-start",
-                    }}
+                    className="self-start px-3 py-1.5 bg-[#c2d5bf] text-[#1a2b1a] border border-[#93ad90] rounded text-sm hover:bg-[#e8efe4] hover:border-[#9caf97] transition-colors"
                   >
                     + Add Time
                   </button>

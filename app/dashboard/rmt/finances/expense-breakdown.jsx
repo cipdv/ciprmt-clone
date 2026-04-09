@@ -1,4 +1,4 @@
-export function ExpenseBreakdown({ expensesData }) {
+export function ExpenseBreakdown({ expensesData, deductibleSummary }) {
   const formatCurrency = (value) => {
     return `$${value.toLocaleString("en-US", {
       minimumFractionDigits: 2,
@@ -42,8 +42,8 @@ export function ExpenseBreakdown({ expensesData }) {
   });
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div className="p-6 border-b border-gray-200">
+    <div className="bg-[#f4f7f2] rounded-xl border border-[#b7c7b0]">
+      <div className="p-6 border-b border-[#b7c7b0]">
         <h2 className="text-2xl font-semibold">
           Expense Breakdown by Category
         </h2>
@@ -61,9 +61,9 @@ export function ExpenseBreakdown({ expensesData }) {
               .map(([category, data]) => (
                 <div
                   key={category}
-                  className="border border-gray-200 rounded-lg overflow-hidden"
+                  className="border border-[#b7c7b0] rounded-lg overflow-hidden"
                 >
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <div className="bg-[#f4f7f2] px-4 py-3 border-b border-[#b7c7b0]">
                     <div className="flex justify-between items-center">
                       <h3 className="font-semibold text-lg">{category}</h3>
                       <div className="flex gap-6">
@@ -98,7 +98,7 @@ export function ExpenseBreakdown({ expensesData }) {
                         .map(([subcategory, subData]) => (
                           <div
                             key={subcategory}
-                            className="px-4 py-3 bg-white hover:bg-gray-50"
+                            className="px-4 py-3 bg-[#f4f7f2] hover:bg-[#e8efe4]"
                           >
                             <div className="flex justify-between items-center">
                               <div className="text-sm text-gray-700 pl-4">
@@ -125,9 +125,9 @@ export function ExpenseBreakdown({ expensesData }) {
                 </div>
               ))}
 
-            <div className="rounded-md border-2 border-gray-300 bg-gray-50 p-6 mt-6">
+            <div className="rounded-lg border border-[#b7c7b0] bg-[#f4f7f2] p-6 mt-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold">Total Expenses</h3>
+                <h3 className="text-xl font-bold">Raw Expense Breakdown</h3>
                 <div className="flex gap-6">
                   <div className="text-right">
                     <div className="text-sm text-gray-600 mb-1">Amount</div>
@@ -150,6 +150,48 @@ export function ExpenseBreakdown({ expensesData }) {
                 </div>
               </div>
             </div>
+
+            {deductibleSummary && (
+              <div className="rounded-lg border border-[#b7c7b0] bg-[#f4f7f2] p-6 mt-4">
+                <h3 className="text-xl font-bold mb-3">
+                  Income-Tax Deductible Expense Summary
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-[#f4f7f2] rounded-md border border-[#b7c7b0] p-3">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Deductible Regular Expenses
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {formatCurrency(
+                        Number(deductibleSummary.deductibleRegularExpenses) || 0
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-[#f4f7f2] rounded-md border border-[#b7c7b0] p-3">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Deductible Home Office Expenses
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {formatCurrency(
+                        Number(deductibleSummary.deductibleHomeOfficeExpenses) || 0
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-[#f4f7f2] rounded-md border border-[#b7c7b0] p-3">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Total Deductible Expenses for Income Tax
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {formatCurrency(
+                        Number(
+                          deductibleSummary.totalDeductibleExpensesForIncomeTax
+                        ) || 0
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

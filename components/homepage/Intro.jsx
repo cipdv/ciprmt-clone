@@ -52,7 +52,7 @@ const Intro = () => {
                 </p>
               </div>
               <div>
-                <Link href="/auth/sign-in">
+                <Link href="/book-a-massage">
                   <button className="mt-2 px-6 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-600 transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2">
                     Book a Massage
                   </button>

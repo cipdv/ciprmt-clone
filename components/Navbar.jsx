@@ -189,7 +189,7 @@ const NavItems = ({ session, logout, closeMenu, mobile = false }) => {
               className="hover:text-gray-300 transition duration-300"
               onClick={closeMenu}
             >
-              Schedule
+              Settings
             </Link>
           </li>
           <li className={itemClass}>

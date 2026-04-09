@@ -111,7 +111,10 @@ const Calendar = ({ appointments }) => {
     setLoading(true);
     setError(null);
     try {
-      await deleteAppointment(appointmentId);
+      const result = await deleteAppointment(appointmentId);
+      if (!result?.success) {
+        setError(result?.message || "Failed to delete timeslot");
+      }
     } catch (err) {
       setError(err.message || "Failed to delete timeslot");
     } finally {

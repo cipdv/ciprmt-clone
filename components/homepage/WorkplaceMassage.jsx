@@ -1,7 +1,7 @@
 import React from "react";
 import Image from "next/image";
 
-const WorkplaceMassage = () => {
+const WorkplaceMassage = ({ contactEmail = "cipdevries@ciprmt.com" }) => {
   return (
     <div className="bg-red-200 px-6 py-12 sm:py-16 md:py-20 lg:py-24">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
@@ -29,10 +29,10 @@ const WorkplaceMassage = () => {
               Registered Massage Therapist visit on-site, please contact me by
               email:{" "}
               <a
-                href="mailto:cipdevries@ciprmt.com"
+                href={`mailto:${contactEmail}`}
                 className="underline hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2"
               >
-                cipdevries@ciprmt.com
+                {contactEmail}
               </a>{" "}
               to discuss arranging a visit.
             </p>

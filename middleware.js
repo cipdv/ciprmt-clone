@@ -52,6 +52,7 @@ export async function middleware(request) {
     ![
       "/test-page",
       "/",
+      "/book-a-massage",
       "/signup",
       "/gift",
       "/auth/sign-in",
@@ -86,7 +87,8 @@ export async function middleware(request) {
     currentUser &&
     !request.nextUrl.pathname.startsWith(dashboardPaths[userType]) &&
     !request.nextUrl.pathname.startsWith("/gift") &&
-    !request.nextUrl.pathname.startsWith("/benefits-calculator")
+    !request.nextUrl.pathname.startsWith("/benefits-calculator") &&
+    !request.nextUrl.pathname.startsWith("/book-a-massage")
   ) {
     return NextResponse.redirect(
       new URL(dashboardPaths[userType], request.url)

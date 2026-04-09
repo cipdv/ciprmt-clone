@@ -40,7 +40,11 @@ const NotesToComplete = ({ appointments }) => {
     try {
       setLoading(true);
       setError(null);
-      await deleteAppointment(id);
+      const result = await deleteAppointment(id);
+      if (!result?.success) {
+        setError(result?.message || "Failed to delete appointment");
+        return;
+      }
       router.refresh();
     } catch (err) {
       console.error("Error deleting appointment:", err);

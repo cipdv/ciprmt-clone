@@ -2,13 +2,42 @@
 
 import { useState } from "react";
 import { addAdditionalIncome } from "@/app/_actions";
+import {
+  ADDITIONAL_INCOME_SOURCE_DEFAULTS,
+  ADDITIONAL_INCOME_SOURCE_OPTIONS,
+} from "./additional-income-source-defaults";
 
 export function AdditionalIncomeForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
+  const [selectedSource, setSelectedSource] = useState("");
+  const [includeInIncomeTax, setIncludeInIncomeTax] = useState(true);
+  const [includeInHstQuickMethod, setIncludeInHstQuickMethod] = useState(false);
 
   // Get today's date in YYYY-MM-DD format
   const today = new Date().toISOString().split("T")[0];
+
+  const sourceHelperText = selectedSource
+    ? ADDITIONAL_INCOME_SOURCE_DEFAULTS[selectedSource]?.helperText
+    : null;
+
+  const handleSourceChange = (event) => {
+    const nextSource = event.target.value;
+    setSelectedSource(nextSource);
+
+    if (!nextSource) {
+      setIncludeInIncomeTax(true);
+      setIncludeInHstQuickMethod(false);
+      return;
+    }
+
+    const defaults = ADDITIONAL_INCOME_SOURCE_DEFAULTS[nextSource];
+    if (defaults) {
+      // Re-apply defaults when source changes; user can still override afterward.
+      setIncludeInIncomeTax(Boolean(defaults.includeInIncomeTax));
+      setIncludeInHstQuickMethod(Boolean(defaults.includeInHstQuickMethod));
+    }
+  };
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -26,6 +55,10 @@ export function AdditionalIncomeForm() {
       event.target.reset();
       // Reset date to today after form reset
       event.target.date.value = today;
+      // Reset source/flags to initial empty/default state.
+      setSelectedSource("");
+      setIncludeInIncomeTax(true);
+      setIncludeInHstQuickMethod(false);
     } else {
       setMessage({ type: "error", text: result.error });
     }
@@ -34,15 +67,7 @@ export function AdditionalIncomeForm() {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-xl font-semibold">Add Additional Income</h2>
-        <p className="text-xs text-gray-600 mt-1">
-          Record income from outside sources
-        </p>
-      </div>
-      <div className="p-4">
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
           {/* Amount Field */}
           <div>
             <label
@@ -75,14 +100,52 @@ export function AdditionalIncomeForm() {
               id="source"
               name="source"
               required
+              value={selectedSource}
+              onChange={handleSourceChange}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select a source</option>
-              <option value="Oma">Oma</option>
-              <option value="Outside Work">Outside Work</option>
-              <option value="Other Source">Other Source</option>
-              <option value="Tax Credit">Tax Credit</option>
+              {ADDITIONAL_INCOME_SOURCE_OPTIONS.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
             </select>
+            {sourceHelperText ? (
+              <p className="mt-1 text-xs text-gray-600">{sourceHelperText}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                name="includeInIncomeTax"
+                checked={includeInIncomeTax}
+                onChange={(event) => setIncludeInIncomeTax(event.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm font-medium text-gray-700">
+                Include in income tax
+              </span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                name="includeInHstQuickMethod"
+                checked={includeInHstQuickMethod}
+                onChange={(event) =>
+                  setIncludeInHstQuickMethod(event.target.checked)
+                }
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm font-medium text-gray-700">
+                Include in HST quick method
+              </span>
+            </label>
+            <p className="pl-6 text-xs text-gray-600">
+              Check this only if I billed the client directly and collected HST myself.
+            </p>
           </div>
 
           {/* Details Field */}
@@ -137,12 +200,10 @@ export function AdditionalIncomeForm() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-blue-600 text-white py-2 px-4 text-sm rounded-md font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full px-3 py-2 text-sm rounded-md font-medium text-[#1f2a1f] border border-gray-300 bg-[#f4f7f2] hover:bg-[#e8efe4] focus:outline-none focus:ring-2 focus:ring-[#b7c7b0] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isSubmitting ? "Adding..." : "Add Income"}
           </button>
-        </form>
-      </div>
-    </div>
+    </form>
   );
 }

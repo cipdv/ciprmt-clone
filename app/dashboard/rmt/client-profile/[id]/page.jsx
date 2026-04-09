@@ -309,7 +309,11 @@ const ClientProfilePage = ({ params }) => {
     e.preventDefault();
 
     try {
-      await deleteAppointment(id);
+      const result = await deleteAppointment(id);
+      if (!result?.success) {
+        alert(result?.message || "Failed to delete appointment");
+        return;
+      }
       const refreshed = await getClientProfileData(client.id);
       if (refreshed.success) setTreatments(refreshed.treatments);
     } catch (err) {

@@ -130,8 +130,8 @@ const AppointmentNeedToKnow = ({ location }) => {
             the previous appointment.
           </p>
           <p>
-            There is parking available at the side of the building; you can park
-            in any open spot. There is also free parking for up to 1 hour
+            There is free parking available at the side of the building; you can
+            park in any open spot. There is also free parking for up to 1 hour
             available on Berkeley Street and Shuter Street.
           </p>
         </div>

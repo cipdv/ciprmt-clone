@@ -16,7 +16,7 @@ export function getStandardReminderEmail(appointment) {
       Please plan to arrive no earlier than 10 minutes before your appointment as I may still need time to clean and disinfect after the previous appointment.
 
       Parking:
-      There is parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
+      There is free parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
 
       What to wear:
       Thai massage is practiced over clothing, so please bring comfortable, loose fitting clothing that you will be able to stretch in, including shorts or pants, and a short sleeved t-shirt made from soft natural fabric like cotton, bamboo, or hemp. You may change clothing here, or come fully dressed.
@@ -24,6 +24,7 @@ export function getStandardReminderEmail(appointment) {
       What NOT to wear:
       - Strong scents. Please do not wear perfume or cologne - strong scents can linger and be uncomfortable for some people.
       - Clothing with zippers
+      - Heavy or thick fabrics that are difficult to stretch in, like denim
       - Slippery fabrics like polyester, lycra, spandex
       - Shirts without sleeves (For example: tank tops)
       - Extremely short shorts - aim for knee length or lower
@@ -104,7 +105,7 @@ export function getConsentFormReminderEmail(appointment) {
       Please plan to arrive no earlier than 10 minutes before your appointment as I may still need time to clean and disinfect after the previous appointment.
 
       Parking:
-      There is parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
+      There is free parking available at the side of the building; you can park in any open spot. There is also free parking for up to 1 hour available on Berkeley Street and Shuter Street.
 
       What to wear:
       Thai massage is practiced over clothing, so please bring comfortable, loose fitting clothing that you will be able to stretch in, including shorts or pants, and a short sleeved t-shirt made from soft natural fabric like cotton, bamboo, or hemp. You may change clothing here, or come fully dressed.
@@ -112,6 +113,7 @@ export function getConsentFormReminderEmail(appointment) {
       What NOT to wear:
       - Strong scents. Please do not wear perfume or cologne - strong scents can linger and be uncomfortable for some people.
       - Clothing with zippers
+      - Heavy or thick fabrics that are difficult to stretch in, like denim
       - Slippery fabrics like polyester, lycra, spandex
       - Shirts without sleeves (For example: tank tops)
       - Extremely short shorts - aim for knee length or lower
