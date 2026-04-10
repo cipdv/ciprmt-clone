@@ -220,6 +220,7 @@ export function calculateMonthlyFinance({
     const incomeAccumulator = bucket.additionalIncome.reduce(
       (acc, entry) => {
         const amount = toNumber(entry.amount);
+        const source = String(entry?.source || "").trim().toLowerCase();
         const includeInIncomeTax =
           typeof entry.includeInIncomeTax === "boolean"
             ? entry.includeInIncomeTax
@@ -232,12 +233,20 @@ export function calculateMonthlyFinance({
         acc.grossAdditionalIncomeCollected += amount;
         if (includeInIncomeTax) acc.grossAdditionalIncomeForTax += amount;
         if (includeInHstQuickMethod) acc.grossAdditionalIncomeForHst += amount;
+        if (
+          source === "under-the-table" ||
+          source === "under the table" ||
+          source === "under‑the‑table"
+        ) {
+          acc.underTheTableAdditionalIncomeRevenue += amount;
+        }
         return acc;
       },
       {
         grossAdditionalIncomeCollected: 0,
         grossAdditionalIncomeForTax: 0,
         grossAdditionalIncomeForHst: 0,
+        underTheTableAdditionalIncomeRevenue: 0,
       }
     );
 
@@ -284,9 +293,11 @@ export function calculateMonthlyFinance({
 
     // Planning-only monthly estimate:
     // tax is estimated after HST remittance, before any expense deductions.
+    // Include under-the-table income streams in this planning cash view.
     const netIncomeBeforeExpensesIncludingUnderTable =
       (incomeTaxIncludedRevenue - netHstToRemit - estimatedIncomeTaxBeforeExpenses) +
-      excludedAdditionalTreatmentsRevenue;
+      excludedAdditionalTreatmentsRevenue +
+      incomeAccumulator.underTheTableAdditionalIncomeRevenue;
 
     // Formal business-profit estimate:
     // tax base is reduced by deductible expenses.
@@ -314,6 +325,8 @@ export function calculateMonthlyFinance({
       grossAdditionalIncomeCollected: incomeAccumulator.grossAdditionalIncomeCollected,
       grossAdditionalIncomeForTax: incomeAccumulator.grossAdditionalIncomeForTax,
       grossAdditionalIncomeForHst: incomeAccumulator.grossAdditionalIncomeForHst,
+      underTheTableAdditionalIncomeRevenue:
+        incomeAccumulator.underTheTableAdditionalIncomeRevenue,
       excludedAdditionalTreatmentsRevenue,
       totalGrossRevenueCollectedInclHst,
       incomeTaxIncludedRevenue,
