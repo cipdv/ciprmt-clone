@@ -69,7 +69,7 @@ async function handleRequest(request) {
 
   try {
     const benefitRunDay = Number.parseInt(
-      process.env.CRON_BENEFIT_REMINDER_DAY || "5",
+      process.env.CRON_BENEFIT_REMINDER_DAY || "10",
       10,
     );
 
