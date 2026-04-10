@@ -5755,8 +5755,16 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       finalPrice = Number.parseFloat(notes.price);
     }
 
+    // Persist normalized price only; do not store the "other" selector value.
+    const notesForStorage = {
+      ...notes,
+      price: finalPrice,
+    };
+    delete notesForStorage.otherPrice;
+
     // Save encrypted when key exists; keep JSON fallback for environments without key.
-    const encryptedNotes = encryptData(notes) || JSON.stringify(notes);
+    const encryptedNotes =
+      encryptData(notesForStorage) || JSON.stringify(notesForStorage);
 
     const receiptIssued =
       typeof notes?.receiptIssued === "boolean"
@@ -5801,8 +5809,40 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
     } else {
       // Store full notes in additional_treatments only
       await sql`
-        INSERT INTO additional_treatments
-        SELECT * FROM treatments
+        INSERT INTO additional_treatments (
+          id,
+          client_id,
+          rmt_id,
+          date,
+          appointment_begins_at,
+          appointment_ends_at,
+          status,
+          location,
+          duration,
+          workplace,
+          price,
+          payment_type,
+          encrypted_treatment_notes,
+          treatment_plan_id,
+          receipt_issued
+        )
+        SELECT
+          id,
+          client_id,
+          rmt_id,
+          date,
+          appointment_begins_at,
+          appointment_ends_at,
+          status,
+          location,
+          duration,
+          workplace,
+          price,
+          payment_type,
+          encrypted_treatment_notes,
+          treatment_plan_id,
+          receipt_issued
+        FROM treatments
         WHERE id = ${treatmentId}
         ON CONFLICT (id) DO NOTHING
       `;
@@ -11057,7 +11097,7 @@ export async function getAdditionalTreatmentsRevenueByMonth(year) {
       LEFT JOIN users u ON t.client_id = u.id
       WHERE EXTRACT(YEAR FROM t.date) = ${year}
         AND t.status = 'completed'
-        AND t.date < CURRENT_DATE
+        AND t.date <= CURRENT_DATE
       ORDER BY t.date
     `;
     const result = queryResult.rows || queryResult;
