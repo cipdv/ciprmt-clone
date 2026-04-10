@@ -593,12 +593,17 @@ function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
             )}
 
             {authMode === "signin" && (
-              <form className="space-y-3" onSubmit={handleSignInFromModal}>
+              <form
+                className="space-y-3"
+                onSubmit={handleSignInFromModal}
+                autoComplete="on"
+              >
                 <h2 className="text-2xl font-bold text-gray-900">Sign in</h2>
                 <input
                   type="email"
                   required
                   placeholder="Email"
+                  autoComplete="username"
                   value={authForm.email}
                   onChange={(e) => handleAuthFormChange("email", e.target.value)}
                   className={modalFieldClass("email")}
@@ -607,6 +612,7 @@ function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
                   type="password"
                   required
                   placeholder="Password"
+                  autoComplete="current-password"
                   value={authForm.password}
                   onChange={(e) =>
                     handleAuthFormChange("password", e.target.value)
@@ -642,7 +648,11 @@ function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
             )}
 
             {authMode === "signup" && (
-              <form className="space-y-3" onSubmit={handleSignUpFromModal}>
+              <form
+                className="space-y-3"
+                onSubmit={handleSignUpFromModal}
+                autoComplete="on"
+              >
                 <h2 className="text-2xl font-bold text-gray-900">
                   Create account
                 </h2>
@@ -725,6 +735,7 @@ function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
                   type="email"
                   required
                   placeholder="Email"
+                  autoComplete="username"
                   value={authForm.email}
                   onChange={(e) => handleAuthFormChange("email", e.target.value)}
                   className={modalFieldClass("email")}
@@ -738,6 +749,7 @@ function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
                   type="password"
                   required
                   placeholder="Password"
+                  autoComplete="new-password"
                   value={authForm.password}
                   onChange={(e) =>
                     handleAuthFormChange("password", e.target.value)
@@ -753,6 +765,7 @@ function BookMassageForm({ rmtSetup, user, requireAuthOnBook = false }) {
                   type="password"
                   required
                   placeholder="Confirm password"
+                  autoComplete="new-password"
                   value={authForm.confirmPassword}
                   onChange={(e) =>
                     handleAuthFormChange("confirmPassword", e.target.value)

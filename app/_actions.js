@@ -9955,9 +9955,14 @@ export async function sendAppointmentReminders() {
   }
 }
 
-export async function sendBenefitReminders() {
+export async function sendBenefitReminders(options = {}) {
   const lock = CRON_LOCK_KEYS.sendBenefitReminders;
   let lockAcquired = false;
+  const dryRun = options?.dryRun === true;
+  const nowOverride =
+    options?.now && !Number.isNaN(new Date(options.now).getTime())
+      ? new Date(options.now)
+      : null;
 
   try {
     const { rows: lockRows } = await sql`
@@ -10015,14 +10020,23 @@ export async function sendBenefitReminders() {
       return {
         success: true,
         message: "No clients eligible for benefit reminder checks.",
+        data: {
+          candidatesCount: 0,
+          dueCount: 0,
+          sentCount: 0,
+          failedCount: 0,
+          skippedByReason: {},
+        },
       };
     }
 
     const transporter = getEmailTransporter();
     await ensureEmailIdempotencyTable();
-    const torontoToday = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "America/Toronto" }),
-    );
+    const torontoToday =
+      nowOverride ||
+      new Date(
+        new Date().toLocaleString("en-US", { timeZone: "America/Toronto" }),
+      );
 
     const weeksBetween = (startDate, endDate) => {
       const ms = endDate.getTime() - startDate.getTime();
@@ -10057,6 +10071,7 @@ export async function sendBenefitReminders() {
 
     let sentCount = 0;
     let failedCount = 0;
+    const skippedByReason = {};
 
     for (const client of dueClients) {
       let claimedKey = null;
@@ -10073,6 +10088,12 @@ export async function sendBenefitReminders() {
           : reminderAnchor.toISOString().split("T")[0];
         const idempotencyKey = `benefit-reminder/${client.id}/${reminderAnchorKey}`;
 
+        // Dry run should not mutate idempotency state.
+        if (dryRun) {
+          skippedByReason.dry_run = (skippedByReason.dry_run || 0) + 1;
+          continue;
+        }
+
         const claimResult = await claimEmailIdempotencyKey({
           key: idempotencyKey,
           emailType: "benefit_reminder",
@@ -10087,6 +10108,8 @@ export async function sendBenefitReminders() {
         });
 
         if (!claimResult.shouldSend) {
+          const reason = claimResult.reason || "unknown";
+          skippedByReason[reason] = (skippedByReason[reason] || 0) + 1;
           continue;
         }
 
@@ -10145,7 +10168,16 @@ export async function sendBenefitReminders() {
 
     return {
       success: true,
-      message: `Benefit reminders processed. Sent: ${sentCount}, Failed: ${failedCount}, Considered: ${dueClients.length}`,
+      message: `Benefit reminders processed. Candidates: ${candidates.length}, Due: ${dueClients.length}, Sent: ${sentCount}, Failed: ${failedCount}.`,
+      data: {
+        candidatesCount: candidates.length,
+        dueCount: dueClients.length,
+        sentCount,
+        failedCount,
+        skippedByReason,
+        dryRun,
+        torontoToday: torontoToday.toISOString(),
+      },
     };
   } catch (error) {
     console.error("Error sending benefit reminders:", error);
@@ -12847,4 +12879,5 @@ export async function purchaseGiftCard(data) {
     };
   }
 }
+
 

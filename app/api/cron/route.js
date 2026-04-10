@@ -17,6 +17,37 @@ export async function POST(request) {
 }
 
 async function handleRequest(request) {
+  const { searchParams, hostname } = new URL(request.url);
+  const runTarget = (searchParams.get("run") || "").trim().toLowerCase();
+  const forceBenefitRun =
+    searchParams.get("force") === "true" ||
+    searchParams.get("forceBenefitReminders") === "true";
+  const dryRun =
+    searchParams.get("dryRun") === "true" ||
+    searchParams.get("benefitDryRun") === "true";
+  const nowParam = searchParams.get("now");
+  const isLocalHost =
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const isLocalDebugRequest = searchParams.get("debug") === "benefit-reminders";
+
+  // Local-only debug shortcut to avoid curl headers while testing on localhost.
+  // Disabled automatically in production.
+  if (
+    isLocalDebugRequest &&
+    process.env.NODE_ENV !== "production" &&
+    isLocalHost
+  ) {
+    const benefitReminderResult = await sendBenefitReminders({
+      dryRun,
+      now: nowParam || null,
+    });
+    return NextResponse.json({
+      message: "Local debug benefit reminder run completed",
+      executionTime: new Date().toISOString(),
+      dryRun,
+      result: benefitReminderResult,
+    });
+  }
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
@@ -37,6 +68,26 @@ async function handleRequest(request) {
   }
 
   try {
+    const benefitRunDay = Number.parseInt(
+      process.env.CRON_BENEFIT_REMINDER_DAY || "5",
+      10,
+    );
+
+    // Secure manual trigger for troubleshooting benefit reminders:
+    // /api/cron?run=benefit-reminders&force=true&dryRun=true
+    if (runTarget === "benefit-reminders") {
+      const benefitReminderResult = await sendBenefitReminders({
+        dryRun,
+        now: nowParam || null,
+      });
+      return NextResponse.json({
+        message: "Manual benefit reminder run completed",
+        executionTime: new Date().toISOString(),
+        dryRun,
+        result: benefitReminderResult,
+      });
+    }
+
     await resetStaleReschedulingAppointments();
 
     await addAppointments();
@@ -52,16 +103,24 @@ async function handleRequest(request) {
       }).format(new Date()),
     );
 
-    if (torontoDayOfMonth === 5) {
-      const maintenanceResult = await autoCompleteMonthlyMaintenanceLog();
-      if (!maintenanceResult.success) {
-        throw new Error(
-          maintenanceResult.error ||
-            "Failed to auto-complete monthly maintenance log",
-        );
+    let benefitReminderResult = null;
+    if (forceBenefitRun || torontoDayOfMonth === benefitRunDay) {
+      // Keep monthly maintenance tied to scheduled day only.
+      // Forced benefit reminder runs should not create maintenance logs.
+      if (!forceBenefitRun) {
+        const maintenanceResult = await autoCompleteMonthlyMaintenanceLog();
+        if (!maintenanceResult.success) {
+          throw new Error(
+            maintenanceResult.error ||
+              "Failed to auto-complete monthly maintenance log",
+          );
+        }
       }
 
-      const benefitReminderResult = await sendBenefitReminders();
+      benefitReminderResult = await sendBenefitReminders({
+        dryRun,
+        now: nowParam || null,
+      });
       if (!benefitReminderResult.success) {
         throw new Error(
           benefitReminderResult.message ||
@@ -73,6 +132,7 @@ async function handleRequest(request) {
     return NextResponse.json({
       message: "Cron job executed successfully",
       executionTime: new Date().toISOString(),
+      benefitReminders: benefitReminderResult,
     });
   } catch (error) {
     console.error("Error executing cron job:", error);

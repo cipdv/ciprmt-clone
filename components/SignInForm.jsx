@@ -38,6 +38,7 @@ const SignInForm = ({ showSignUpLink = true }) => {
   return (
     <form
       action={formAction}
+      autoComplete="on"
       className="bg-[#f4f7f2] border border-[#b7c7b0] p-6 rounded-xl mt-4 w-full max-w-md space-y-4"
     >
       <h1 className="text-2xl font-bold mb-4">Sign in</h1>
@@ -45,6 +46,8 @@ const SignInForm = ({ showSignUpLink = true }) => {
         type="email"
         placeholder="Email"
         name="email"
+        id="email"
+        autoComplete="username"
         required
         className="w-full p-2 border border-[#b7c7b0] bg-[#f4f7f2] rounded-md focus:ring-[#b7c7b0] focus:border-[#80947a] hover:bg-[#e8efe4] transition-colors"
       />
@@ -54,6 +57,8 @@ const SignInForm = ({ showSignUpLink = true }) => {
           type={showPassword ? "text" : "password"}
           placeholder="Password"
           name="password"
+          id="password"
+          autoComplete="current-password"
           required
           className="w-full p-2 border border-[#b7c7b0] bg-[#f4f7f2] rounded-md focus:ring-[#b7c7b0] focus:border-[#80947a] hover:bg-[#e8efe4] transition-colors"
         />
