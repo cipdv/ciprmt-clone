@@ -1,8 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { saveTreatmentNotes, getTreatmentsForPlan } from "@/app/_actions";
+import {
+  saveTreatmentNotes,
+  getTreatmentsForPlan,
+  getDefaultTreatmentNoteTemplates,
+} from "@/app/_actions";
 import { useRouter } from "next/navigation";
+
+const EMPTY_FINDING = {
+  finding: "",
+  treatment: "",
+  subjectiveResults: "",
+  objectiveResults: "",
+  selfCare: "",
+};
+
+const LATEST_PLAN_TEMPLATE_VALUE = "__latest_from_plan__";
 
 const TreatmentNotesForm = ({
   treatment,
@@ -19,13 +33,7 @@ const TreatmentNotesForm = ({
     reasonForMassage: treatment?.consentForm?.reasonForMassage || "",
     generalTreatment: "",
     findings: [
-      {
-        finding: "",
-        treatment: "",
-        subjectiveResults: "",
-        objectiveResults: "",
-        selfCare: "",
-      },
+      { ...EMPTY_FINDING },
     ],
     referToHCP: "none given",
     notes: "",
@@ -34,12 +42,17 @@ const TreatmentNotesForm = ({
     otherPrice: "",
     giftCardCode: treatment?.code || "",
     receiptIssued: true,
+    saveAsDefaultTreatmentNote: false,
+    defaultTreatmentNoteTitle: "",
   });
 
   const [previousTreatments, setPreviousTreatments] = useState([]);
   const [showPreviousTreatments, setShowPreviousTreatments] = useState(false);
   const [loadingPreviousTreatments, setLoadingPreviousTreatments] =
     useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [defaultTemplates, setDefaultTemplates] = useState([]);
+  const [loadingDefaultTemplates, setLoadingDefaultTemplates] = useState(false);
 
   useEffect(() => {
     async function fetchPreviousTreatments() {
@@ -55,6 +68,29 @@ const TreatmentNotesForm = ({
     }
     fetchPreviousTreatments();
   }, [planId, treatment?.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function fetchDefaultTemplates() {
+      setLoadingDefaultTemplates(true);
+      const result = await getDefaultTreatmentNoteTemplates();
+      if (!active) return;
+
+      if (result?.success) {
+        setDefaultTemplates(result.data || []);
+      } else {
+        setDefaultTemplates([]);
+      }
+      setLoadingDefaultTemplates(false);
+    }
+
+    fetchDefaultTemplates();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -75,6 +111,92 @@ const TreatmentNotesForm = ({
     }
   };
 
+  const handleTemplateChange = (e) => {
+    const templateId = e.target.value;
+    setSelectedTemplate(templateId);
+
+    if (!templateId) {
+      return;
+    }
+
+    if (templateId === LATEST_PLAN_TEMPLATE_VALUE) {
+      const latestWithNotes = [...previousTreatments]
+        .filter((item) => item?.treatmentNotes)
+        .sort((a, b) => {
+          const aDate = new Date(a?.date || 0).getTime();
+          const bDate = new Date(b?.date || 0).getTime();
+          if (aDate !== bDate) return bDate - aDate;
+
+          const aTime = String(a?.appointmentBeginsAt || "");
+          const bTime = String(b?.appointmentBeginsAt || "");
+          return bTime.localeCompare(aTime);
+        })[0];
+
+      if (!latestWithNotes?.treatmentNotes) {
+        return;
+      }
+
+      const previousNotes = latestWithNotes.treatmentNotes;
+      const previousFindings =
+        Array.isArray(previousNotes?.findings) && previousNotes.findings.length > 0
+          ? previousNotes.findings.map((findingItem) => ({
+              finding: findingItem?.finding || "",
+              treatment: findingItem?.treatment || "",
+              subjectiveResults: findingItem?.subjectiveResults || "",
+              objectiveResults: findingItem?.objectiveResults || "",
+              selfCare: findingItem?.selfCare || "",
+            }))
+          : [
+              {
+                finding:
+                  typeof previousNotes?.findings === "string"
+                    ? previousNotes.findings
+                    : "",
+                treatment:
+                  previousNotes?.treatment?.specificTreatment ||
+                  previousNotes?.treatment ||
+                  "",
+                subjectiveResults:
+                  previousNotes?.results?.subjectiveResults || "",
+                objectiveResults:
+                  previousNotes?.results?.objectiveResults || "",
+                selfCare: previousNotes?.remex || "",
+              },
+            ];
+
+      setFormData((prevData) => ({
+        ...prevData,
+        reasonForMassage:
+          previousNotes?.reasonForMassage || prevData.reasonForMassage,
+        findings:
+          previousFindings.length > 0 ? previousFindings : [{ ...EMPTY_FINDING }],
+        generalTreatment:
+          previousNotes?.generalTreatment ||
+          previousNotes?.treatment?.generalTreatment ||
+          "",
+        referToHCP: previousNotes?.referToHCP || prevData.referToHCP,
+        notes: previousNotes?.notes || "",
+      }));
+      return;
+    }
+
+    const template = defaultTemplates.find((item) => item.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    const templateFindings =
+      Array.isArray(template.findings) && template.findings.length > 0
+        ? template.findings
+        : [{ ...EMPTY_FINDING }];
+
+    setFormData((prevData) => ({
+      ...prevData,
+      findings: templateFindings,
+      generalTreatment: template.generalTreatment || "",
+    }));
+  };
+
   const handleFindingChange = (index, field, value) => {
     setFormData((prevData) => {
       const newFindings = [...prevData.findings];
@@ -91,18 +213,12 @@ const TreatmentNotesForm = ({
 
   const addFinding = () => {
     setFormData((prevData) => ({
-      ...prevData,
-      findings: [
-        ...prevData.findings,
-        {
-          finding: "",
-          treatment: "",
-          subjectiveResults: "",
-          objectiveResults: "",
-          selfCare: "",
-        },
-      ],
-    }));
+        ...prevData,
+        findings: [
+          ...prevData.findings,
+          { ...EMPTY_FINDING },
+        ],
+      }));
   };
 
   const removeFinding = (index) => {
@@ -319,6 +435,33 @@ const TreatmentNotesForm = ({
         </div>
       </div>
 
+      <div>
+        <label className="block text-sm font-medium text-gray-700">
+          Treatment Note Options
+        </label>
+        <select
+          value={selectedTemplate}
+          onChange={handleTemplateChange}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+        >
+          <option value="">Complete manually</option>
+          <option
+            value={LATEST_PLAN_TEMPLATE_VALUE}
+            disabled={previousTreatments.filter((item) => item?.treatmentNotes).length === 0}
+          >
+            Use latest from this treatment plan
+          </option>
+          {defaultTemplates.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.title}
+            </option>
+          ))}
+        </select>
+        {loadingDefaultTemplates ? (
+          <p className="mt-1 text-xs text-gray-500">Loading defaults...</p>
+        ) : null}
+      </div>
+
       {/* Findings blocks */}
       <div className="space-y-6">
         {formData.findings.map((finding, index) => (
@@ -458,6 +601,33 @@ const TreatmentNotesForm = ({
           onChange={handleChange}
           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
         />
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            id="saveAsDefaultTreatmentNote"
+            name="saveAsDefaultTreatmentNote"
+            type="checkbox"
+            checked={formData.saveAsDefaultTreatmentNote}
+            onChange={handleChange}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <label
+            htmlFor="saveAsDefaultTreatmentNote"
+            className="text-sm font-medium text-gray-700"
+          >
+            Save as default treatment note
+          </label>
+        </div>
+        {formData.saveAsDefaultTreatmentNote ? (
+          <input
+            type="text"
+            name="defaultTreatmentNoteTitle"
+            value={formData.defaultTreatmentNoteTitle}
+            onChange={handleChange}
+            placeholder="Default treatment note title"
+            className="mt-2 block w-full px-3 py-2 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            required
+          />
+        ) : null}
       </div>
 
       <div>

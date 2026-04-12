@@ -5692,6 +5692,67 @@ export async function getTreatmentAndPlans(treatmentId) {
   }
 }
 
+async function ensureDefaultTreatmentNotesTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS default_treatment_notes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      rmt_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      reason_for_massage TEXT,
+      findings JSONB NOT NULL DEFAULT '[]'::jsonb,
+      general_treatment TEXT,
+      refer_to_hcp TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_default_treatment_notes_rmt_created
+    ON default_treatment_notes (rmt_id, created_at DESC)
+  `;
+}
+
+export async function getDefaultTreatmentNoteTemplates() {
+  try {
+    const session = await getSession();
+    if (!session || !session.resultObj) {
+      throw new Error("Unauthorized: User not logged in");
+    }
+
+    if (session.resultObj.userType !== "rmt") {
+      throw new Error("Unauthorized: Only RMTs can access default treatment notes");
+    }
+
+    await ensureDefaultTreatmentNotesTable();
+
+    const { rows } = await sql`
+      SELECT
+        id,
+        title,
+        reason_for_massage AS "reasonForMassage",
+        findings,
+        general_treatment AS "generalTreatment",
+        refer_to_hcp AS "referToHCP",
+        notes,
+        created_at AS "createdAt"
+      FROM default_treatment_notes
+      WHERE rmt_id = ${session.resultObj.id}
+      ORDER BY created_at DESC
+    `;
+
+    return { success: true, data: rows || [] };
+  } catch (error) {
+    console.error("Error fetching default treatment notes:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to fetch default treatment notes",
+      data: [],
+    };
+  }
+}
+
 export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
   try {
     const session = await getSession();
@@ -5761,6 +5822,8 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
       price: finalPrice,
     };
     delete notesForStorage.otherPrice;
+    delete notesForStorage.saveAsDefaultTreatmentNote;
+    delete notesForStorage.defaultTreatmentNoteTitle;
 
     // Save encrypted when key exists; keep JSON fallback for environments without key.
     const encryptedNotes =
@@ -5774,6 +5837,19 @@ export async function saveTreatmentNotes(treatmentId, treatmentPlanId, notes) {
           : notes?.receiptIssued === "false"
             ? false
             : true;
+    const saveAsDefaultTreatmentNote =
+      notes?.saveAsDefaultTreatmentNote === true ||
+      notes?.saveAsDefaultTreatmentNote === "true";
+    const defaultTreatmentNoteTitle = String(
+      notes?.defaultTreatmentNoteTitle || "",
+    ).trim();
+
+    if (saveAsDefaultTreatmentNote && !defaultTreatmentNoteTitle) {
+      return {
+        success: false,
+        message: "Please enter a title to save this default treatment note.",
+      };
+    }
 
     let updatedTreatment = [];
 
@@ -6681,6 +6757,32 @@ export async function searchUsers(query) {
     const normalizedQuery = String(query || "").trim();
     if (!normalizedQuery) {
       return [];
+    }
+
+    if (saveAsDefaultTreatmentNote) {
+      await ensureDefaultTreatmentNotesTable();
+
+      await sql`
+        INSERT INTO default_treatment_notes (
+          rmt_id,
+          title,
+          reason_for_massage,
+          findings,
+          general_treatment,
+          refer_to_hcp,
+          notes,
+          updated_at
+        ) VALUES (
+          ${session.resultObj.id},
+          ${defaultTreatmentNoteTitle},
+          ${notes?.reasonForMassage || null},
+          ${JSON.stringify(Array.isArray(notes?.findings) ? notes.findings : [])}::jsonb,
+          ${notes?.generalTreatment || null},
+          ${notes?.referToHCP || null},
+          ${notes?.notes || null},
+          NOW()
+        )
+      `;
     }
 
     // Use ILIKE for case-insensitive search in Postgres
