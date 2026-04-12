@@ -10031,13 +10031,20 @@ export async function sendBenefitReminders(options = {}) {
           latest.last_completed_date AS "lastCompletedDate"
         FROM users u
         JOIN LATERAL (
-          SELECT t.date AS last_completed_date
-          FROM treatments t
-          WHERE t.client_id = u.id
-            AND t.status = 'completed'
-            AND t.date IS NOT NULL
-          ORDER BY t.date DESC
-          LIMIT 1
+          SELECT MAX(completed.date) AS last_completed_date
+          FROM (
+            SELECT t.date
+            FROM treatments t
+            WHERE t.client_id = u.id
+              AND t.status = 'completed'
+              AND t.date IS NOT NULL
+            UNION ALL
+            SELECT at.date
+            FROM additional_treatments at
+            WHERE at.client_id = u.id
+              AND at.status = 'completed'
+              AND at.date IS NOT NULL
+          ) completed
         ) latest ON TRUE
         WHERE u.send_reminders = TRUE
           AND u.reminder_frequency IS NOT NULL
