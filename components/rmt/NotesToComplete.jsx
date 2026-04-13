@@ -22,6 +22,11 @@ const NotesToComplete = ({ appointments }) => {
 
   const handleDNSClick = async (e, id) => {
     e.stopPropagation();
+    const shouldMarkDns = window.confirm(
+      "Are you sure you want to mark this appointment as did not show?",
+    );
+    if (!shouldMarkDns) return;
+
     try {
       setLoading(true);
       setError(null);
@@ -37,6 +42,11 @@ const NotesToComplete = ({ appointments }) => {
 
   const handleDeleteClick = async (e, id) => {
     e.stopPropagation();
+    const shouldDelete = window.confirm(
+      "Are you sure you want to delete this appointment?",
+    );
+    if (!shouldDelete) return;
+
     try {
       setLoading(true);
       setError(null);

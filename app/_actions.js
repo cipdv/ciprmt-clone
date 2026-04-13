@@ -6759,32 +6759,6 @@ export async function searchUsers(query) {
       return [];
     }
 
-    if (saveAsDefaultTreatmentNote) {
-      await ensureDefaultTreatmentNotesTable();
-
-      await sql`
-        INSERT INTO default_treatment_notes (
-          rmt_id,
-          title,
-          reason_for_massage,
-          findings,
-          general_treatment,
-          refer_to_hcp,
-          notes,
-          updated_at
-        ) VALUES (
-          ${session.resultObj.id},
-          ${defaultTreatmentNoteTitle},
-          ${notes?.reasonForMassage || null},
-          ${JSON.stringify(Array.isArray(notes?.findings) ? notes.findings : [])}::jsonb,
-          ${notes?.generalTreatment || null},
-          ${notes?.referToHCP || null},
-          ${notes?.notes || null},
-          NOW()
-        )
-      `;
-    }
-
     // Use ILIKE for case-insensitive search in Postgres
     const searchPattern = `%${normalizedQuery}%`;
 

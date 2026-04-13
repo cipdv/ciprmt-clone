@@ -287,6 +287,10 @@ const ClientProfilePage = ({ params }) => {
     e.preventDefault();
 
     if (!treatmentId) return;
+    const shouldMarkDns = window.confirm(
+      "Are you sure you want to mark this appointment as did not show?",
+    );
+    if (!shouldMarkDns) return;
 
     setDnsLoading(true);
     try {
@@ -307,6 +311,10 @@ const ClientProfilePage = ({ params }) => {
   const handleDeleteAppointment = async (e, id) => {
     e.stopPropagation();
     e.preventDefault();
+    const shouldDelete = window.confirm(
+      "Are you sure you want to delete this appointment?",
+    );
+    if (!shouldDelete) return;
 
     try {
       const result = await deleteAppointment(id);
