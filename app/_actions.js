@@ -9589,6 +9589,131 @@ export async function resetStaleReschedulingAppointments() {
   }
 }
 
+const CRON_LOCATION_MONGODB_ID = "673a415085f1bd8631e7a426";
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+function formatDateOnly(date) {
+  return date.toISOString().split("T")[0];
+}
+
+function parseDateOnly(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function getCronLocation() {
+  const { rows: locations } = await sql`
+    SELECT 
+      id, 
+      user_id
+    FROM rmt_locations
+    WHERE mongodb_id = ${CRON_LOCATION_MONGODB_ID}
+  `;
+
+  if (!locations || locations.length === 0) {
+    return null;
+  }
+
+  return locations[0];
+}
+
+async function getLocationSchedule(locationId) {
+  const { rows } = await sql`
+    SELECT 
+      wd.id,
+      wd.day_name,
+      wd.is_working,
+      wd.booking_cutoff_hours AS "bookingCutoffHours",
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'id', at.id,
+            'start_time', at.start_time,
+            'end_time', at.end_time
+          )
+        ) FILTER (WHERE at.id IS NOT NULL),
+        '[]'::json
+      ) AS appointment_times
+    FROM work_days2 wd
+    LEFT JOIN appointment_times2 at ON wd.id = at.work_day_id
+    WHERE wd.location_id = ${locationId}
+    GROUP BY wd.id, wd.day_name, wd.is_working, wd.booking_cutoff_hours
+  `;
+
+  const scheduleByDay = new Map();
+  for (const row of rows || []) {
+    scheduleByDay.set(row.day_name, {
+      id: row.id,
+      dayName: row.day_name,
+      isWorking: row.is_working,
+      bookingCutoffHours: row.bookingCutoffHours || 0,
+      appointmentTimes: row.appointment_times || [],
+    });
+  }
+
+  return scheduleByDay;
+}
+
+async function insertAvailableAppointmentsForDate({
+  location,
+  workDay,
+  formattedDate,
+}) {
+  let insertedCount = 0;
+
+  for (const timeSlot of workDay.appointmentTimes) {
+    const insertResult = await sql`
+      INSERT INTO treatments (
+        rmt_id,
+        rmt_location_id,
+        date,
+        appointment_window_start,
+        appointment_window_end,
+        booking_cutoff_hours,
+        status,
+        created_at
+      )
+      SELECT
+        ${location.user_id},
+        ${location.id},
+        ${formattedDate},
+        ${timeSlot.start_time},
+        ${timeSlot.end_time},
+        ${workDay.bookingCutoffHours || 0},
+        'available',
+        CURRENT_TIMESTAMP
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM treatments t
+        WHERE t.rmt_location_id = ${location.id}
+          AND t.date = ${formattedDate}::date
+          AND t.appointment_window_start = ${timeSlot.start_time}::time
+          AND t.appointment_window_end = ${timeSlot.end_time}::time
+          AND t.status = 'available'
+      )
+      RETURNING id
+    `;
+
+    if (insertResult.rows.length > 0) {
+      insertedCount++;
+    }
+  }
+
+  return insertedCount;
+}
+
 export async function addAppointments() {
   const lock = CRON_LOCK_KEYS.addAppointments;
   let lockAcquired = false;
@@ -9608,112 +9733,33 @@ export async function addAppointments() {
 
 
     const today = new Date();
-    const currentDay = [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-    ][today.getDay()];
+    const currentDay = DAY_NAMES[today.getDay()];
+    const location = await getCronLocation();
 
-    // Fetch the specific RMT location
-    // Note: Using the MongoDB ID from the original function
-    const mongodbId = "673a415085f1bd8631e7a426";
-
-    const { rows: locations } = await sql`
-      SELECT 
-        id, 
-        user_id
-      FROM rmt_locations
-      WHERE mongodb_id = ${mongodbId}
-    `;
-
-    if (!locations || locations.length === 0) {
+    if (!location) {
       return { success: false, message: "RMT location not found" };
     }
 
-    const location = locations[0];
+    const scheduleByDay = await getLocationSchedule(location.id);
+    const workDay = scheduleByDay.get(currentDay);
 
-    // Get work day for the current day of the week
-    const { rows: workDays } = await sql`
-      SELECT 
-        id,
-        booking_cutoff_hours AS "bookingCutoffHours"
-      FROM work_days2
-      WHERE 
-        location_id = ${location.id} AND
-        day_name = ${currentDay} AND
-        is_working = true
-    `;
-
-    if (!workDays || workDays.length === 0) {
+    if (!workDay || !workDay.isWorking) {
       return { success: false, message: `No work day found for ${currentDay}` };
     }
 
-    const workDay = workDays[0];
-
-    // Get appointment times for this work day
-    const { rows: appointmentTimes } = await sql`
-      SELECT 
-        id,
-        start_time,
-        end_time
-      FROM appointment_times2
-      WHERE work_day_id = ${workDay.id}
-    `;
-
-    if (!appointmentTimes || appointmentTimes.length === 0) {
+    if (!workDay.appointmentTimes || workDay.appointmentTimes.length === 0) {
       return { success: false, message: "No appointment times found" };
     }
 
     // Calculate the date 8 weeks from today
     const appointmentDate = new Date(today);
     appointmentDate.setDate(today.getDate() + 56); // 8 weeks from today
-    const formattedDate = appointmentDate.toISOString().split("T")[0]; // Format as "YYYY-MM-DD"
-
-    // Insert appointments for each time slot
-    let insertedCount = 0;
-
-    for (const timeSlot of appointmentTimes) {
-      // Insert only if this exact available window does not already exist
-      const insertResult = await sql`
-        INSERT INTO treatments (
-          rmt_id,
-          rmt_location_id,
-          date,
-          appointment_window_start,
-          appointment_window_end,
-          booking_cutoff_hours,
-          status,
-          created_at
-        ) VALUES (
-          ${location.user_id},
-          ${location.id},
-          ${formattedDate},
-          ${timeSlot.start_time},
-          ${timeSlot.end_time},
-          ${workDay.bookingCutoffHours || 0},
-          'available',
-          CURRENT_TIMESTAMP
-        )
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM treatments t
-          WHERE t.rmt_location_id = ${location.id}
-            AND t.date = ${formattedDate}::date
-            AND t.appointment_window_start = ${timeSlot.start_time}::time
-            AND t.appointment_window_end = ${timeSlot.end_time}::time
-            AND t.status = 'available'
-        )
-        RETURNING id
-      `;
-
-      if (insertResult.rows.length > 0) {
-        insertedCount++;
-      }
-    }
+    const formattedDate = formatDateOnly(appointmentDate);
+    const insertedCount = await insertAvailableAppointmentsForDate({
+      location,
+      workDay,
+      formattedDate,
+    });
     // Note: PostgreSQL doesn't have the exact equivalent of MongoDB's TTL indexes
     // You would typically handle expiration through a separate cron job or using PostgreSQL's
     // built-in partitioning features for time-series data
@@ -11282,6 +11328,85 @@ export async function deleteAdditionalIncome(incomeId) {
   } catch (error) {
     console.error("Error deleting additional income:", error);
     return { success: false, error: "Failed to delete additional income" };
+  }
+}
+
+export async function backfillAvailableAppointments(options = {}) {
+  try {
+    const startDate = parseDateOnly(options.startDate);
+    const endDate = parseDateOnly(options.endDate);
+
+    if (!startDate || !endDate) {
+      return {
+        success: false,
+        message: "Valid startDate and endDate are required in YYYY-MM-DD format",
+      };
+    }
+
+    if (startDate > endDate) {
+      return {
+        success: false,
+        message: "startDate must be on or before endDate",
+      };
+    }
+
+    const location = await getCronLocation();
+    if (!location) {
+      return { success: false, message: "RMT location not found" };
+    }
+
+    const scheduleByDay = await getLocationSchedule(location.id);
+    let insertedCount = 0;
+    const insertedDates = [];
+    const skippedDates = [];
+
+    for (
+      let current = new Date(startDate);
+      current <= endDate;
+      current.setUTCDate(current.getUTCDate() + 1)
+    ) {
+      const currentDate = new Date(current);
+      const dayName = DAY_NAMES[currentDate.getUTCDay()];
+      const workDay = scheduleByDay.get(dayName);
+      const formattedDate = formatDateOnly(currentDate);
+
+      if (!workDay || !workDay.isWorking) {
+        skippedDates.push(`${formattedDate} (${dayName}: not a working day)`);
+        continue;
+      }
+
+      if (!workDay.appointmentTimes || workDay.appointmentTimes.length === 0) {
+        skippedDates.push(`${formattedDate} (${dayName}: no appointment times)`);
+        continue;
+      }
+
+      const insertedForDate = await insertAvailableAppointmentsForDate({
+        location,
+        workDay,
+        formattedDate,
+      });
+
+      insertedCount += insertedForDate;
+      insertedDates.push({
+        date: formattedDate,
+        dayName,
+        insertedCount: insertedForDate,
+      });
+    }
+
+    return {
+      success: true,
+      message: `Backfilled ${insertedCount} appointments from ${formatDateOnly(startDate)} to ${formatDateOnly(endDate)}`,
+      insertedCount,
+      insertedDates,
+      skippedDates,
+    };
+  } catch (error) {
+    console.error("Error backfilling appointments:", error);
+    return {
+      success: false,
+      message: error.message,
+    };
   }
 }
 

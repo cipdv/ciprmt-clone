@@ -57,9 +57,7 @@ export default function BookAppointmentModal({
       <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Book Appointmentfdsfa
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-900">Book</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-xl font-bold"
