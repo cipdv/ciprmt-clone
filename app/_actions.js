@@ -12348,6 +12348,131 @@ function generateGiftCardCode() {
   return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8, 12)}`;
 }
 
+async function ensureCurrentUserIsRmt() {
+  const session = await getSession();
+
+  if (!session?.resultObj || session.resultObj.userType !== "rmt") {
+    throw new Error("Unauthorized: Only RMTs can manage gift cards");
+  }
+
+  return session.resultObj;
+}
+
+export async function getRmtGiftCards() {
+  try {
+    await ensureCurrentUserIsRmt();
+
+    const { rows } = await sql`
+      SELECT
+        id,
+        code,
+        purchaser_email,
+        purchaser_first_name,
+        recipient_name,
+        message,
+        duration,
+        price,
+        status,
+        redeemed,
+        redeemed_at,
+        created_at
+      FROM gift_cards
+      ORDER BY created_at DESC
+      LIMIT 25
+    `;
+
+    return { success: true, giftCards: rows };
+  } catch (error) {
+    console.error("Error fetching gift cards:", error);
+    return {
+      success: false,
+      message: "Unable to load gift cards.",
+      giftCards: [],
+    };
+  }
+}
+
+export async function createComplimentaryGiftCard(formData) {
+  try {
+    const currentUser = await ensureCurrentUserIsRmt();
+
+    const recipientName = String(formData.get("recipientName") || "").trim();
+    const recipientEmail = String(formData.get("recipientEmail") || "").trim();
+    const message = String(formData.get("message") || "").trim();
+    const duration = Number.parseInt(formData.get("duration"), 10);
+
+    if (![60, 75, 90].includes(duration)) {
+      return {
+        success: false,
+        message: "Choose a valid massage duration.",
+      };
+    }
+
+    let code;
+    let isUnique = false;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) {
+      code = generateGiftCardCode();
+      const { rows } = await sql`
+        SELECT id FROM gift_cards WHERE code = ${code}
+      `;
+      if (rows.length === 0) {
+        isUnique = true;
+      }
+      attempts++;
+    }
+
+    if (!isUnique) {
+      return {
+        success: false,
+        message: "Failed to generate a unique gift card code. Please try again.",
+      };
+    }
+
+    const purchaserFirstName =
+      currentUser.firstName || currentUser.preferredName || "RMT";
+    const purchaserEmail = currentUser.email || recipientEmail || "complimentary";
+
+    const { rows } = await sql`
+      INSERT INTO gift_cards (
+        code,
+        purchaser_email,
+        purchaser_first_name,
+        recipient_name,
+        message,
+        duration,
+        price,
+        stripe_payment_intent_id
+      ) VALUES (
+        ${code},
+        ${purchaserEmail},
+        ${purchaserFirstName},
+        ${recipientName},
+        ${message || null},
+        ${duration},
+        ${0},
+        ${`complimentary-${code}`}
+      )
+      RETURNING id, code, recipient_name, message, duration, price, status, redeemed, created_at
+    `;
+
+    revalidatePath("/dashboard/rmt/gift-cards");
+
+    return {
+      success: true,
+      message: "Complimentary gift card created.",
+      giftCard: rows[0],
+    };
+  } catch (error) {
+    console.error("Error creating complimentary gift card:", error);
+    return {
+      success: false,
+      message: "Unable to create gift card. Please try again.",
+    };
+  }
+}
+
 // Generate PDF gift card with QR code
 async function generateGiftCardPDF(giftCardData) {
   const pdfMake = require("pdfmake/build/pdfmake");

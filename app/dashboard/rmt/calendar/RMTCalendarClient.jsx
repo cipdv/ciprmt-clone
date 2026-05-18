@@ -86,6 +86,25 @@ function buildMonthGrid(anchorDate) {
   return days;
 }
 
+function getEventDurationMinutes(event) {
+  const duration = Number(event?.duration);
+  if (Number.isFinite(duration) && duration > 0) return duration;
+
+  const start = new Date(event?.startDateTime);
+  const end = new Date(event?.endDateTime);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+}
+
+function formatBookedHours(minutes) {
+  const hours = minutes / 60;
+  const rounded = Math.round(hours * 100) / 100;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(2)} ${
+    rounded === 1 ? "hour" : "hours"
+  }`;
+}
+
 export default function RMTCalendarClient() {
   const router = useRouter();
   const [anchorDate, setAnchorDate] = useState(new Date());
@@ -183,6 +202,13 @@ export default function RMTCalendarClient() {
   }, [events]);
 
   const monthDays = useMemo(() => buildMonthGrid(anchorDate), [anchorDate]);
+  const monthWeeks = useMemo(() => {
+    const weeks = [];
+    for (let index = 0; index < monthDays.length; index += 7) {
+      weeks.push(monthDays.slice(index, index + 7));
+    }
+    return weeks;
+  }, [monthDays]);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
     const applyMatch = () => setIsMobile(media.matches);
@@ -441,6 +467,19 @@ export default function RMTCalendarClient() {
   const isBookedOrCompleted = (event) => {
     const normalized = String(event?.status || "").toLowerCase();
     return normalized === "booked" || normalized === "completed";
+  };
+
+  const getWeeklyBookedMinutes = (weekDays) => {
+    return weekDays.reduce((weekTotal, dateObj) => {
+      const dailyEvents = eventsByDay[dayKey(dateObj)] || [];
+      const dailyTotal = dailyEvents.reduce((dayTotal, event) => {
+        if (event.source !== "db" || !isBookedOrCompleted(event)) {
+          return dayTotal;
+        }
+        return dayTotal + getEventDurationMinutes(event);
+      }, 0);
+      return weekTotal + dailyTotal;
+    }, 0);
   };
 
   const filteredModalClients = useMemo(() => {
@@ -735,19 +774,37 @@ export default function RMTCalendarClient() {
                 {day}
               </div>
             ))}
-            {monthDays.map((dateObj) => {
-              const key = dayKey(dateObj);
-              const dailyEvents = eventsByDay[key] || [];
-              const inCurrentMonth = dateObj.getMonth() === anchorDate.getMonth();
+            {monthWeeks.map((weekDays) => {
+              const weekStartKey = dayKey(weekDays[0]);
+              const weeklyBookedMinutes = getWeeklyBookedMinutes(weekDays);
               return (
-                <div
-                  key={`${key}-${dateObj.getDate()}`}
-                  className={`min-h-28 border rounded p-2 space-y-1 ${
-                    inCurrentMonth ? "border-gray-300" : "border-gray-200 opacity-60"
-                  }`}
-                >
-                  <p className="text-xs font-medium text-gray-700">{dateObj.getDate()}</p>
-                  <div className="space-y-1">{dailyEvents.map(renderEvent)}</div>
+                <div key={weekStartKey} className="contents">
+                  <div className="col-span-7 rounded border border-[#d5e0d1] bg-white/70 px-3 py-1 text-xs font-semibold text-[#1f2a1f]">
+                    Total hours: {formatBookedHours(weeklyBookedMinutes)}
+                  </div>
+                  {weekDays.map((dateObj) => {
+                    const key = dayKey(dateObj);
+                    const dailyEvents = eventsByDay[key] || [];
+                    const inCurrentMonth =
+                      dateObj.getMonth() === anchorDate.getMonth();
+                    return (
+                      <div
+                        key={`${key}-${dateObj.getDate()}`}
+                        className={`min-h-28 border rounded p-2 space-y-1 ${
+                          inCurrentMonth
+                            ? "border-gray-300"
+                            : "border-gray-200 opacity-60"
+                        }`}
+                      >
+                        <p className="text-xs font-medium text-gray-700">
+                          {dateObj.getDate()}
+                        </p>
+                        <div className="space-y-1">
+                          {dailyEvents.map(renderEvent)}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}

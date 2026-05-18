@@ -41,6 +41,10 @@ export function ExpenseBreakdown({ expensesData, deductibleSummary }) {
     grandTotalHST += hst;
   });
 
+  const homeOfficeExpenseTotal =
+    (categoryTotals["Home Office Expenses"]?.total || 0) +
+    (categoryTotals["Home Office Expenses"]?.totalHST || 0);
+
   return (
     <div className="bg-[#f4f7f2] rounded-xl border border-[#b7c7b0]">
       <div className="p-6 border-b border-[#b7c7b0]">
@@ -169,12 +173,10 @@ export function ExpenseBreakdown({ expensesData, deductibleSummary }) {
                   </div>
                   <div className="bg-[#f4f7f2] rounded-md border border-[#b7c7b0] p-3">
                     <div className="text-sm text-gray-600 mb-1">
-                      Deductible Home Office Expenses
+                      Home Office Expenses
                     </div>
                     <div className="text-lg font-semibold">
-                      {formatCurrency(
-                        Number(deductibleSummary.deductibleHomeOfficeExpenses) || 0
-                      )}
+                      {formatCurrency(homeOfficeExpenseTotal)}
                     </div>
                   </div>
                   <div className="bg-[#f4f7f2] rounded-md border border-[#b7c7b0] p-3">
