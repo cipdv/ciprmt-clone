@@ -9744,7 +9744,11 @@ export async function addAppointments() {
     const workDay = scheduleByDay.get(currentDay);
 
     if (!workDay || !workDay.isWorking) {
-      return { success: false, message: `No work day found for ${currentDay}` };
+      return {
+        success: true,
+        message: `Skipped addAppointments: ${currentDay} is not a configured work day.`,
+        skipped: true,
+      };
     }
 
     if (!workDay.appointmentTimes || workDay.appointmentTimes.length === 0) {

@@ -8,6 +8,13 @@ import {
   autoCompleteMonthlyMaintenanceLog,
   sendBenefitReminders,
 } from "@/app/_actions";
+import {
+  acquireDailyCronLock,
+  finishCronJobRun,
+  releaseDailyCronLock,
+  startCronJobRun,
+  updateCronJobRunOperations,
+} from "@/app/lib/cron/cron-job-tracking";
 import { getEmailTransporter } from "@/app/lib/transporter/nodemailer";
 
 const CRON_REPORT_EMAIL = "cipdevries@ciprmt.com";
@@ -26,14 +33,19 @@ function createStepResult(name, result) {
     success,
     message: result?.message || (success ? "Completed successfully" : "Failed"),
     details: result ?? null,
+    recordedAt: new Date().toISOString(),
   };
 }
 
-async function runCronStep(stepResults, name, fn) {
+async function runCronStep(stepResults, name, fn, cronRunId = null) {
   try {
     const result = await fn();
     const stepResult = createStepResult(name, result);
     stepResults.push(stepResult);
+    await updateCronJobRunOperations({
+      runId: cronRunId,
+      operations: stepResults,
+    });
     return stepResult;
   } catch (error) {
     const stepResult = {
@@ -41,10 +53,33 @@ async function runCronStep(stepResults, name, fn) {
       success: false,
       message: error.message || "Unexpected error",
       details: null,
+      recordedAt: new Date().toISOString(),
     };
     stepResults.push(stepResult);
+    await updateCronJobRunOperations({
+      runId: cronRunId,
+      operations: stepResults,
+    });
     return stepResult;
   }
+}
+
+function getTriggerSource({ request, runTarget, isLocalHost }) {
+  const userAgent = request.headers.get("user-agent") || "";
+
+  if (userAgent.toLowerCase().includes("vercel-cron")) {
+    return "vercel-cron";
+  }
+
+  if (isLocalHost) {
+    return "local";
+  }
+
+  if (runTarget) {
+    return "manual";
+  }
+
+  return "unknown";
 }
 
 async function sendCronSummaryEmail({
@@ -150,6 +185,14 @@ async function handleRequest(request) {
     hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
   const isLocalDebugRequest = searchParams.get("debug") === "benefit-reminders";
   const isLocalBackfillRequest = runTarget === "backfill-appointments";
+  const stepResults = [];
+  const cronRunId = await startCronJobRun({
+    jobName: "daily-rmt-cron",
+    runTarget: runTarget || "daily",
+    triggerSource: getTriggerSource({ request, runTarget, isLocalHost }),
+    requestUrl: request.url,
+  });
+  let cronLockAcquired = false;
 
   // Local-only debug shortcut to avoid curl headers while testing on localhost.
   // Disabled automatically in production.
@@ -158,16 +201,31 @@ async function handleRequest(request) {
     process.env.NODE_ENV !== "production" &&
     isLocalHost
   ) {
-    const benefitReminderResult = await sendBenefitReminders({
-      dryRun,
-      now: nowParam || null,
+    const benefitReminderResult = await runCronStep(
+      stepResults,
+      "sendBenefitReminders (local debug)",
+      () =>
+        sendBenefitReminders({
+          dryRun,
+          now: nowParam || null,
+        }),
+      cronRunId,
+    );
+    await finishCronJobRun({
+      runId: cronRunId,
+      status: benefitReminderResult.success ? "success" : "failed",
+      operations: stepResults,
+      httpStatus: benefitReminderResult.success ? 200 : 500,
+      errorMessage: benefitReminderResult.success
+        ? null
+        : benefitReminderResult.message,
     });
     return NextResponse.json({
       message: "Local debug benefit reminder run completed",
       executionTime: new Date().toISOString(),
       dryRun,
-      result: benefitReminderResult,
-    });
+      result: benefitReminderResult.details,
+    }, { status: benefitReminderResult.success ? 200 : 500 });
   }
 
   if (
@@ -175,7 +233,6 @@ async function handleRequest(request) {
     process.env.NODE_ENV !== "production" &&
     isLocalHost
   ) {
-    const stepResults = [];
     const backfillResult = await runCronStep(
       stepResults,
       "backfillAvailableAppointments",
@@ -184,14 +241,28 @@ async function handleRequest(request) {
           startDate: startDateParam,
           endDate: endDateParam,
         }),
+      cronRunId,
     );
     const executionTime = new Date().toISOString();
     const overallSuccess = backfillResult.success;
-    await sendCronSummaryEmail({
+    await runCronStep(
       stepResults,
-      executionTime,
-      requestUrl: request.url,
-      overallSuccess,
+      "sendCronSummaryEmail",
+      () =>
+        sendCronSummaryEmail({
+          stepResults,
+          executionTime,
+          requestUrl: request.url,
+          overallSuccess,
+        }).then(() => ({ success: true, message: "Cron summary email sent" })),
+      cronRunId,
+    );
+    await finishCronJobRun({
+      runId: cronRunId,
+      status: stepResults.every((step) => step.success) ? "success" : "failed",
+      operations: stepResults,
+      httpStatus: overallSuccess ? 200 : 500,
+      errorMessage: overallSuccess ? null : backfillResult.message,
     });
     return NextResponse.json(
       {
@@ -207,6 +278,13 @@ async function handleRequest(request) {
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
+    await finishCronJobRun({
+      runId: cronRunId,
+      status: "failed",
+      operations: stepResults,
+      httpStatus: 500,
+      errorMessage: "Cron secret not configured",
+    });
     return NextResponse.json(
       { message: "Cron secret not configured" },
       { status: 500 },
@@ -220,11 +298,40 @@ async function handleRequest(request) {
   const headerToken = request.headers.get("x-cron-secret") || "";
 
   if (bearerToken !== cronSecret && headerToken !== cronSecret) {
+    await finishCronJobRun({
+      runId: cronRunId,
+      status: "unauthorized",
+      operations: stepResults,
+      httpStatus: 401,
+      errorMessage: "Unauthorized",
+    });
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const stepResults = [];
+    cronLockAcquired = await acquireDailyCronLock();
+
+    if (!cronLockAcquired) {
+      stepResults.push({
+        name: "dailyCronLock",
+        success: true,
+        message: "Skipped daily cron: another run is already in progress.",
+        details: { skipped: true },
+        recordedAt: new Date().toISOString(),
+      });
+      await finishCronJobRun({
+        runId: cronRunId,
+        status: "skipped",
+        operations: stepResults,
+        httpStatus: 200,
+      });
+      return NextResponse.json({
+        message: "Cron job skipped because another run is already in progress",
+        executionTime: new Date().toISOString(),
+        steps: stepResults,
+      });
+    }
+
     const benefitRunDay = Number.parseInt(
       process.env.CRON_BENEFIT_REMINDER_DAY || "13",
       10,
@@ -241,23 +348,43 @@ async function handleRequest(request) {
             dryRun,
             now: nowParam || null,
           }),
+        cronRunId,
       );
       const executionTime = new Date().toISOString();
       const overallSuccess = benefitReminderResult.success;
-      await sendCronSummaryEmail({
+      await runCronStep(
         stepResults,
-        executionTime,
-        requestUrl: request.url,
-        overallSuccess,
+        "sendCronSummaryEmail",
+        () =>
+          sendCronSummaryEmail({
+            stepResults,
+            executionTime,
+            requestUrl: request.url,
+            overallSuccess,
+          }).then(() => ({ success: true, message: "Cron summary email sent" })),
+        cronRunId,
+      );
+      const finalSuccess = stepResults.every((step) => step.success);
+      await finishCronJobRun({
+        runId: cronRunId,
+        status: finalSuccess ? "success" : "failed",
+        operations: stepResults,
+        httpStatus: finalSuccess ? 200 : 500,
+        errorMessage: finalSuccess
+          ? null
+          : stepResults.find((step) => !step.success)?.message,
       });
-      return NextResponse.json({
-        message: overallSuccess
-          ? "Manual benefit reminder run completed"
-          : "Manual benefit reminder run failed",
-        executionTime,
-        dryRun,
-        result: benefitReminderResult.details,
-      });
+      return NextResponse.json(
+        {
+          message: overallSuccess
+            ? "Manual benefit reminder run completed"
+            : "Manual benefit reminder run failed",
+          executionTime,
+          dryRun,
+          result: benefitReminderResult.details,
+        },
+        { status: finalSuccess ? 200 : 500 },
+      );
     }
 
     if (runTarget === "backfill-appointments") {
@@ -269,14 +396,31 @@ async function handleRequest(request) {
             startDate: startDateParam,
             endDate: endDateParam,
           }),
+        cronRunId,
       );
       const executionTime = new Date().toISOString();
       const overallSuccess = backfillResult.success;
-      await sendCronSummaryEmail({
+      await runCronStep(
         stepResults,
-        executionTime,
-        requestUrl: request.url,
-        overallSuccess,
+        "sendCronSummaryEmail",
+        () =>
+          sendCronSummaryEmail({
+            stepResults,
+            executionTime,
+            requestUrl: request.url,
+            overallSuccess,
+          }).then(() => ({ success: true, message: "Cron summary email sent" })),
+        cronRunId,
+      );
+      const finalSuccess = stepResults.every((step) => step.success);
+      await finishCronJobRun({
+        runId: cronRunId,
+        status: finalSuccess ? "success" : "failed",
+        operations: stepResults,
+        httpStatus: finalSuccess ? 200 : 500,
+        errorMessage: finalSuccess
+          ? null
+          : stepResults.find((step) => !step.success)?.message,
       });
       return NextResponse.json(
         {
@@ -286,7 +430,7 @@ async function handleRequest(request) {
           executionTime,
           result: backfillResult.details,
         },
-        { status: overallSuccess ? 200 : 500 },
+        { status: finalSuccess ? 200 : 500 },
       );
     }
 
@@ -294,24 +438,28 @@ async function handleRequest(request) {
       stepResults,
       "resetStaleReschedulingAppointments",
       () => resetStaleReschedulingAppointments(),
+      cronRunId,
     );
 
     const addAppointmentsResult = await runCronStep(
       stepResults,
       "addAppointments",
       () => addAppointments(),
+      cronRunId,
     );
 
     const deleteExpiredResult = await runCronStep(
       stepResults,
       "deleteExpiredAppointments",
       () => deleteExpiredAppointments(),
+      cronRunId,
     );
 
     const appointmentReminderResult = await runCronStep(
       stepResults,
       "sendAppointmentReminders",
       () => sendAppointmentReminders(),
+      cronRunId,
     );
 
     const torontoDayOfMonth = Number(
@@ -329,6 +477,7 @@ async function handleRequest(request) {
           stepResults,
           "autoCompleteMonthlyMaintenanceLog",
           () => autoCompleteMonthlyMaintenanceLog(),
+          cronRunId,
         );
       }
 
@@ -340,21 +489,38 @@ async function handleRequest(request) {
             dryRun,
             now: nowParam || null,
           }),
+        cronRunId,
       );
     }
 
     const overallSuccess = stepResults.every((step) => step.success);
     const executionTime = new Date().toISOString();
-    await sendCronSummaryEmail({
+    await runCronStep(
       stepResults,
-      executionTime,
-      requestUrl: request.url,
-      overallSuccess,
+      "sendCronSummaryEmail",
+      () =>
+        sendCronSummaryEmail({
+          stepResults,
+          executionTime,
+          requestUrl: request.url,
+          overallSuccess,
+        }).then(() => ({ success: true, message: "Cron summary email sent" })),
+      cronRunId,
+    );
+    const finalSuccess = stepResults.every((step) => step.success);
+    await finishCronJobRun({
+      runId: cronRunId,
+      status: finalSuccess ? "success" : "failed",
+      operations: stepResults,
+      httpStatus: finalSuccess ? 200 : 500,
+      errorMessage: finalSuccess
+        ? null
+        : stepResults.find((step) => !step.success)?.message,
     });
 
     return NextResponse.json(
       {
-        message: overallSuccess
+        message: finalSuccess
           ? "Cron job executed successfully"
           : "Cron job completed with failures",
         executionTime,
@@ -366,18 +532,17 @@ async function handleRequest(request) {
         deleteExpiredAppointments: deleteExpiredResult.details,
         sendAppointmentReminders: appointmentReminderResult.details,
       },
-      { status: overallSuccess ? 200 : 500 },
+      { status: finalSuccess ? 200 : 500 },
     );
   } catch (error) {
     const executionTime = new Date().toISOString();
-    const stepResults = [
-      {
-        name: "cronRoute",
-        success: false,
-        message: error.message || "Unexpected error",
-        details: null,
-      },
-    ];
+    stepResults.push({
+      name: "cronRoute",
+      success: false,
+      message: error.message || "Unexpected error",
+      details: null,
+      recordedAt: executionTime,
+    });
 
     try {
       await sendCronSummaryEmail({
@@ -391,6 +556,14 @@ async function handleRequest(request) {
       console.error("Failed to send cron summary email:", emailError);
     }
 
+    await finishCronJobRun({
+      runId: cronRunId,
+      status: "failed",
+      operations: stepResults,
+      httpStatus: 500,
+      errorMessage: error.message || "Unexpected error",
+    });
+
     console.error("Error executing cron job:", error);
     return NextResponse.json(
       {
@@ -399,6 +572,14 @@ async function handleRequest(request) {
       },
       { status: 500 },
     );
+  } finally {
+    if (cronLockAcquired) {
+      try {
+        await releaseDailyCronLock();
+      } catch (unlockError) {
+        console.error("Failed to release daily cron lock:", unlockError);
+      }
+    }
   }
 }
 
