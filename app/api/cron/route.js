@@ -18,6 +18,36 @@ import {
 import { getEmailTransporter } from "@/app/lib/transporter/nodemailer";
 
 const CRON_REPORT_EMAIL = "cipdevries@ciprmt.com";
+const CRON_TIME_ZONE = "America/Toronto";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+function getTorontoDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CRON_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+function getCronExecutionMetadata(date = new Date()) {
+  const torontoParts = getTorontoDateParts(date);
+
+  return {
+    utc: date.toISOString(),
+    toronto: `${torontoParts.year}-${torontoParts.month}-${torontoParts.day} ${torontoParts.hour}:${torontoParts.minute}:${torontoParts.second}`,
+    timeZone: CRON_TIME_ZONE,
+  };
+}
 
 function sanitizeForHtml(value) {
   return String(value ?? "")
@@ -80,6 +110,29 @@ function getTriggerSource({ request, runTarget, isLocalHost }) {
   }
 
   return "unknown";
+}
+
+function validateCronRequest(request) {
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = request.headers.get("authorization") || "";
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : "";
+  const headerToken = request.headers.get("x-cron-secret") || "";
+
+  if (cronSecret) {
+    return {
+      ok: bearerToken === cronSecret || headerToken === cronSecret,
+      message: "Unauthorized",
+      status: 401,
+    };
+  }
+
+  return {
+    ok: false,
+    message: "Cron secret not configured",
+    status: 500,
+  };
 }
 
 async function sendCronSummaryEmail({
@@ -276,36 +329,19 @@ async function handleRequest(request) {
     );
   }
 
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
+  const authResult = validateCronRequest(request);
+  if (!authResult.ok) {
     await finishCronJobRun({
       runId: cronRunId,
-      status: "failed",
+      status: authResult.status === 401 ? "unauthorized" : "failed",
       operations: stepResults,
-      httpStatus: 500,
-      errorMessage: "Cron secret not configured",
+      httpStatus: authResult.status,
+      errorMessage: authResult.message,
     });
     return NextResponse.json(
-      { message: "Cron secret not configured" },
-      { status: 500 },
+      { message: authResult.message },
+      { status: authResult.status },
     );
-  }
-
-  const authHeader = request.headers.get("authorization") || "";
-  const bearerToken = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : "";
-  const headerToken = request.headers.get("x-cron-secret") || "";
-
-  if (bearerToken !== cronSecret && headerToken !== cronSecret) {
-    await finishCronJobRun({
-      runId: cronRunId,
-      status: "unauthorized",
-      operations: stepResults,
-      httpStatus: 401,
-      errorMessage: "Unauthorized",
-    });
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   try {
@@ -327,7 +363,7 @@ async function handleRequest(request) {
       });
       return NextResponse.json({
         message: "Cron job skipped because another run is already in progress",
-        executionTime: new Date().toISOString(),
+        executionTime: getCronExecutionMetadata(),
         steps: stepResults,
       });
     }
@@ -379,7 +415,7 @@ async function handleRequest(request) {
           message: overallSuccess
             ? "Manual benefit reminder run completed"
             : "Manual benefit reminder run failed",
-          executionTime,
+          executionTime: getCronExecutionMetadata(new Date(executionTime)),
           dryRun,
           result: benefitReminderResult.details,
         },
@@ -427,7 +463,7 @@ async function handleRequest(request) {
           message: overallSuccess
             ? "Backfill appointments run completed"
             : "Backfill appointments run failed",
-          executionTime,
+          executionTime: getCronExecutionMetadata(new Date(executionTime)),
           result: backfillResult.details,
         },
         { status: finalSuccess ? 200 : 500 },
@@ -523,7 +559,7 @@ async function handleRequest(request) {
         message: finalSuccess
           ? "Cron job executed successfully"
           : "Cron job completed with failures",
-        executionTime,
+        executionTime: getCronExecutionMetadata(new Date(executionTime)),
         steps: stepResults,
         benefitReminders: benefitReminderResult?.details || null,
         maintenance: maintenanceResult?.details || null,

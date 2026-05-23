@@ -1,6 +1,6 @@
 import { sql } from "@vercel/postgres";
 
-const DAILY_CRON_LOCK = { key1: 712345001, key2: 100 };
+const DEFAULT_LOCK_TTL_MINUTES = 55;
 
 async function ensureCronJobsTable() {
   await sql`
@@ -23,18 +23,62 @@ async function ensureCronJobsTable() {
   `;
 }
 
-export async function acquireDailyCronLock() {
+async function ensureCronLocksTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS cron_locks (
+      lock_name TEXT PRIMARY KEY,
+      acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+}
+
+export async function acquireCronLock(
+  lockName,
+  ttlMinutes = DEFAULT_LOCK_TTL_MINUTES,
+) {
+  await ensureCronLocksTable();
+
   const { rows } = await sql`
-    SELECT pg_try_advisory_lock(${DAILY_CRON_LOCK.key1}, ${DAILY_CRON_LOCK.key2}) AS locked
+    INSERT INTO cron_locks (
+      lock_name,
+      acquired_at,
+      expires_at,
+      updated_at
+    ) VALUES (
+      ${lockName},
+      NOW(),
+      NOW() + (${ttlMinutes}::text || ' minutes')::interval,
+      NOW()
+    )
+    ON CONFLICT (lock_name) DO UPDATE
+    SET
+      acquired_at = NOW(),
+      expires_at = NOW() + (${ttlMinutes}::text || ' minutes')::interval,
+      updated_at = NOW()
+    WHERE cron_locks.expires_at < NOW()
+    RETURNING lock_name
   `;
 
-  return rows?.[0]?.locked === true;
+  return rows.length > 0;
+}
+
+export async function releaseCronLock(lockName) {
+  await ensureCronLocksTable();
+
+  await sql`
+    DELETE FROM cron_locks
+    WHERE lock_name = ${lockName}
+  `;
+}
+
+export async function acquireDailyCronLock() {
+  return acquireCronLock("daily-rmt-cron", DEFAULT_LOCK_TTL_MINUTES);
 }
 
 export async function releaseDailyCronLock() {
-  await sql`
-    SELECT pg_advisory_unlock(${DAILY_CRON_LOCK.key1}, ${DAILY_CRON_LOCK.key2})
-  `;
+  return releaseCronLock("daily-rmt-cron");
 }
 
 function serializeOperations(operations) {

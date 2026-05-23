@@ -31,6 +31,10 @@ import { sql } from "@vercel/postgres";
 
 // Nodemailer transporter
 import { getEmailTransporter } from "./lib/transporter/nodemailer";
+import {
+  acquireCronLock,
+  releaseCronLock,
+} from "./lib/cron/cron-job-tracking";
 
 // Zod schemas
 import {
@@ -9425,9 +9429,9 @@ export async function clearAppointment(appointmentId) {
 // Cron Jobs////////////////////////////
 ////////////////////////////////////////
 const CRON_LOCK_KEYS = {
-  addAppointments: { key1: 712345001, key2: 1 },
-  sendAppointmentReminders: { key1: 712345001, key2: 2 },
-  sendBenefitReminders: { key1: 712345001, key2: 3 },
+  addAppointments: "add-appointments",
+  sendAppointmentReminders: "send-appointment-reminders",
+  sendBenefitReminders: "send-benefit-reminders",
 };
 
 const EMAIL_IDEMPOTENCY_STALE_PROCESSING_HOURS = 6;
@@ -9719,10 +9723,7 @@ export async function addAppointments() {
   let lockAcquired = false;
 
   try {
-    const { rows: lockRows } = await sql`
-      SELECT pg_try_advisory_lock(${lock.key1}, ${lock.key2}) AS locked
-    `;
-    lockAcquired = lockRows?.[0]?.locked === true;
+    lockAcquired = await acquireCronLock(lock);
 
     if (!lockAcquired) {
       return {
@@ -9781,9 +9782,7 @@ export async function addAppointments() {
   } finally {
     if (lockAcquired) {
       try {
-        await sql`
-          SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
-        `;
+        await releaseCronLock(lock);
       } catch (unlockError) {
         console.error(
           "Failed to release addAppointments cron lock:",
@@ -9957,10 +9956,7 @@ export async function sendAppointmentReminders() {
   let lockAcquired = false;
 
   try {
-    const { rows: lockRows } = await sql`
-      SELECT pg_try_advisory_lock(${lock.key1}, ${lock.key2}) AS locked
-    `;
-    lockAcquired = lockRows?.[0]?.locked === true;
+    lockAcquired = await acquireCronLock(lock);
 
     if (!lockAcquired) {
       return {
@@ -10108,9 +10104,7 @@ export async function sendAppointmentReminders() {
   } finally {
     if (lockAcquired) {
       try {
-        await sql`
-          SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
-        `;
+        await releaseCronLock(lock);
       } catch (unlockError) {
         console.error(
           "Failed to release sendAppointmentReminders cron lock:",
@@ -10131,10 +10125,7 @@ export async function sendBenefitReminders(options = {}) {
       : null;
 
   try {
-    const { rows: lockRows } = await sql`
-      SELECT pg_try_advisory_lock(${lock.key1}, ${lock.key2}) AS locked
-    `;
-    lockAcquired = lockRows?.[0]?.locked === true;
+    lockAcquired = await acquireCronLock(lock);
 
     if (!lockAcquired) {
       return {
@@ -10358,9 +10349,7 @@ export async function sendBenefitReminders(options = {}) {
   } finally {
     if (lockAcquired) {
       try {
-        await sql`
-          SELECT pg_advisory_unlock(${lock.key1}, ${lock.key2})
-        `;
+        await releaseCronLock(lock);
       } catch (unlockError) {
         console.error(
           "Failed to release sendBenefitReminders cron lock:",
